@@ -7,6 +7,8 @@ CONFIG="${1:-debug}"
 cd "$ROOT"
 
 "$ROOT/scripts/fetch-ghosttykit.sh" >/dev/null
+# SwiftPM needs the CEF SDK present to build (the engine itself is chosen at runtime).
+"$ROOT/scripts/fetch-cef.sh" >/dev/null
 "$ROOT/scripts/gen-default-config.sh" >/dev/null
 
 swift build -c "$CONFIG" --product Hypermux

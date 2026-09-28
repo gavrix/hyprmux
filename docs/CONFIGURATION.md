@@ -1,0 +1,282 @@
+# Configuration
+
+Hypermux reads `~/.config/hypermux/hypermux.conf`, or the file named by
+`$HYPERMUX_CONFIG`. If neither exists, it uses the built-in default, which is
+[`config/hypermux.conf`](../config/hypermux.conf) compiled into the app.
+**Hypermux → Open Config…** (⌘,) writes that default to your config path the
+first time and opens it.
+
+The file reloads when you save it, whether your editor writes in place or
+replaces the file. ⇧⌘R or `hypermuxctl reload` force a reload. Mistakes show in
+a red bar at the top of the screen; the rest of the file still applies. The one
+setting that needs a restart is `web:engine`.
+
+## Syntax
+
+The syntax follows Hyprland's `hyprland.conf` (hyprlang):
+
+```ini
+# comment ("##" is a literal "#")
+$mod = SUPER                  # variable, used as $mod
+general {                     # sections nest; keys become general:gaps_in
+    gaps_in = 5
+}
+general:gaps_out = 14         # the flat form works too
+source = ~/.config/hypermux/binds.conf   # include another file
+```
+
+**Values:**
+
+- **Numbers:** `5`, `0.7`.
+- **Booleans:** `true`/`false`, `yes`/`no`, `on`/`off`, `1`/`0`.
+- **Insets** (gaps): one value for all sides, two for vertical and horizontal,
+  or four for top, right, bottom, left.
+- **Colors:** `rgba(33ccffee)`, `rgba(51,204,255,0.9)`, `rgb(33ccff)`,
+  `0xAARRGGBB`, or `##RRGGBB` (a single `#` starts a comment).
+- **Gradients:** one or more colors plus an optional angle:
+  `rgba(33ccffee) rgba(00ff99ee) 45deg`.
+
+## Options
+
+Defaults below are the values built into the code. The shipped default config
+overrides a few of them (for example `gaps_out = 14`).
+
+### `general`
+
+| Option | Default | Meaning |
+|---|---|---|
+| `gaps_in` | 5 | Gap around each window where it meets another window (so 10 between two). |
+| `gaps_out` | 20 | Gap between windows and the screen edges. |
+| `border_size` | 2 | Border width, in points. |
+| `col.active_border` | cyan→green 45° | Border of the focused window (gradient). |
+| `col.inactive_border` | grey | Border of other windows. |
+| `layout` | `dwindle` | The only layout so far. |
+
+### `decoration`
+
+| Option | Default | Meaning |
+|---|---|---|
+| `rounding` | 10 | Corner radius, in points. |
+| `rounding_power` | 2 | Corner curve: 2 = circle, 4 = squircle, higher = squarer (1–10). |
+| `active_opacity` | 1 | Opacity of the focused window's content. |
+| `inactive_opacity` | 1 | Opacity of other windows' content (e.g. 0.7). |
+| `dim_inactive` | false | Darken unfocused windows. |
+| `dim_strength` | 0.5 | How much to darken them. |
+| `dim_special` | 0.2 | Darkening behind an open scratchpad. |
+| `blur:enabled` | false | Frosted-glass blur behind translucent windows. |
+| `shadow:enabled` | true | Drop shadow outside each window. |
+| `shadow:range` | 4 | Shadow size. |
+| `shadow:color` | dark grey | Shadow color. |
+
+Hyprland's blur tuning keys (`blur:size`, `blur:passes`, and similar) are
+accepted and ignored.
+
+### `animations`
+
+```ini
+animations {
+    enabled = yes
+    bezier = easeOutQuint, 0.23, 1, 0.32, 1
+    animation = windows, 1, 4.79, easeOutQuint             # name, on/off, speed, curve
+    animation = windowsIn, 1, 4.1, easeOutQuint, popin 87%  # optional style
+    animation = workspaces, 1, 3.5, easeOutQuint, slide
+}
+```
+
+Speed is in tenths of a second: `4.79` means 479 ms. Built-in curves are
+`default` and `linear`. An animation you don't set inherits from its parent:
+
+```
+global
+├── windows ── windowsIn, windowsOut, windowsMove
+├── fade ── fadeIn, fadeOut, fadeSwitch, fadeShadow, fadeDim
+├── border ── borderangle
+├── workspaces ── workspacesIn, workspacesOut, specialWorkspace ── In, Out
+└── layers
+```
+
+**What each animation drives:**
+
+- **windowsIn / windowsOut:** opening and closing windows.
+- **windowsMove:** layout changes.
+- **fadeSwitch:** the active/inactive opacity change on focus.
+- **border:** border color changes.
+- **workspaces:** switching workspaces.
+- **specialWorkspace:** the scratchpad.
+
+**Styles:**
+
+- **windows:** `popin N%` or `slide`.
+- **workspaces:** `slide`, `slidevert`, or `fade`.
+
+### `input`
+
+| Option | Default | Meaning |
+|---|---|---|
+| `follow_mouse` | 1 | 1 = focus follows the pointer (only while Hypermux is active), 0 = click to focus. |
+
+### `dwindle`
+
+| Option | Default | Meaning |
+|---|---|---|
+| `preserve_split` | false | Keep each split's direction instead of recomputing it from its shape. |
+| `force_split` | 0 | Where a new window goes: 0 = toward the pointer, 1 = left/top, 2 = right/bottom. |
+| `split_width_multiplier` | 1.0 | A split goes side by side when width × this > height. |
+| `default_split_ratio` | 1.0 | 1.0 = even split (range 0.1–1.9). |
+
+### `binds`
+
+| Option | Default | Meaning |
+|---|---|---|
+| `workspace_back_and_forth` | false | Switching to the current workspace goes back to the previous one. |
+
+### `group`
+
+Groups hold several windows as tabs in one tile.
+
+| Option | Default | Meaning |
+|---|---|---|
+| `auto_group` | true | Windows opened while a group is focused join it as tabs. |
+| `border_size` | (general) | Border width for grouped windows. |
+| `col.border_active` / `col.border_inactive` | orange / brown | Group border colors. |
+| `groupbar:enabled` | true | Show the tab strip. |
+| `groupbar:height` | 20 | Tab strip height. |
+| `groupbar:font_size` | 11 | Tab title size. |
+| `groupbar:col.active` / `col.inactive` | cyan / dark | Tab colors. |
+| `groupbar:text_color` | white | Tab title color. |
+
+### `misc`
+
+| Option | Default | Meaning |
+|---|---|---|
+| `background_color` | near black | Behind the windows. An alpha below 1 makes Hypermux see-through; `rgba(00000000)` shows the desktop in the gaps. |
+| `fullscreen_style` | `fill` | `fill`: full screen on the normal desktop, so the wallpaper stays visible. `native`: macOS full screen on its own Space. |
+
+### `web`
+
+| Option | Default | Meaning |
+|---|---|---|
+| `engine` | `webkit` | `webkit` (light, no passkeys) or `chromium` (bundled CEF; passkeys from a phone or security key). Needs a restart. |
+| `home` | DuckDuckGo | Page for `webnav home`. |
+| `search` | DuckDuckGo | Search URL for address-bar text that isn't a URL; `%s` is the query. |
+| `open_terminal_links` | true | ⌘-click on a link in a terminal opens a web tile instead of your browser. |
+| `address_bar` | true | Show the address bar. |
+| `chromium_extensions` | — | Comma-separated unpacked extension folders to load into Chromium. Extensions that need tabs (like 1Password) don't work in tiles. |
+| `chromium_flags` | — | Space-separated Chromium switches, e.g. `remote-debugging-port=9333`. |
+
+### `ghostty`
+
+Anything in a `ghostty { }` block goes to libghostty as Ghostty config, after
+your normal `~/.config/ghostty/config`:
+
+```ini
+ghostty {
+    window-padding-x = 12
+    font-size = 14
+    background = 1e1e2e      # no "#": that starts a comment here (or write ##1e1e2e)
+}
+```
+
+### `hypermux`
+
+| Option | Default | Meaning |
+|---|---|---|
+| `float_size` | 0.6 | Size of a window floated for the first time, as a fraction of the screen. |
+
+### Startup programs
+
+```ini
+exec-once = htop     # run in a new terminal at startup
+exec = btop          # also run on every config reload
+```
+
+Without any `exec-once`, Hypermux opens one terminal at startup.
+
+## Binds
+
+```ini
+bind  = MODS, key, dispatcher, args
+binde = $mod CTRL, L, resizeactive, 40 0      # e = repeats while held
+bindm = $mod, mouse:272, movewindow           # m = mouse drag (272 left, 273 right)
+bindn = ...                                   # n = the key also reaches the app
+```
+
+- **Modifiers:** `SUPER` (also `CMD`) is ⌘. The others are `SHIFT`, `CTRL`, and
+  `ALT` (also `OPT`). Combine them with spaces or `_`. An empty field means no
+  modifier.
+- **Keys:** physical positions named like on a US keyboard, so binds keep
+  working with other layouts: `A`–`Z`, `0`–`9`, `Return`, `space`, `Tab`,
+  `escape`, `left`/`right`/`up`/`down`, `grave`, `minus`, `equal`,
+  `bracketleft`, `bracketright`, `comma`, `period`, `slash`, `F1`–`F12`, or
+  `code:NN` for a raw macOS key code.
+- **Precedence:** keys that no bind claims go to the focused window, so ⌘C and
+  ⌘V still copy and paste in terminals.
+
+**Submaps** are modes with their own binds:
+
+```ini
+bind = $mod, R, submap, resize
+submap = resize
+binde = , L, resizeactive, 30 0
+bind = , escape, submap, reset
+submap = reset
+```
+
+## Dispatchers
+
+These names work in `bind` lines and with `hypermuxctl dispatch`.
+
+| Dispatcher | Arguments | Action |
+|---|---|---|
+| `exec` | [command] | New terminal, optionally running a command. |
+| `web` / `openurl` | [url or search] | New web tile. Empty: a start page with the address bar focused. |
+| `webnav` | `back` `forward` `reload` `stop` `home` `focusurl` `inspect` | Navigation in the focused web tile. |
+| `sim` / `simulator` | [udid, name, or `booted`] | Show an iOS Simulator in a tile. Empty: the only booted one, or a menu to pick one. |
+| `simbutton` | `home` `lock` | Press a simulator hardware button. |
+| `killactive` | | Close the focused window. |
+| `movefocus` | `l` `r` `u` `d` | Focus the neighbor in that direction. |
+| `movewindow` | `l` `r` `u` `d` | Move the window in the layout (or to the screen edge if floating). |
+| `swapwindow` | `l` `r` `u` `d` | Swap with the neighbor. |
+| `resizeactive` | `dx dy` | Grow or shrink the focused window. |
+| `moveactive` | `dx dy` | Move a floating window. |
+| `workspace` | `N`, `+1`/`-1`, `e+1`/`e-1`, `previous`, `empty`, `special[:name]` | Switch workspace. `e±1` skips empty workspaces. |
+| `movetoworkspace` / `movetoworkspacesilent` | same | Move the focused window there (and follow it, or stay). |
+| `togglespecialworkspace` | [name] | Show or hide a scratchpad. |
+| `togglefloating` | | Float or re-tile. A first float centers the window; re-tiling returns it to its old slot. |
+| `fullscreen` | `0` or `1` | 0 = cover the screen, 1 = maximize within gaps. |
+| `monitorfullscreen` | | Toggle the whole Hypermux window full screen (see `misc:fullscreen_style`). |
+| `togglesplit` / `swapsplit` | | Flip or swap the split holding the focused window. |
+| `splitratio` | `±x` or `exact x` | Change that split's ratio. |
+| `cyclenext` | [`prev`] | Focus the next window on the workspace. |
+| `focuscurrentorlast` | | Focus the previously focused window. |
+| `centerwindow` | | Center a floating window. |
+| `togglegroup` | | Make the focused window a group, or dissolve its group. |
+| `changegroupactive` | `f`, `b`, or `N` | Switch tabs. |
+| `moveintogroup` | `l` `r` `u` `d` | Move the window into the neighboring group (makes one if needed). |
+| `moveoutofgroup` | | Take the window out of its group. |
+| `movegroupwindow` | `f` or `b` | Reorder the active tab. |
+| `submap` | name or `reset` | Enter or leave a submap. |
+| `reload` | | Reload the config. |
+| `exit` | | Quit Hypermux. |
+
+## IPC: `hypermuxctl`
+
+Shells inside Hypermux get `HYPERMUX_SOCKET` and `HYPERMUX_CLIENT` in their
+environment. `hypermuxctl` talks to that socket (default
+`/tmp/hypermux-<uid>/hypermux.sock`). Build it with
+`swift build --product hypermuxctl`.
+
+| Command | Reply |
+|---|---|
+| `dispatch <dispatcher> [args]` | Runs a dispatcher. |
+| `clients` | JSON for every window: id, kind, workspace, frame, focus, floating, group, URL or pwd. |
+| `workspaces`, `activewindow`, `version` | JSON or text. |
+| `reload` | Reloads the config. |
+| `sendtext <text>` | Types text into the focused terminal (`\n` = Enter). |
+| `sendkey <MODS>, <key>` | Injects a key press through the normal key path. |
+| `sendmouse down\|drag\|up\|move <MODS>, <button>, <x y>` | Injects one mouse event (holds, hand-timed gestures). |
+| `senddrag <MODS>, <button>, <x1 y1>, <x2 y2>` | Injects a paced drag (about 16 ms per step). |
+| `hittest <x y>` | Which views a click at that point reaches. |
+| `debug` | Focus internals: app active, key window, first responder, and which window holds the keyboard. |
+
+Coordinates are in the Hypermux window's space, from the top-left.

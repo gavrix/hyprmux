@@ -43,6 +43,8 @@ class BrowserSurface: FlippedView, Surface, NSTextFieldDelegate {
     private let barHeight: CGFloat = 30
 
     private(set) var title = ""
+    /// Extra horizontal inset for the address bar so it clears rounded top corners.
+    var topCornerInset: CGFloat = 0 { didSet { if topCornerInset != oldValue { layoutContent() } } }
     private(set) var loading = false
     private var progress: Double = 0
 
@@ -192,7 +194,8 @@ class BrowserSurface: FlippedView, Surface, NSTextFieldDelegate {
         let h = showBar ? barHeight : 0
         bar.isHidden = !showBar
         bar.frame = CGRect(x: 0, y: 0, width: bounds.width, height: h)
-        address.frame = CGRect(x: 8, y: 5, width: max(0, bounds.width - 16), height: h - 10)
+        let side = max(8, topCornerInset)
+        address.frame = CGRect(x: side, y: 5, width: max(0, bounds.width - 2 * side), height: h - 10)
         content.frame = CGRect(x: 0, y: h, width: bounds.width, height: max(0, bounds.height - h))
         layoutProgress()
     }

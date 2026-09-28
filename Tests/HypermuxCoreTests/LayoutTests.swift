@@ -456,6 +456,18 @@ final class RoundedShapeTests: XCTestCase {
         XCTAssertTrue(RoundedShape.path(in: rect, radius: 20, power: 4).contains(probe))
     }
 
+    func testEdgeInsetClearsTheCurve() {
+        // Circle r=10: at depth 10 (the corner's center line) no inset is needed; at depth 0 all of it.
+        XCTAssertEqual(RoundedShape.edgeInset(radius: 10, power: 2, depth: 10), 0, accuracy: 1e-9)
+        XCTAssertEqual(RoundedShape.edgeInset(radius: 10, power: 2, depth: 0), 10, accuracy: 1e-9)
+        // The point (inset, depth) lies on the outline.
+        let r = 72.0, p = 4.0, d = 6.0
+        let x = RoundedShape.edgeInset(radius: r, power: p, depth: d)
+        let path = RoundedShape.path(in: CGRect(x: 0, y: 0, width: 400, height: 300), radius: r, power: p)
+        XCTAssertTrue(path.contains(CGPoint(x: x + 0.5, y: d)))
+        XCTAssertFalse(path.contains(CGPoint(x: x - 0.5, y: d)))
+    }
+
     func testRadiusClampsToHalfTheShortSide() {
         let b = RoundedShape.path(in: rect, radius: 500, power: 4).boundingBox
         XCTAssertEqual(b.height, 100, accuracy: 0.01)

@@ -23,6 +23,8 @@ final class GroupBarView: NSView {
     private var titles: [String] = []
     private var active = 0
     private var style: GroupBarStyle?
+    /// Horizontal inset so the first and last tab clear rounded corners.
+    var sideInset: CGFloat = 0 { didSet { if sideInset != oldValue { needsDisplay = true } } }
 
     override var isFlipped: Bool { true }
     override var mouseDownCanMoveWindow: Bool { false }
@@ -39,8 +41,9 @@ final class GroupBarView: NSView {
     private func tabRect(_ i: Int) -> CGRect {
         let n = CGFloat(max(1, titles.count))
         let gap: CGFloat = 2
-        let w = (bounds.width - gap * (n + 1)) / n
-        return CGRect(x: gap + CGFloat(i) * (w + gap), y: 2, width: max(0, w), height: max(0, bounds.height - 4))
+        let inset = max(gap, sideInset)
+        let w = (bounds.width - 2 * inset - gap * (n - 1)) / n
+        return CGRect(x: inset + CGFloat(i) * (w + gap), y: 2, width: max(0, w), height: max(0, bounds.height - 4))
     }
 
     override func draw(_ dirtyRect: NSRect) {

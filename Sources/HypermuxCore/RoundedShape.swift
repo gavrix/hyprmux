@@ -11,6 +11,18 @@ public enum RoundedShape {
     /// Points per corner. Enough that the polygon reads as a curve even at large radii.
     static let samples = 24
 
+    /// How far in from a side edge content must start so that, `depth` points below the
+    /// top (or above the bottom), it clears the corner curve. For bars along an edge.
+    public static func edgeInset(radius: Double, power: Double, depth: Double) -> Double {
+        let r = max(0, radius), p = min(max(power, 1), 10)
+        guard r > 0, depth < r else { return 0 }
+        // Corner curve (distance from the corner's center): (u/r)^p + (v/r)^p = 1,
+        // with v = r - depth; solve for u, the inset is r - u.
+        let v = (r - max(0, depth)) / r
+        let u = pow(max(0, 1 - pow(v, p)), 1 / p)
+        return r - r * u
+    }
+
     public static func path(in rect: CGRect, radius: Double, power: Double) -> CGPath {
         let r = max(0, min(radius, min(rect.width, rect.height) / 2))
         guard r > 0.01 else { return CGPath(rect: rect, transform: nil) }

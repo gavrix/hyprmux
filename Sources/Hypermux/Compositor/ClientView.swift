@@ -118,6 +118,13 @@ final class ClientView: NSView, Animatable {
         let h = max(1, targetFrame.height - 2 * b)
         let bh = min(barHeight, h - 1)
         groupBar?.frame = CGRect(x: 0, y: 0, width: w, height: bh)
+        // Keep tabs clear of the (inner) corner curve: measured halfway down the bar.
+        let innerR = max(0, decoration.rounding - b)
+        groupBar?.sideInset = CGFloat(RoundedShape.edgeInset(
+            radius: Double(innerR), power: Double(decoration.roundingPower), depth: Double(bh) / 2))
+        // A browser's address bar sits at the top of the content when there are no tabs.
+        (surface as? BrowserSurface)?.topCornerInset = bh > 0 ? 0 : CGFloat(RoundedShape.edgeInset(
+            radius: Double(innerR), power: Double(decoration.roundingPower), depth: 15))
         let content = CGRect(x: 0, y: bh, width: w, height: h - bh)
         if surface.view.frame != content { surface.view.frame = content }
     }

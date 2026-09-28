@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- Simplified AppIcon.svg for 16 and 32 px: no glyphs, thicker borders, fewer splits. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#262b3c"/>
+      <stop offset="1" stop-color="#0b0d14"/>
+    </linearGradient>
+    <linearGradient id="active" gradientUnits="userSpaceOnUse" x1="164" y1="164" x2="498" y2="860">
+      <stop offset="0" stop-color="#33ccff"/>
+      <stop offset="1" stop-color="#00ff99"/>
+    </linearGradient>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#bg)"/>
+  <g stroke="#6a7082" stroke-width="34" fill="#1a1e2c">
+    <rect x="547" y="185" width="292" height="292" rx="44"/>
+    <rect x="547" y="547" width="292" height="292" rx="44"/>
+  </g>
+  <rect x="185" y="185" width="292" height="654" rx="48" fill="#1a1e2c" stroke="url(#active)" stroke-width="44"/>
+</svg>

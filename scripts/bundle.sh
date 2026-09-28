@@ -19,6 +19,8 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/Hypermux"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
+# App icon, rendered from Resources/AppIcon/*.svg by scripts/make-icon.sh.
+cp "$ROOT/Resources/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 
 # libghostty resources: terminfo + shell integration + themes. Ghostty finds
 # them via Contents/Resources/terminfo/78/xterm-ghostty. Take them from an

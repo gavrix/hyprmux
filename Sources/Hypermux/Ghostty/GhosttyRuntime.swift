@@ -260,10 +260,10 @@ final class GhosttyRuntime {
     static func readClipboard(_ ud: UnsafeMutableRawPointer?, location: ghostty_clipboard_e, state: UnsafeMutableRawPointer?) -> Bool {
         guard let v = view(ud), let s = v.surface else { return false }
         let pb = pasteboard(location)
-        var str = pb.string(forType: .string)
-        if str == nil, let urls = pb.readObjects(forClasses: [NSURL.self]) as? [URL], !urls.isEmpty {
-            str = urls.map { $0.isFileURL ? $0.path : $0.absoluteString }.joined(separator: " ")
-        }
+        // Files paste as their escaped paths, and a clipboard image as a temporary PNG's path.
+        let str = location == GHOSTTY_CLIPBOARD_SELECTION
+            ? pb.string(forType: .string)
+            : TerminalPasteboard.contents(pb)
         guard let str else { return false }
         str.withCString { ghostty_surface_complete_clipboard_request(s, $0, state, false) }
         return true

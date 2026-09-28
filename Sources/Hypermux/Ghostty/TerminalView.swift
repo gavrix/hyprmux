@@ -89,9 +89,26 @@ final class TerminalView: NSView, NSTextInputClient {
         }
 
         updateTrackingAreas()
+        registerForDraggedTypes(TerminalPasteboard.dropTypes)
     }
 
     required init?(coder: NSCoder) { fatalError("not supported") }
+
+    // MARK: Drag and drop
+
+    // Dropped files insert their paths, text inserts as is, and a dragged image is saved
+    // to a temporary file whose path is inserted, like a paste (see TerminalPasteboard).
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        let types = Set(sender.draggingPasteboard.types ?? [])
+        return types.isDisjoint(with: TerminalPasteboard.dropTypes) ? [] : .copy
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        guard let s = surface, let text = TerminalPasteboard.contents(sender.draggingPasteboard) else { return false }
+        // As a paste (bracketed when the program asks for it), like Ghostty.
+        text.withCString { ghostty_surface_text(s, $0, UInt(text.utf8.count)) }
+        return true
+    }
 
     /// Frees the libghostty surface. Call once when the client is gone.
     func destroy() {

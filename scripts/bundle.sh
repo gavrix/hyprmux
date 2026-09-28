@@ -11,6 +11,27 @@ cd "$ROOT"
 "$ROOT/scripts/fetch-cef.sh" >/dev/null
 "$ROOT/scripts/gen-default-config.sh" >/dev/null
 
+# Signing identity, first found: HYPERMUX_SIGN_IDENTITY; the first line of .sign-identity
+# (untracked; e.g. your Apple Development certificate's name); "Hypermux Local Signing"
+# when it exists (scripts/make-signing-cert.sh); else ad hoc. A stable identity keeps macOS
+# privacy permissions (Screen Recording, ...) across rebuilds; an ad-hoc signature loses them.
+SIGN="${HYPERMUX_SIGN_IDENTITY:-}"
+if [[ -z "$SIGN" && -f "$ROOT/.sign-identity" ]]; then
+  SIGN="$(head -n 1 "$ROOT/.sign-identity" | tr -d '\r')"
+fi
+if [[ -z "$SIGN" ]]; then
+  if security find-certificate -c "Hypermux Local Signing" >/dev/null 2>&1; then
+    SIGN="Hypermux Local Signing"
+  else
+    SIGN="-"
+  fi
+fi
+sign() {
+  codesign --force --sign "$SIGN" "$1" >/dev/null 2>&1 && return
+  echo "warning: signing $(basename "$1") with '$SIGN' failed; signing ad hoc" >&2
+  codesign --force --sign - "$1" >/dev/null 2>&1 || true
+}
+
 swift build -c "$CONFIG" --product Hypermux
 BIN="$(swift build -c "$CONFIG" --show-bin-path)/Hypermux"
 
@@ -47,7 +68,7 @@ if [[ -d "$CEF_FW" ]]; then
   mkdir -p "$APP/Contents/Frameworks"
   # clonefile copy: instant on APFS, no extra disk.
   cp -Rc "$CEF_FW" "$APP/Contents/Frameworks/" 2>/dev/null || cp -R "$CEF_FW" "$APP/Contents/Frameworks/"
-  codesign --force --sign - "$APP/Contents/Frameworks/Chromium Embedded Framework.framework" >/dev/null 2>&1 || true
+  sign "$APP/Contents/Frameworks/Chromium Embedded Framework.framework"
   # Chromium looks for "<App> Helper (<Kind>).app" next to the framework.
   for kind in "" " (GPU)" " (Renderer)" " (Alerts)"; do
     name="Hypermux Helper$kind"
@@ -78,9 +99,14 @@ if [[ -d "$CEF_FW" ]]; then
 </dict>
 </plist>
 PLIST
-    codesign --force --sign - "$H" >/dev/null 2>&1 || true
+    sign "$H"
   done
 fi
 
-codesign --force --sign - "$APP" >/dev/null 2>&1 || true
+sign "$APP"
+if [[ "$SIGN" == "-" ]]; then
+  echo "signed ad hoc: permissions reset on every build (see docs/DEVELOPMENT.md, Signing)" >&2
+else
+  echo "signed with: $SIGN" >&2
+fi
 echo "$APP"

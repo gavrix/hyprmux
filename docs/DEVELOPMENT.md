@@ -27,6 +27,37 @@ open build/Hypermux.app
 
 The framework copy is an APFS clone, so bundling takes a few seconds.
 
+## Signing
+
+macOS ties privacy permissions (Screen Recording, Accessibility, folder access)
+to an app's signature. An ad-hoc signature changes with every build, so each
+rebuild silently loses them. Anything that runs inside Hypermux loses them too,
+because its shells inherit Hypermux's identity: `screencapture` stopped working
+this way. Sign with a stable identity and a permission granted once stays
+granted.
+
+`scripts/bundle.sh` signs the app, the Chromium framework, and the helper apps
+with the first of:
+
+1. `HYPERMUX_SIGN_IDENTITY`;
+2. the first line of `.sign-identity` in the repo (untracked), for example
+   `Apple Development: Your Name (XXXXXXXXXX)`;
+3. "Hypermux Local Signing", if it exists;
+4. ad hoc, with a warning.
+
+**With an Apple developer account** (a free personal team works): in Xcode, open
+Settings → Accounts → your team → Manage Certificates, and add an Apple
+Development certificate. Put its name in `.sign-identity`
+(`security find-identity -v -p codesigning` lists it). Renewing it keeps the
+name, so permissions survive renewals.
+
+**Without one:** `scripts/make-signing-cert.sh` creates a self-signed
+"Hypermux Local Signing" identity in the login keychain (10 years, local only).
+The first build that uses it asks for your login password; choose Always Allow.
+
+The build prints which identity it used. After switching identities, grant the
+permissions once more.
+
 ## Where code goes
 
 - **Decisions in the core.** Anything that decides layout, focus, or state

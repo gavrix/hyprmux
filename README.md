@@ -69,8 +69,10 @@ downloaded SDKs in `vendor/`.
 - **CLI:** `swift build --product hypermuxctl` builds it into
   `.build/debug/hypermuxctl`.
 
-The app is signed ad hoc. That's enough to run it locally. Distributing it to
-other Macs needs a Developer ID signature and notarization.
+The app is signed ad hoc unless you give it a stable identity, and then macOS
+forgets permissions like Screen Recording on every rebuild. See
+[Signing](docs/DEVELOPMENT.md#signing). Distributing it to other Macs needs a
+Developer ID signature and notarization.
 
 ## Quick start
 

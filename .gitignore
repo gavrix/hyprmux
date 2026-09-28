@@ -8,3 +8,6 @@ Resources/terminfo/
 .DS_Store
 .cache/
 vendor/cef/
+
+# Local code-signing identity for scripts/bundle.sh.
+.sign-identity

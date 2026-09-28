@@ -1,10 +1,13 @@
 // Records one app's main window to an H.264 MP4 with ScreenCaptureKit. Only that window
 // is captured, even when other windows cover it, and without the cursor.
 //
-//   recorder --pid 1234 --out demo.mp4 [--fps 30]
+//   recorder --pid 1234 --out demo.mp4 [--fps 30] [--log recorder.log]
 //
 // Recording runs until the process gets SIGINT or SIGTERM, then the file is finished.
-// Needs Screen Recording permission for the app that launches it (the terminal).
+// record.sh wraps it in a small signed app ("Hyprmux Demo Recorder") and starts it with
+// `open`, so it holds its own Screen Recording permission instead of borrowing the
+// terminal's.
+import AppKit
 import AVFoundation
 import CoreMedia
 import Foundation
@@ -24,6 +27,12 @@ while let a = args.next() {
     case "--pid": pid = pid_t(args.next() ?? "") ?? 0
     case "--out": out = args.next() ?? ""
     case "--fps": fps = Int(args.next() ?? "") ?? 30
+    case "--log":
+        // Started with `open`, there's no terminal to print to.
+        let path = args.next() ?? "/dev/null"
+        freopen(path, "a", stdout)
+        freopen(path, "a", stderr)
+        setvbuf(stdout, nil, _IOLBF, 0)
     default: fail("unknown argument \(a)")
     }
 }
@@ -77,14 +86,19 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate {
 
 var recorder: Recorder?
 
+// ScreenCaptureKit's streams need a window-server connection, which NSApplication sets up.
+_ = NSApplication.shared
+NSApp.setActivationPolicy(.prohibited)
+
 Task {
     let content: SCShareableContent
     do {
         content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
     } catch {
-        fail("no Screen Recording permission for this terminal? (\(error.localizedDescription))")
+        fail("no Screen Recording permission (\(error.localizedDescription))")
     }
-    let windows = content.windows.filter { $0.owningApplication?.processID == pid && $0.windowLayer == 0 }
+    // Any level: record.sh floats the demo window above the rest.
+    let windows = content.windows.filter { $0.owningApplication?.processID == pid && $0.frame.width > 200 && $0.frame.height > 200 }
     guard let window = windows.max(by: { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height }) else {
         fail("no window for pid \(pid)")
     }

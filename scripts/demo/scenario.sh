@@ -41,7 +41,7 @@ ctl dispatch exec
 pause 1
 type_line "ls"
 pause 1
-ctl dispatch web "file://${HYPRMUX_DEMO_DIR}/page.html"
+ctl dispatch web "http://localhost:${HYPRMUX_DEMO_PORT:-8765}/"
 pause 1.6
 
 # 3. Move around: focus, swap, resize.

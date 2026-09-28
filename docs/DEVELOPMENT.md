@@ -44,13 +44,18 @@ scripts/demo/record.sh --rehearse   # play it without recording; the instance st
   under `/tmp/hyprmux-demo`.
 - **`zsh/.zshrc`** gives that shell a neutral prompt and no pager.
   `HYPRMUX_WINDOW_SIZE` (default 1440x900) fixes the window size.
-- **`recorder.swift`** records only the Hyprmux window with ScreenCaptureKit, even
-  when something covers it, without the cursor. `ffmpeg` turns the result into
-  an MP4 and a GIF.
-
-It needs Screen Recording permission for the terminal you run it from, and
-`ffmpeg`. Don't type while it plays: the pickers take real keys, so the demo
-window has to stay in front.
+- **`recorder.swift`** records only the Hyprmux window with ScreenCaptureKit
+  (even when covered, without the cursor), and `ffmpeg` turns the result into an
+  MP4 and a GIF. `record.sh` wraps it in a small signed app, "Hyprmux Demo
+  Recorder" (`.build/demo/`), started with `open`, so it has its own Screen
+  Recording permission. Allow it once in System Settings → Privacy & Security →
+  Screen & System Audio Recording.
+- **It plays in the background.** Pickers take keys without the app in front,
+  so your keyboard and focus stay yours. In demo mode (`HYPRMUX_WINDOW_SIZE`)
+  the window floats above others, because macOS stops drawing covered windows,
+  and has no title bar, because macOS badges a captured window's title bar.
+- **The web tile** loads the demo page from a local server on a free port, so
+  no file path shows in its address bar.
 
 ## Signing
 

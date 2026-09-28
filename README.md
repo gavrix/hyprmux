@@ -6,6 +6,11 @@ terminals ([libghostty](https://github.com/ghostty-org/ghostty)), web pages
 Hyprland's keybinds, dispatchers, workspaces, groups, and bezier animations,
 configured in `hyprland.conf` syntax that reloads when you save it.
 
+![Hyprmux: tiles, a web tile, tabs, a workspace picker, and a notification](docs/media/demo.gif)
+
+[Watch it as a video](docs/media/demo.mp4). Recorded by
+[`scripts/demo/record.sh`](scripts/demo/record.sh).
+
 ## Features
 
 - **Tiling:** the dwindle layout, with directional focus, move and swap, keyboard

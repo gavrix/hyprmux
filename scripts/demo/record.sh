@@ -6,8 +6,10 @@
 #   scripts/demo/record.sh --rehearse # play the scenario without recording, and leave the
 #                                     # instance open (quit it with ⇧⌘M)
 #
-# Needs Screen Recording permission for the terminal app you run it from. Don't touch the
-# keyboard while it plays: pickers need the demo window in front to take keys.
+# The recorder is a small signed app, "Hyprmux Demo Recorder", with its own Screen
+# Recording permission: macOS asks for it on the first run (allow it, then run again).
+# The demo instance plays in the background: your own windows and keyboard stay yours.
+# Pass --front to bring it forward while it plays.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 DEMO="$ROOT/scripts/demo"
@@ -17,11 +19,20 @@ SOCK="$WORK/hyprmux.sock"
 SIZE="${HYPRMUX_DEMO_SIZE:-1440x900}"
 CTL="$ROOT/.build/debug/hyprmuxctl"
 REHEARSE=0
-[[ "${1:-}" == "--rehearse" ]] && REHEARSE=1
+FRONT=0
+for a in "$@"; do
+  case "$a" in
+    --rehearse) REHEARSE=1 ;;
+    --front) FRONT=1 ;;
+  esac
+done
+RECAPP="$ROOT/.build/demo/Hyprmux Demo Recorder.app"
+RECBIN="$RECAPP/Contents/MacOS/recorder"
 
 frontmost="$(osascript -e 'tell application "System Events" to get unix id of first process whose frontmost is true' 2>/dev/null || true)"
 cleanup() {
-  [[ -n "${RECORDER_PID:-}" ]] && kill -INT "$RECORDER_PID" 2>/dev/null || true
+  pkill -INT -f "$RECBIN" 2>/dev/null || true
+  [[ -n "${SERVER_PID:-}" ]] && kill "$SERVER_PID" 2>/dev/null || true
   [[ $REHEARSE == 1 ]] || HYPRMUX_SOCKET="$SOCK" "$CTL" dispatch exit >/dev/null 2>&1 || true
   # Give the keyboard back to whatever was in front before.
   [[ -n "$frontmost" ]] && osascript -e "tell application \"System Events\" to set frontmost of (first process whose unix id is $frontmost) to true" >/dev/null 2>&1 || true
@@ -32,8 +43,22 @@ echo "building…"
 HYPRMUX_APP="$APP" "$ROOT/scripts/bundle.sh" >/dev/null
 swift build --product hyprmuxctl >/dev/null
 CTL="$(swift build --show-bin-path)/hyprmuxctl"
-mkdir -p "$ROOT/.build/demo"
-swiftc -O "$DEMO/recorder.swift" -o "$ROOT/.build/demo/recorder" 2>/dev/null
+# The recorder, as an app of its own so macOS gives it its own Screen Recording permission.
+mkdir -p "$RECAPP/Contents/MacOS"
+swiftc -O "$DEMO/recorder.swift" -o "$RECBIN" 2>/dev/null
+cat > "$RECAPP/Contents/Info.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>CFBundleExecutable</key><string>recorder</string>
+  <key>CFBundleIdentifier</key><string>dev.gavrix.hyprmux.demo-recorder</string>
+  <key>CFBundleName</key><string>Hyprmux Demo Recorder</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>LSUIElement</key><true/>
+</dict></plist>
+PLIST
+SIGN="${HYPRMUX_SIGN_IDENTITY:-$(head -n 1 "$ROOT/.sign-identity" 2>/dev/null || true)}"
+codesign --force --sign "${SIGN:--}" "$RECAPP" >/dev/null 2>&1 || codesign --force --sign - "$RECAPP" >/dev/null
 
 # A small fake project for the terminals to show.
 rm -rf "$WORK/project" "$WORK/session.json"
@@ -44,8 +69,14 @@ printf '# Project\n' > "$WORK/project/README.md"
 ( cd "$WORK/project" && git init -q && git add -A && git -c user.name=demo -c user.email=demo@example.com commit -qm "Start the project" \
   && printf '\n' >> README.md && git -c user.name=demo -c user.email=demo@example.com commit -qam "Add notes" )
 
+# The web tile's page, from a local server (a file:// URL would show a local path).
+PORT="$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')"
+cp "$DEMO/page.html" "$WORK/index.html"
+( cd "$WORK" && exec python3 -m http.server "$PORT" --bind 127.0.0.1 >/dev/null 2>&1 ) &
+SERVER_PID=$!
+
 rm -f "$SOCK"
-open -n \
+open -g -n \
   --env HYPRMUX_SOCKET="$SOCK" \
   --env HYPRMUX_CONFIG="$DEMO/hyprmux.conf" \
   --env HYPRMUX_SESSION="$WORK/session.json" \
@@ -57,20 +88,25 @@ open -n \
 for _ in $(seq 50); do [[ -S "$SOCK" ]] && break; sleep 0.1; done
 PID="$(pgrep -f "$APP/Contents/MacOS/Hyprmux" | head -1)"
 [[ -n "$PID" ]] || { echo "Hyprmux didn't start" >&2; exit 1; }
-osascript -e "tell application \"System Events\" to set frontmost of (first process whose unix id is $PID) to true"
+[[ $FRONT == 1 ]] && osascript -e "tell application \"System Events\" to set frontmost of (first process whose unix id is $PID) to true"
 sleep 1.5
 
 if [[ $REHEARSE == 0 ]]; then
-  "$ROOT/.build/demo/recorder" --pid "$PID" --out "$WORK/raw.mp4" &
-  RECORDER_PID=$!
-  sleep 1
+  rm -f "$WORK/raw.mp4" "$WORK/recorder.log"
+  open -g -n "$RECAPP" --args --pid "$PID" --out "$WORK/raw.mp4" --log "$WORK/recorder.log"
+  for _ in $(seq 50); do grep -q "recording\|recorder:" "$WORK/recorder.log" 2>/dev/null && break; sleep 0.1; done
+  if ! grep -q "^recording" "$WORK/recorder.log" 2>/dev/null; then
+    cat "$WORK/recorder.log" >&2 2>/dev/null || true
+    echo "The recorder couldn't start. If macOS asked, allow \"Hyprmux Demo Recorder\" in System Settings →" >&2
+    echo "Privacy & Security → Screen & System Audio Recording, then run this again." >&2
+    exit 1
+  fi
 fi
-CTL="$CTL" HYPRMUX_SOCKET="$SOCK" HYPRMUX_DEMO_DIR="$DEMO" "$DEMO/scenario.sh"
+CTL="$CTL" HYPRMUX_SOCKET="$SOCK" HYPRMUX_DEMO_DIR="$DEMO" HYPRMUX_DEMO_PORT="$PORT" "$DEMO/scenario.sh"
 [[ $REHEARSE == 1 ]] && exit 0
 
-kill -INT "$RECORDER_PID"
-wait "$RECORDER_PID" || true
-unset RECORDER_PID
+pkill -INT -f "$RECBIN"
+for _ in $(seq 100); do pgrep -f "$RECBIN" >/dev/null || break; sleep 0.1; done
 
 mkdir -p "$ROOT/docs/media"
 echo "encoding…"

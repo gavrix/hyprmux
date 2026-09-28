@@ -89,7 +89,15 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         window.delegate = self
         window.isReleasedWhenClosed = false
         // A fixed size (demo recordings) neither restores nor saves the window's frame.
-        if Self.fixedWindowSize == nil { window.setFrameAutosaveName("HyprmuxMonitor") }
+        if Self.fixedWindowSize == nil {
+            window.setFrameAutosaveName("HyprmuxMonitor")
+        } else {
+            // A recording plays in the background: keep the window above others so nothing
+            // covers it (macOS stops drawing fully covered windows). No title bar: macOS
+            // draws its "being captured" badge where the window buttons would be.
+            window.level = .floating
+            window.styleMask = [.borderless]
+        }
 
         specialDim.wantsLayer = true
         specialDim.layer?.backgroundColor = NSColor.black.cgColor

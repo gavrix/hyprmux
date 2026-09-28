@@ -104,6 +104,54 @@ public final class DwindleLayout {
         targetNode.parent = parent
     }
 
+    /// Where a client sits in the tree, so it can go back there later.
+    public struct Slot: Equatable, Sendable {
+        /// Clients in the sibling subtree at the time.
+        public let siblings: Set<ClientID>
+        /// The client was the first (left/top) child.
+        public let first: Bool
+        public let splitTop: Bool
+        public let ratio: Double
+    }
+
+    public func slot(of id: ClientID) -> Slot? {
+        guard let node = leaf(id), let parent = node.parent else { return nil }
+        let sibling = parent.children.first { $0 !== node }!
+        return Slot(siblings: Set(clients(under: sibling)), first: parent.children[0] === node,
+                    splitTop: parent.splitTop, ratio: parent.ratio)
+    }
+
+    /// Re-inserts `id` into a remembered slot: splits the smallest subtree that holds
+    /// all remaining former siblings. Returns false if none of them are left.
+    @discardableResult
+    public func insert(_ id: ClientID, at slot: Slot) -> Bool {
+        precondition(!contains(id), "\(id) already in layout")
+        guard let root else { return false }
+        let targets = slot.siblings.intersection(clients)
+        guard !targets.isEmpty else { return false }
+        // Descend while one child still holds every target.
+        var node = root
+        while !node.isLeaf,
+              let next = node.children.first(where: { targets.isSubset(of: Set(clients(under: $0))) }) {
+            node = next
+        }
+        let parent = Node(client: nil)
+        parent.box = node.box
+        parent.splitTop = slot.splitTop
+        parent.ratio = clampRatio(slot.ratio)
+        let newNode = Node(client: id)
+        replace(node, with: parent)
+        parent.children = slot.first ? [newNode, node] : [node, newNode]
+        newNode.parent = parent
+        node.parent = parent
+        return true
+    }
+
+    private func clients(under n: Node) -> [ClientID] {
+        if let c = n.client { return [c] }
+        return n.children.flatMap { clients(under: $0) }
+    }
+
     public func remove(_ id: ClientID) {
         guard let node = leaf(id) else { return }
         guard let parent = node.parent else {

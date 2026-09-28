@@ -228,6 +228,34 @@ final class WindowManagerTests: XCTestCase {
         XCTAssertEqual(wm.snapshot().placement(ClientID(2))?.floating, false)
     }
 
+    func testUnfloatReturnsToSameSpot() {
+        let wm = makeWM()
+        for i in 1...4 { wm.addClient(ClientID(UInt64(i))) }
+        let before = wm.snapshot().placements.reduce(into: [ClientID: CGRect]()) { $0[$1.id] = $1.frame }
+        for id in [2, 1, 4].map({ ClientID(UInt64($0)) }) {
+            wm.focus(id)
+            wm.dispatch(.toggleFloating)
+            wm.setFloatingFrame(id, CGRect(x: 1200, y: 800, width: 200, height: 100))  // far from its old spot
+            wm.dispatch(.toggleFloating)
+            let after = wm.snapshot().placements.reduce(into: [ClientID: CGRect]()) { $0[$1.id] = $1.frame }
+            XCTAssertEqual(after, before, "re-tiling \(id) should restore the layout exactly")
+        }
+    }
+
+    func testUnfloatFallsBackWhenNeighborGone() {
+        let wm = makeWM()
+        wm.addClient(ClientID(1))
+        wm.addClient(ClientID(2))
+        wm.dispatch(.toggleFloating)       // float 2; its sibling was 1
+        wm.addClient(ClientID(3))          // 3 tiles next to 1
+        wm.removeClient(ClientID(1))
+        wm.focus(ClientID(2))
+        wm.dispatch(.toggleFloating)
+        let snap = wm.snapshot()
+        XCTAssertEqual(snap.placement(ClientID(2))?.floating, false)
+        XCTAssertEqual(snap.placements.filter { !$0.floating }.count, 2)
+    }
+
     func testFloatingAloneStartsCentered() {
         let wm = makeWM()
         wm.addClient(ClientID(1))

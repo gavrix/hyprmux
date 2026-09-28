@@ -80,6 +80,8 @@ public final class WindowManager {
         var workspace: WorkspaceID
         var floating: Bool
         var floatRect: CGRect?
+        /// Where the client was tiled before it floated, to return there.
+        var tiledSlot: DwindleLayout.Slot?
     }
 
     public var settings: WMSettings {
@@ -345,6 +347,7 @@ public final class WindowManager {
               target != state.workspace, let from = workspaces[state.workspace] else { return }
         detach(id, from: from)
         if from.lastFocused == id { from.lastFocused = nil }
+        clients[id]!.tiledSlot = nil  // a slot only makes sense on its own workspace
         let to = ensure(target)
         if to.fullscreen != nil { to.fullscreen = nil }
         clients[id]!.workspace = target
@@ -541,9 +544,16 @@ public final class WindowManager {
             let center = clients[f]?.floatRect?.center
             ws.floating.removeAll { $0 == f }
             clients[f]!.floating = false
-            insertTiled(f, into: ws, useCursor: false, focal: center)
+            // Back to where it was tiled, if that spot still makes sense.
+            if let slot = clients[f]?.tiledSlot, ws.tiled.insert(f, at: slot) {
+                clients[f]!.tiledSlot = nil
+            } else {
+                clients[f]!.tiledSlot = nil
+                insertTiled(f, into: ws, useCursor: false, focal: center)
+            }
         } else {
             let current = tiledFrames(ws)[f]
+            clients[f]!.tiledSlot = ws.tiled.slot(of: f)
             ws.tiled.remove(f)
             clients[f]!.floating = true
             if clients[f]!.floatRect == nil {

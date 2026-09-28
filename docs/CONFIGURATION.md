@@ -166,7 +166,7 @@ Groups hold several windows as tabs in one tile.
 | `engine` | `webkit` | `webkit` (light, no passkeys) or `chromium` (bundled CEF; passkeys from a phone or security key). Needs a restart. |
 | `home` | DuckDuckGo | Page for `webnav home`. |
 | `search` | DuckDuckGo | Search URL for address-bar text that isn't a URL; `%s` is the query. |
-| `open_terminal_links` | true | ⌘-click on a link in a terminal opens a web tile instead of your browser. |
+| `open_terminal_links` | true | ⌘-click on a link in a terminal opens a web tile instead of your browser. Over a link, ⌘-click opens it even when `$mod` + click is bound to `movewindow`. |
 | `address_bar` | true | Show the address bar. |
 | `chromium_extensions` | — | Comma-separated unpacked extension folders to load into Chromium. Extensions that need tabs (like 1Password) don't work in tiles. |
 | `chromium_flags` | — | Space-separated Chromium switches, e.g. `remote-debugging-port=9333`. |

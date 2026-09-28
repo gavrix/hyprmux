@@ -136,6 +136,9 @@ final class TerminalView: NSView, NSTextInputClient {
     }
 
     func runtimeSetPwd(_ p: String) { pwd = p }
+    /// The link under the pointer while the link modifier (Cmd) is held, else nil.
+    private(set) var hoveredLink: String?
+    func runtimeSetHoveredLink(_ l: String?) { hoveredLink = l }
     func runtimeSetCellSize(_ s: CGSize) { cellSize = s }
 
     func runtimeSetMouseShape(_ shape: ghostty_action_mouse_shape_e) {

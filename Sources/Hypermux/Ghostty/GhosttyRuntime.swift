@@ -220,8 +220,16 @@ final class GhosttyRuntime {
             let data = Data(bytes: ptr, count: Int(u.len))
             guard let str = String(data: data, encoding: .utf8) else { return false }
             let url = URL(string: str) ?? URL(fileURLWithPath: (str as NSString).expandingTildeInPath)
-            if let v, v.host?.terminal(v, openURL: url) == true { return true }
-            NSWorkspace.shared.open(url)
+            // Ghostty holds the surface's renderer lock during a link click. Opening a tile here
+            // moves focus, which calls back into the surface and deadlocks. Open it after.
+            DispatchQueue.main.async { [weak v] in
+                if let v, v.host?.terminal(v, openURL: url) == true { return }
+                NSWorkspace.shared.open(url)
+            }
+        case GHOSTTY_ACTION_MOUSE_OVER_LINK:
+            guard let v else { return false }
+            let l = action.action.mouse_over_link
+            v.runtimeSetHoveredLink(l.url.flatMap { l.len > 0 ? String(data: Data(bytes: $0, count: Int(l.len)), encoding: .utf8) : nil })
         case GHOSTTY_ACTION_DESKTOP_NOTIFICATION:
             // OSC 9 / OSC 777 from a program in the terminal.
             guard let v else { return false }

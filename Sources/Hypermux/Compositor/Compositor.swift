@@ -784,6 +784,11 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
             if hud.contains(p) { return e }
             let button = e.type == .leftMouseDown ? 272 : 273
             let mods = modifiers(e.modifierFlags)
+            // Cmd+click on a terminal link opens the link, even when $mod+click moves windows.
+            if button == 272, e.modifierFlags.contains(.command), let id = wm.client(at: p), let term = views[id]?.surface as? TerminalView,
+               term.hoveredLink != nil {
+                return e
+            }
             guard let bind = config.binds.first(where: {
                 $0.flags.contains("m") && $0.mods == mods && $0.trigger == .mouse(button)
             }), let id = wm.client(at: p), let v = views[id] else {

@@ -31,6 +31,7 @@ configured in `hyprland.conf` syntax that reloads when you save it.
 - **Session restore:** quitting and relaunching brings back the workspaces, the
   layout, terminal directories, programs like nvim, agent sessions (pi, Codex),
   web pages, and simulators.
+- **Layouts:** save a workspace as a template (⇧⌘U) and summon it again later (⌘U).
 - **Notifications:** Hypermux's own notices, styled like your terminal and
   your window borders. Config errors, warnings, and terminal notifications
   (OSC 9 and OSC 777) show up there.
@@ -87,6 +88,7 @@ other Macs needs a Developer ID signature and notarization.
 | ⌘1…9 / ⇧⌘1…9 | switch workspace / move the window there |
 | ⌘P / ⇧⌘P | pick a workspace to go to / to move the window to |
 | ⌘N | name the current workspace |
+| ⌘U / ⇧⌘U | summon a layout / save this workspace as one |
 | ⌘S | scratchpad |
 | ⇧⌘Space | float / re-tile |
 | ⌘F / ⇧⌘F | maximize / fullscreen the window |

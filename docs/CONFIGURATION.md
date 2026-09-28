@@ -308,6 +308,7 @@ session {
 | `programs` | `nvim, vim, lazygit, htop, btop, less, man` | Foreground programs that start again. `*` allows any. Only these re-run: a restart must not repeat a deploy. |
 | `deny` | — | Programs never re-run, even with `programs = *`. |
 | `resume:KIND` | `pi`, `codex` | The command that resumes an agent session of that kind. `{id}` is the session id. |
+| `start:KIND` | `pi`, `codex` | The command that starts a new session of that kind. Layouts use it. |
 
 **Agent sessions.** An agent tells Hypermux which session its terminal holds with
 one line on the control socket (`hypermuxctl resume '{…}'` works too):
@@ -321,6 +322,48 @@ The report counts only while that process runs in the terminal's foreground, and
 when `file` is given, while that file exists. So an agent you exited comes back as
 a plain shell. For pi, `~/.pi/agent/extensions/hypermux-session.ts` sends the
 report on every session start (launch, `/new`, `/resume`, fork).
+
+### Layouts
+
+A layout is a workspace template: a saved arrangement of windows you can summon
+again later. Layouts live in `~/.config/hypermux/layouts/NAME.json`, in the same
+format as the session file.
+
+- **Save one:** arrange a workspace, then press ⇧⌘U (`picker, savelayout`) and
+  give it a name. The workspace takes the name too.
+- **Summon one:** press ⌘U (`picker, layout`) and choose it. If a workspace with
+  that name already has windows, Hypermux just goes there. Otherwise it builds
+  the workspace on the empty workspace with that name, or the first free number.
+  Summoning twice never opens a second copy.
+
+What a layout keeps: the split tree, floating windows, groups, each terminal's
+directory, programs from `session:programs`, web pages, and simulators. An agent
+is kept by kind only, so summoning starts a new session with `session:start:KIND`
+instead of reopening the one it was saved from.
+
+Layouts are easy to write by hand. A single tile is an object with a `kind`; a
+split has `split` (`h` side by side, `v` stacked), an optional `ratio` (1 is
+even), and two `children`; `tabs` makes a group:
+
+```json
+{
+  "workspaces": [{
+    "name": "dev",
+    "tiled": {"split": "h", "ratio": 1.2, "children": [
+      {"kind": "terminal", "cwd": "~/src/app", "agent": {"kind": "pi"}},
+      {"split": "v", "children": [
+        {"kind": "terminal", "cwd": "~/src/app", "command": "nvim ."},
+        {"tabs": [{"kind": "web", "url": "http://localhost:3000"},
+                  {"kind": "terminal", "cwd": "~/src/app", "command": "npm run dev"}]}
+      ]}
+    ]}
+  }]
+}
+```
+
+A `command` in a layout you wrote runs as written (the `programs` list only
+applies to what Hypermux records). A file can hold several workspaces, each with
+its own `name`; summoning it opens all of them and shows the first.
 
 ### Startup programs
 
@@ -381,7 +424,7 @@ These names work in `bind` lines and with `hypermuxctl dispatch`.
 | `workspace` | `N`, `+1`/`-1`, `e+1`/`e-1`, `previous`, `empty`, `special[:name]`, `name:NAME` | Switch workspace. `e±1` skips empty workspaces. `name:` finds the workspace with that name, or names the first free number. |
 | `movetoworkspace` / `movetoworkspacesilent` | same | Move the focused window there (and follow it, or stay). |
 | `renameworkspace` | `N [name]` | Name workspace N. No name clears it. |
-| `picker` | `workspace`, `movetoworkspace`, `movetoworkspacesilent`, `renameworkspace` | Hypermux's own pickers: go to a workspace, move the window to one, or name the current one. See [Workspaces](#workspaces). |
+| `picker` | `workspace`, `movetoworkspace`, `movetoworkspacesilent`, `renameworkspace`, `layout`, `savelayout` | Hypermux's own pickers: go to a workspace, move the window to one, name the current one, or summon or save a layout. See [Workspaces](#workspaces) and [Layouts](#layouts). |
 | `togglespecialworkspace` | [name] | Show or hide a scratchpad. |
 | `togglefloating` | | Float or re-tile. A first float centers the window; re-tiling returns it to its old slot. |
 | `fullscreen` | `0` or `1` | 0 = cover the screen, 1 = maximize within gaps. |

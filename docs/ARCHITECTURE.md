@@ -238,6 +238,10 @@ Hyprland overlay layer: elements sit above every tile and never tile.
 - **Restoring:** surfaces are created and adopted (views only), then the model
   places them. A restored command is the shell's `initial_input`, so the shell
   survives the program.
+- **Layouts** reuse the schema for one workspace: `exportWorkspace` saves it
+  with a `name` instead of an `id`, and `loadLayout` finds the named workspace or
+  builds it on a free number (`Layouts.swift` has the picker and the files).
+  Agents are saved by kind only and start with `session:start:KIND`.
 - **When it saves:** 2 s after `apply`, every 30 s, and on quit, before the
   shells close. CEF's quit path skips `applicationShouldTerminate`, so
   `main.swift`'s terminate handler saves too.

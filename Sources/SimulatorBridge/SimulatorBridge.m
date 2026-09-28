@@ -69,7 +69,7 @@ static unsigned long long DeviceState(id d) {
 }
 
 static NSError *HMErr(NSString *msg) {
-  return [NSError errorWithDomain:@"hypermux.simulator" code:1 userInfo:@{NSLocalizedDescriptionKey: msg}];
+  return [NSError errorWithDomain:@"hyprmux.simulator" code:1 userInfo:@{NSLocalizedDescriptionKey: msg}];
 }
 
 // MARK: - HMSimDeviceInfo
@@ -237,7 +237,7 @@ static NSString *DeveloperDir(void) {
     _inputUnavailableReason = [NSString stringWithFormat:@"no HID client: %@", err.localizedDescription ?: @"unknown"];
     return NO;
   }
-  _hidQueue = dispatch_queue_create("hypermux.simulator.hid", DISPATCH_QUEUE_SERIAL);
+  _hidQueue = dispatch_queue_create("hyprmux.simulator.hid", DISPATCH_QUEUE_SERIAL);
   return YES;
 }
 
@@ -249,10 +249,10 @@ static NSString *DeveloperDir(void) {
   dispatch_async(q, ^{
     @try {
       [(id<HMPrivHIDClient>)client sendWithMessage:message freeWhenDone:YES completionQueue:q completion:^(NSError *e) {
-        if (e) NSLog(@"hypermux: simulator HID send failed: %@", e);
+        if (e) NSLog(@"hyprmux: simulator HID send failed: %@", e);
       }];
     } @catch (NSException *e) {
-      NSLog(@"hypermux: simulator HID send threw: %@", e.reason);
+      NSLog(@"hyprmux: simulator HID send threw: %@", e.reason);
     }
   });
 }

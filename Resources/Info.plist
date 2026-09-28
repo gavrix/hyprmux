@@ -3,11 +3,11 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleDevelopmentRegion</key><string>en</string>
-    <key>CFBundleExecutable</key><string>Hypermux</string>
-    <key>CFBundleIdentifier</key><string>dev.gavrix.hypermux</string>
+    <key>CFBundleExecutable</key><string>Hyprmux</string>
+    <key>CFBundleIdentifier</key><string>dev.gavrix.hyprmux</string>
     <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
-    <key>CFBundleName</key><string>Hypermux</string>
-    <key>CFBundleDisplayName</key><string>Hypermux</string>
+    <key>CFBundleName</key><string>Hyprmux</string>
+    <key>CFBundleDisplayName</key><string>Hyprmux</string>
     <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>0.1.0</string>

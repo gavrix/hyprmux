@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build Hypermux and assemble build/Hypermux.app.
+# Build Hyprmux and assemble build/Hyprmux.app.
 # Usage: scripts/bundle.sh [debug|release]
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -11,17 +11,17 @@ cd "$ROOT"
 "$ROOT/scripts/fetch-cef.sh" >/dev/null
 "$ROOT/scripts/gen-default-config.sh" >/dev/null
 
-# Signing identity, first found: HYPERMUX_SIGN_IDENTITY; the first line of .sign-identity
-# (untracked; e.g. your Apple Development certificate's name); "Hypermux Local Signing"
+# Signing identity, first found: HYPRMUX_SIGN_IDENTITY; the first line of .sign-identity
+# (untracked; e.g. your Apple Development certificate's name); "Hyprmux Local Signing"
 # when it exists (scripts/make-signing-cert.sh); else ad hoc. A stable identity keeps macOS
 # privacy permissions (Screen Recording, ...) across rebuilds; an ad-hoc signature loses them.
-SIGN="${HYPERMUX_SIGN_IDENTITY:-}"
+SIGN="${HYPRMUX_SIGN_IDENTITY:-}"
 if [[ -z "$SIGN" && -f "$ROOT/.sign-identity" ]]; then
   SIGN="$(head -n 1 "$ROOT/.sign-identity" | tr -d '\r')"
 fi
 if [[ -z "$SIGN" ]]; then
-  if security find-certificate -c "Hypermux Local Signing" >/dev/null 2>&1; then
-    SIGN="Hypermux Local Signing"
+  if security find-certificate -c "Hyprmux Local Signing" >/dev/null 2>&1; then
+    SIGN="Hyprmux Local Signing"
   else
     SIGN="-"
   fi
@@ -32,13 +32,13 @@ sign() {
   codesign --force --sign - "$1" >/dev/null 2>&1 || true
 }
 
-swift build -c "$CONFIG" --product Hypermux
-BIN="$(swift build -c "$CONFIG" --show-bin-path)/Hypermux"
+swift build -c "$CONFIG" --product Hyprmux
+BIN="$(swift build -c "$CONFIG" --show-bin-path)/Hyprmux"
 
-APP="$ROOT/build/Hypermux.app"
+APP="$ROOT/build/Hyprmux.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp "$BIN" "$APP/Contents/MacOS/Hypermux"
+cp "$BIN" "$APP/Contents/MacOS/Hyprmux"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
 # App icon, rendered from Resources/AppIcon/*.svg by scripts/make-icon.sh.
 cp "$ROOT/Resources/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
@@ -63,19 +63,19 @@ fi
 # Chromium (CEF): framework + helper apps, when the SDK is present (scripts/fetch-cef.sh).
 CEF_FW="$ROOT/vendor/cef/Release/Chromium Embedded Framework.framework"
 if [[ -d "$CEF_FW" ]]; then
-  swift build -c "$CONFIG" --product HypermuxHelper
-  HELPER_BIN="$(swift build -c "$CONFIG" --show-bin-path)/HypermuxHelper"
+  swift build -c "$CONFIG" --product HyprmuxHelper
+  HELPER_BIN="$(swift build -c "$CONFIG" --show-bin-path)/HyprmuxHelper"
   mkdir -p "$APP/Contents/Frameworks"
   # clonefile copy: instant on APFS, no extra disk.
   cp -Rc "$CEF_FW" "$APP/Contents/Frameworks/" 2>/dev/null || cp -R "$CEF_FW" "$APP/Contents/Frameworks/"
   sign "$APP/Contents/Frameworks/Chromium Embedded Framework.framework"
   # Chromium looks for "<App> Helper (<Kind>).app" next to the framework.
   for kind in "" " (GPU)" " (Renderer)" " (Alerts)"; do
-    name="Hypermux Helper$kind"
+    name="Hyprmux Helper$kind"
     case "$kind" in
-      " (Renderer)") bid="dev.gavrix.hypermux.helper.renderer" ;;
-      " (Alerts)") bid="dev.gavrix.hypermux.helper.alerts" ;;
-      *) bid="dev.gavrix.hypermux.helper" ;;
+      " (Renderer)") bid="dev.gavrix.hyprmux.helper.renderer" ;;
+      " (Alerts)") bid="dev.gavrix.hyprmux.helper.alerts" ;;
+      *) bid="dev.gavrix.hyprmux.helper" ;;
     esac
     H="$APP/Contents/Frameworks/$name.app"
     mkdir -p "$H/Contents/MacOS"

@@ -1,6 +1,6 @@
 # Development
 
-How Hypermux is built, tested, and changed. This is the working style it was
+How Hyprmux is built, tested, and changed. This is the working style it was
 developed with: the rules exist because each one prevented a real bug or a
 disrupted session.
 
@@ -12,8 +12,8 @@ scripts/fetch-cef.sh          # Chromium SDK; needed to build even if you use We
                               # (bundle.sh runs both)
 swift build                   # all targets
 swift test                    # core tests
-scripts/bundle.sh             # build/Hypermux.app (debug); `scripts/bundle.sh release` for release
-open build/Hypermux.app
+scripts/bundle.sh             # build/Hyprmux.app (debug); `scripts/bundle.sh release` for release
+open build/Hyprmux.app
 ```
 
 `bundle.sh` does four things:
@@ -31,18 +31,18 @@ The framework copy is an APFS clone, so bundling takes a few seconds.
 
 macOS ties privacy permissions (Screen Recording, Accessibility, folder access)
 to an app's signature. An ad-hoc signature changes with every build, so each
-rebuild silently loses them. Anything that runs inside Hypermux loses them too,
-because its shells inherit Hypermux's identity: `screencapture` stopped working
+rebuild silently loses them. Anything that runs inside Hyprmux loses them too,
+because its shells inherit Hyprmux's identity: `screencapture` stopped working
 this way. Sign with a stable identity and a permission granted once stays
 granted.
 
 `scripts/bundle.sh` signs the app, the Chromium framework, and the helper apps
 with the first of:
 
-1. `HYPERMUX_SIGN_IDENTITY`;
+1. `HYPRMUX_SIGN_IDENTITY`;
 2. the first line of `.sign-identity` in the repo (untracked), for example
    `Apple Development: Your Name (XXXXXXXXXX)`;
-3. "Hypermux Local Signing", if it exists;
+3. "Hyprmux Local Signing", if it exists;
 4. ad hoc, with a warning.
 
 **With an Apple developer account** (a free personal team works): in Xcode, open
@@ -52,7 +52,7 @@ Development certificate. Put its name in `.sign-identity`
 name, so permissions survive renewals.
 
 **Without one:** `scripts/make-signing-cert.sh` creates a self-signed
-"Hypermux Local Signing" identity in the login keychain (10 years, local only).
+"Hyprmux Local Signing" identity in the login keychain (10 years, local only).
 The first build that uses it asks for your login password; choose Always Allow.
 
 The build prints which identity it used. After switching identities, grant the
@@ -61,9 +61,9 @@ permissions once more.
 ## Where code goes
 
 - **Decisions in the core.** Anything that decides layout, focus, or state
-  goes in `HypermuxCore`, with a unit test. It has no AppKit, so it's fast to
+  goes in `HyprmuxCore`, with a unit test. It has no AppKit, so it's fast to
   test and can't depend on view state.
-- **Execution in the app.** `Hypermux` executes: it applies snapshots,
+- **Execution in the app.** `Hyprmux` executes: it applies snapshots,
   animates, and bridges to libghostty, CEF, and SimulatorKit. When the app
   needs the model to do something, it dispatches. When the model needs the app
   to do something, it emits an `Effect`.
@@ -81,7 +81,7 @@ permissions once more.
 
 ## Config changes
 
-- **Where to change it:** edit [`config/hypermux.conf`](../config/hypermux.conf),
+- **Where to change it:** edit [`config/hyprmux.conf`](../config/hyprmux.conf),
   then run `scripts/gen-default-config.sh` (bundle.sh does too). A test fails
   if the embedded copy drifts from the file.
 - **Parsing:** new options go in `ConfigParser.apply`. Unknown keys become
@@ -91,23 +91,23 @@ permissions once more.
 
 ## Testing a running app
 
-Hypermux is often the developer's own daily environment. Test in a separate
+Hyprmux is often the developer's own daily environment. Test in a separate
 instance, never in theirs.
 
 ```sh
-cp -Rc build/Hypermux.app /tmp/HypermuxTest.app          # separate copy
-mkdir -p /tmp/hmcfg && cp ~/.config/hypermux/hypermux.conf /tmp/hmcfg/
-sed -i '' 's/follow_mouse = 1/follow_mouse = 0/' /tmp/hmcfg/hypermux.conf
+cp -Rc build/Hyprmux.app /tmp/HyprmuxTest.app          # separate copy
+mkdir -p /tmp/hmcfg && cp ~/.config/hyprmux/hyprmux.conf /tmp/hmcfg/
+sed -i '' 's/follow_mouse = 1/follow_mouse = 0/' /tmp/hmcfg/hyprmux.conf
 open -g -n \
-  --env HYPERMUX_SOCKET=/tmp/hm-test/hypermux.sock \
-  --env HYPERMUX_CONFIG=/tmp/hmcfg/hypermux.conf \
-  --env HYPERMUX_CHROMIUM_PROFILE=/tmp/hm-chromium \
-  --env HYPERMUX_SESSION=/tmp/hm-test/session.json \
-  /tmp/HypermuxTest.app
-export HYPERMUX_SOCKET=/tmp/hm-test/hypermux.sock
-hypermuxctl dispatch exec
-hypermuxctl clients
-hypermuxctl dispatch exit        # quit it (Chromium processes exit cleanly)
+  --env HYPRMUX_SOCKET=/tmp/hm-test/hyprmux.sock \
+  --env HYPRMUX_CONFIG=/tmp/hmcfg/hyprmux.conf \
+  --env HYPRMUX_CHROMIUM_PROFILE=/tmp/hm-chromium \
+  --env HYPRMUX_SESSION=/tmp/hm-test/session.json \
+  /tmp/HyprmuxTest.app
+export HYPRMUX_SOCKET=/tmp/hm-test/hyprmux.sock
+hyprmuxctl dispatch exec
+hyprmuxctl clients
+hyprmuxctl dispatch exit        # quit it (Chromium processes exit cleanly)
 ```
 
 Why each setting:
@@ -123,7 +123,7 @@ Why each setting:
 
 Rules that came out of real mistakes:
 
-- **Never restart or kill the user's running Hypermux** without asking. It
+- **Never restart or kill the user's running Hyprmux** without asking. It
   closes their shells.
 - **Don't activate the test app** unless a test needs it: typing into text
   fields and page buttons does. Activate it briefly, then give focus back to
@@ -132,7 +132,7 @@ Rules that came out of real mistakes:
   path. The paste path (`ghostty_surface_text`) is a bracketed paste, which
   zsh highlights instead of running.
 - **Use throwaway simulators** for anything that sends input:
-  `xcrun simctl create "Hypermux Test" ...`, boot it, delete it after. Only read
+  `xcrun simctl create "Hyprmux Test" ...`, boot it, delete it after. Only read
   (display) from the user's simulators.
 - **Clean up** test instances, temporary configs, profiles, simulators, and
   screenshots.
@@ -141,17 +141,17 @@ Rules that came out of real mistakes:
 
 | Tool | Use |
 |---|---|
-| `hypermuxctl sendkey MODS, key` | Presses a key through the real path (binds, then the surface). Works in the background for binds and terminals. |
-| `hypermuxctl senddrag` / `sendmouse` | Mouse input, paced like a hand. `sendmouse down` … `up` for holds. |
-| `hypermuxctl hittest x y` | Which views a click reaches. This found the dim overlay that swallowed every click. |
-| `hypermuxctl debug` | App active, key window, first responder, `keyboardClient`, the frames of HUD panels on screen, and the open picker (query, rows, selection). Use it for any "wrong window" bug, and to find where to click a notification. |
-| `hypermuxctl clients` | Frames, focus, groups, URLs. |
+| `hyprmuxctl sendkey MODS, key` | Presses a key through the real path (binds, then the surface). Works in the background for binds and terminals. |
+| `hyprmuxctl senddrag` / `sendmouse` | Mouse input, paced like a hand. `sendmouse down` … `up` for holds. |
+| `hyprmuxctl hittest x y` | Which views a click reaches. This found the dim overlay that swallowed every click. |
+| `hyprmuxctl debug` | App active, key window, first responder, `keyboardClient`, the frames of HUD panels on screen, and the open picker (query, rows, selection). Use it for any "wrong window" bug, and to find where to click a notification. |
+| `hyprmuxctl clients` | Frames, focus, groups, URLs. |
 | `screencapture -x -o -l <windowid>` | Captures one window even when covered. Find the window ID with `CGWindowListCopyWindowInfo` for the test app's pid. |
 | Chromium `remote-debugging-port` | Set `web:chromium_flags = remote-debugging-port=9333` in a test config, then query targets and evaluate JavaScript over the DevTools protocol. |
 
 **Coordinate caution:** the test window opens on whichever display it last
 used, so its size changes between runs. Compute click positions from
-`hypermuxctl clients` (tile frames, the simulator's `pixels`), never hard-code
+`hyprmuxctl clients` (tile frames, the simulator's `pixels`), never hard-code
 them. Several "bugs" during development were clicks landing outside the
 window.
 
@@ -173,7 +173,7 @@ Each one cost a debugging session.
   itself and hands other keys to the first responder when the app is inactive.
   Text-field typing still needs a brief activation.
 - **Follow-mouse while inactive.** Terminals track the mouse even when
-  Hypermux isn't in front. Follow-mouse must check `NSApp.isActive`.
+  Hyprmux isn't in front. Follow-mouse must check `NSApp.isActive`.
 - **Chromium `DoClose`.** Returning false closes the top-level window, which
   is the monitor. Close the browser's own view instead.
 - **Chromium popups** need a user gesture, as in any browser. Test them with a
@@ -189,14 +189,14 @@ Each one cost a debugging session.
   the app is hidden, so tiles and HUD panels freeze at their start frame, often
   offscreen or at alpha 0. Hide the test app only when no test depends on it.
 - **Ghostty filters desktop notifications.** A repeated OSC 9 with the same
-  text, or several in quick succession, may never reach Hypermux. Put
+  text, or several in quick succession, may never reach Hyprmux. Put
   `$RANDOM` in test messages and space them out.
 - **Modifier combos in a grab.** An early picker matched Return by key code alone,
   so ⌘↩ (the new-terminal bind) chose a row instead of doing nothing. Keys a
   HUD element takes must check modifiers; ⌘ and ⌥ combos go to the text field.
 - **First click in an inactive window.** AppKit uses it to activate the app
   unless the view returns true from `acceptsFirstMouse`. HUD panels do, so a
-  click on a notification works while Hypermux is in the background.
+  click on a notification works while Hyprmux is in the background.
 
 ## Commits
 

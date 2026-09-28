@@ -1,6 +1,6 @@
 # Third-party notices
 
-Hypermux builds on the following projects. None of their binaries are checked
+Hyprmux builds on the following projects. None of their binaries are checked
 into this repository; the fetch scripts download pinned versions.
 
 | Component | Used as | License |
@@ -11,7 +11,7 @@ into this repository; the fetch scripts download pinned versions.
 | [Chromium Embedded Framework](https://github.com/chromiumembedded/cef) | Optional Chromium web engine, fetched by `scripts/fetch-cef.sh`. Chromium itself carries many component licenses; see the `CREDITS.html` in CEF distributions. | BSD-3-Clause (CEF), various (Chromium) |
 | [idb](https://github.com/facebook/idb) | `Sources/SimulatorBridge/idb/Indigo.h` and `Mach.h` (simulator HID wire format), and the design of the single-touch message builder. | MIT |
 
-Hypermux also uses Apple's private CoreSimulator and SimulatorKit frameworks,
+Hyprmux also uses Apple's private CoreSimulator and SimulatorKit frameworks,
 loaded at runtime from the installed Xcode, for iOS Simulator tiles. They are
 not redistributed.
 

@@ -1,4 +1,4 @@
-# Hypermux
+# Hyprmux
 
 A Hyprland-style tiling environment for macOS, inside one window. Tiles hold
 terminals ([libghostty](https://github.com/ghostty-org/ghostty)), web pages
@@ -32,12 +32,12 @@ configured in `hyprland.conf` syntax that reloads when you save it.
   layout, terminal directories, programs like nvim, agent sessions (pi, Codex),
   web pages, and simulators.
 - **Layouts:** save a workspace as a template (⇧⌘U) and summon it again later (⌘U).
-- **Notifications:** Hypermux's own notices, styled like your terminal and
+- **Notifications:** Hyprmux's own notices, styled like your terminal and
   your window borders. Config errors, warnings, and terminal notifications
   (OSC 9 and OSC 777) show up there.
 - **Pickers:** fzf-style lists in the same style, for choosing among several
   things: workspaces, booted simulators. Type to filter, Return to choose.
-- **Scripting:** `hypermuxctl`, a `hyprctl`-like CLI over a Unix socket.
+- **Scripting:** `hyprmuxctl`, a `hyprctl`-like CLI over a Unix socket.
 
 ## Requirements
 
@@ -53,10 +53,10 @@ configured in `hyprland.conf` syntax that reloads when you save it.
 ## Build
 
 ```sh
-git clone <this repo> hypermux && cd hypermux
+git clone <this repo> hyprmux && cd hyprmux
 scripts/bundle.sh           # downloads libghostty + the Chromium SDK (pinned, checksummed),
-                            # builds, and assembles build/Hypermux.app
-open build/Hypermux.app
+                            # builds, and assembles build/Hyprmux.app
+open build/Hyprmux.app
 ```
 
 The first run downloads about 260 MB and compiles everything, which takes a few
@@ -66,8 +66,8 @@ downloaded SDKs in `vendor/`.
 
 - **Release build:** `scripts/bundle.sh release`.
 - **Tests:** `swift test`.
-- **CLI:** `swift build --product hypermuxctl` builds it into
-  `.build/debug/hypermuxctl`.
+- **CLI:** `swift build --product hyprmuxctl` builds it into
+  `.build/debug/hyprmuxctl`.
 
 The app is signed ad hoc unless you give it a stable identity, and then macOS
 forgets permissions like Screen Recording on every rebuild. See
@@ -94,19 +94,19 @@ Developer ID signature and notarization.
 | ⌘S | scratchpad |
 | ⇧⌘Space | float / re-tile |
 | ⌘F / ⇧⌘F | maximize / fullscreen the window |
-| ⌃⌘F | full-screen Hypermux itself |
+| ⌃⌘F | full-screen Hyprmux itself |
 | ⌘G, ⌃Tab | make a group, switch tabs |
 | ⌘ + drag / ⌘ + right-drag | move / resize with the mouse |
 | ⇧⌘R | reload config |
 
-The full default set is in [`config/hypermux.conf`](config/hypermux.conf).
+The full default set is in [`config/hyprmux.conf`](config/hyprmux.conf).
 Keys no bind claims go to the focused tile, so ⌘C and ⌘V still work in
 terminals.
 
 ## Configuration
 
-Hypermux reads `~/.config/hypermux/hypermux.conf`. Without it, the built-in
-default applies; **Hypermux → Open Config…** (⌘,) writes that default out for you
+Hyprmux reads `~/.config/hyprmux/hyprmux.conf`. Without it, the built-in
+default applies; **Hyprmux → Open Config…** (⌘,) writes that default out for you
 to edit. Saving reloads it live. Your normal Ghostty config still applies to
 terminals, and a `ghostty { }` block can override it.
 
@@ -116,15 +116,15 @@ syntax, all dispatchers, and the IPC commands.
 ## Scripting
 
 ```sh
-hypermuxctl dispatch workspace 2
-hypermuxctl dispatch web github.com
-hypermuxctl dispatch sim booted
-hypermuxctl clients            # JSON for every window
+hyprmuxctl dispatch workspace 2
+hyprmuxctl dispatch web github.com
+hyprmuxctl dispatch sim booted
+hyprmuxctl clients            # JSON for every window
 ```
 
-Shells inside Hypermux get `HYPERMUX_SOCKET`, `HYPERMUX_CLIENT`, and
-`HYPERMUX_PID`, so tools can identify their app instance and terminal while
-`hypermuxctl` talks to the right control socket.
+Shells inside Hyprmux get `HYPRMUX_SOCKET`, `HYPRMUX_CLIENT`, and
+`HYPRMUX_PID`, so tools can identify their app instance and terminal while
+`hyprmuxctl` talks to the right control socket.
 
 ## Documentation
 
@@ -136,9 +136,9 @@ Shells inside Hypermux get `HYPERMUX_SOCKET`, `HYPERMUX_CLIENT`, and
 
 ## Limitations
 
-- **One monitor:** one Hypermux window acts as the monitor; there's no
+- **One monitor:** one Hyprmux window acts as the monitor; there's no
   multi-display support yet.
-- **Native macOS Spaces:** Hypermux can't move windows between them. macOS
+- **Native macOS Spaces:** Hyprmux can't move windows between them. macOS
   offers no API for it with SIP on.
 - **Passkeys:** the WebKit engine has none. The Chromium engine supports phone
   (QR) and security-key passkeys. Mac passkeys (Touch ID, iCloud Keychain)

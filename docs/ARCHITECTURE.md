@@ -1,21 +1,21 @@
 # Architecture
 
-Hypermux is one macOS app that acts as a small compositor. Its window is the
+Hyprmux is one macOS app that acts as a small compositor. Its window is the
 "monitor". Inside it, tiles hold terminals, web pages, or iOS Simulator
 screens, laid out and driven the way Hyprland lays out and drives windows.
 There is no Apple window-management API underneath. Tiles are views that
-Hypermux owns, positions, and animates itself.
+Hyprmux owns, positions, and animates itself.
 
 ```
-┌─────────────────────────── Hypermux.app ────────────────────────────┐
+┌─────────────────────────── Hyprmux.app ────────────────────────────┐
 │                                                                     │
-│  HypermuxCore (pure Swift, unit tested)                             │
-│    Config parser ─► HypermuxConfig                                  │
+│  HyprmuxCore (pure Swift, unit tested)                             │
+│    Config parser ─► HyprmuxConfig                                  │
 │    Dispatcher ─► WindowManager ─► Snapshot (frames, focus, z, ...)  │
 │                    ├ DwindleLayout (BSP tree per workspace)         │
 │                    └ groups, floating, workspaces, special          │
 │                                                                     │
-│  Hypermux (AppKit)                                                  │
+│  Hyprmux (AppKit)                                                  │
 │    Compositor: applies Snapshots to views, animates, routes input   │
 │    MonitorWindow ─ CompositorView ─ ClientView (border/shadow/clip) │
 │                                        └ Surface                    │
@@ -24,7 +24,7 @@ Hypermux owns, positions, and animates itself.
 │                                            ├ ChromiumSurface (CEF)  │
 │                                            └ SimulatorSurface       │
 │    HUD: overlay layer, theme, NotificationStack, PickerPresenter    │
-│    IPCServer (Unix socket) ◄── hypermuxctl                          │
+│    IPCServer (Unix socket) ◄── hyprmuxctl                          │
 │                                                                     │
 │  ChromiumBridge (Obj-C++)  ── CEF framework + 4 helper apps          │
 │  SimulatorBridge (Obj-C)   ── Xcode's CoreSimulator/SimulatorKit     │
@@ -36,18 +36,18 @@ Hypermux owns, positions, and animates itself.
 
 | Target | Language | Role |
 |---|---|---|
-| `HypermuxCore` | Swift 6 | Model and logic, no AppKit: layout, workspaces, focus, groups, config, dispatchers, IPC protocol, bezier curves, the rounded-corner shape. All unit tests live here. |
-| `Hypermux` | Swift 5 mode | The app: window, compositor, surfaces, input, animations, IPC server. |
+| `HyprmuxCore` | Swift 6 | Model and logic, no AppKit: layout, workspaces, focus, groups, config, dispatchers, IPC protocol, bezier curves, the rounded-corner shape. All unit tests live here. |
+| `Hyprmux` | Swift 5 mode | The app: window, compositor, surfaces, input, animations, IPC server. |
 | `ChromiumBridge` | Obj-C++ | CEF lifecycle, the `NSApplication` subclass CEF needs, browsers as child views. |
 | `CEFWrapper` | C++ | CEF's `libcef_dll_wrapper`, built by SwiftPM from `vendor/cef` (no cmake). |
-| `HypermuxHelper` | Obj-C | Chromium's helper process (GPU, renderer, ...). |
+| `HyprmuxHelper` | Obj-C | Chromium's helper process (GPU, renderer, ...). |
 | `SimulatorBridge` | Obj-C | Simulator display and input through Xcode's private frameworks. |
 | `GhosttyKit` | binary | Prebuilt libghostty xcframework (terminal emulation and rendering). |
-| `hypermuxctl` | Swift | The IPC client. |
+| `hyprmuxctl` | Swift | The IPC client. |
 
 ## The model: `WindowManager`
 
-Everything that decides where things go lives in `HypermuxCore`. The app never
+Everything that decides where things go lives in `HyprmuxCore`. The app never
 positions a tile on its own authority.
 
 - **Clients** are `ClientID`s. The model doesn't know whether a client is a
@@ -143,7 +143,7 @@ handles occlusion, close, and destroy.
   clipboard handling are ported from Ghostty's macOS sources.
   - `GhosttyRuntime` holds the app and config and routes runtime callbacks
     back to their views (title, pwd, close, clipboard, open URL).
-  - Ghostty's own new-split and goto-split actions map onto Hypermux
+  - Ghostty's own new-split and goto-split actions map onto Hyprmux
     dispatchers.
 - **`BrowserSurface`:** the shared part of a web tile: address bar, start
   page, navigation. Two engines subclass it:
@@ -164,13 +164,13 @@ handles occlusion, close, and destroy.
 - **Mouse binds:** ⌘-drag moves (floating) or drags and drops (tiled);
   ⌘-right-drag resizes from the grabbed edge or corner.
 - **Clicks:** a click on any tile focuses it first.
-- **Follow-mouse:** focus follows the pointer, only while Hypermux is the
+- **Follow-mouse:** focus follows the pointer, only while Hyprmux is the
   active app.
 - **Keyboard focus:** after every apply, the focused surface's focus target
   becomes first responder. Focus already somewhere inside the surface (an
   address bar, for example) is left alone.
 
-### HUD: Hypermux's own UI
+### HUD: Hyprmux's own UI
 
 Notifications and pickers live in the HUD. It works like a
 Hyprland overlay layer: elements sit above every tile and never tile.
@@ -213,12 +213,12 @@ Hyprland overlay layer: elements sit above every tile and never tile.
 
 - **`MonitorWindow`:** a normal titled window with a transparent title bar.
   - **Fill full screen:** it becomes borderless and screen-sized on the normal
-    desktop, auto-hiding the menu bar and Dock while Hypermux is in front. That
+    desktop, auto-hiding the menu bar and Dock while Hyprmux is in front. That
     keeps the wallpaper behind a transparent background; native full screen
     would put black there.
   - **Transparency:** with a background alpha below 1 the window is
     non-opaque. It keeps 1% alpha so clicks in the gaps still land in
-    Hypermux.
+    Hyprmux.
 - **Chrome:** `BarView` shows workspaces, the focused title, the scratchpad,
   and the submap. Config errors and short messages are HUD notifications.
 
@@ -248,14 +248,14 @@ Hyprland overlay layer: elements sit above every tile and never tile.
 
 ### Config
 
-- **Parsing:** `ConfigParser` turns hyprlang-style text into `HypermuxConfig`
+- **Parsing:** `ConfigParser` turns hyprlang-style text into `HyprmuxConfig`
   and collects errors instead of failing.
 - **Reloading:** `ConfigWatcher` watches both the directory (rename-style
   saves) and the file (in-place writes), re-arms when the file is replaced, and
   reloads on a modification-date change.
 - **Applying:** a reload updates the model settings, decorations, animations,
   binds, and Ghostty config live.
-- **Default:** the built-in default is `config/hypermux.conf`, embedded by
+- **Default:** the built-in default is `config/hyprmux.conf`, embedded by
   `scripts/gen-default-config.sh`.
 
 ### IPC
@@ -273,7 +273,7 @@ input through the real event path (`sendkey`, `sendmouse`, `senddrag`,
   version and sha1). SwiftPM builds the C++ wrapper from it.
 - **Bundle:** `scripts/bundle.sh` copies the framework into
   `Contents/Frameworks`, and the helper binary into four
-  `Hypermux Helper*.app` bundles (plain, GPU, Renderer, Alerts).
+  `Hyprmux Helper*.app` bundles (plain, GPU, Renderer, Alerts).
 - **Startup:** when `web:engine = chromium`, `main.swift` creates
   `HMApplication` (the `NSApplication` subclass CEF requires), starts CEF, and
   runs CEF's message loop instead of `NSApp.run()`.
@@ -284,10 +284,10 @@ input through the real event path (`sendkey`, `sendmouse`, `senddrag`,
   separate window.
 - **Closing a browser:** `DoClose` removes the browser's view and returns true.
   Returning false would send `performClose:` to the top-level window, which is
-  the whole Hypermux monitor.
+  the whole Hyprmux monitor.
 - **Popups:** handled in `OnBeforePopup` by creating a new tile and attaching
   the popup there, so `window.opener` keeps working.
-- **Profile:** `~/Library/Application Support/Hypermux/Chromium`, with
+- **Profile:** `~/Library/Application Support/Hyprmux/Chromium`, with
   `use-mock-keychain`, since ad-hoc builds would otherwise hit a keychain
   prompt on every build.
 - **Limits:**

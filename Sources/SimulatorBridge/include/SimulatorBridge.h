@@ -1,4 +1,4 @@
-// iOS Simulator displays for hypermux tiles, via Xcode's private CoreSimulator
+// iOS Simulator displays for hyprmux tiles, via Xcode's private CoreSimulator
 // and SimulatorKit frameworks (the same route idb and Radon IDE use).
 #import <Foundation/Foundation.h>
 #import <IOSurface/IOSurface.h>

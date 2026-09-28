@@ -1,4 +1,4 @@
-// Chromium (CEF) backend for hypermux web tiles. Compiled with ARC.
+// Chromium (CEF) backend for hyprmux web tiles. Compiled with ARC.
 //
 // Browsers are "windowed": CEF puts its own NSView inside a parent view we
 // supply, and Chromium composites into it. On macOS that forces CEF's Alloy
@@ -90,7 +90,7 @@ class HMClient : public CefClient,
   }
 
   // Returning false would send performClose: to the top-level window, which is
-  // the whole hypermux monitor. Instead finish the close by removing the
+  // the whole hyprmux monitor. Instead finish the close by removing the
   // browser's view; CEF destroys the browser and calls OnBeforeClose.
   bool DoClose(CefRefPtr<CefBrowser> browser) override {
     NSView *v = (__bridge NSView *)browser->GetHost()->GetWindowHandle();
@@ -219,7 +219,7 @@ class HMClient : public CefClient,
   if (gRunning) return YES;
   gLoader = new CefScopedLibraryLoader();
   if (!gLoader->LoadInMain()) {
-    NSLog(@"hypermux: failed to load Chromium Embedded Framework");
+    NSLog(@"hyprmux: failed to load Chromium Embedded Framework");
     return NO;
   }
   gLive = [NSMutableSet set];
@@ -236,7 +236,7 @@ class HMClient : public CefClient,
 
   CefRefPtr<HMApp> app(new HMApp(switches));
   if (!CefInitialize(args, settings, app.get(), nullptr)) {
-    NSLog(@"hypermux: CefInitialize failed (exit code %d)", CefGetExitCode());
+    NSLog(@"hyprmux: CefInitialize failed (exit code %d)", CefGetExitCode());
     return NO;
   }
   gRunning = YES;

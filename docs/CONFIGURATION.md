@@ -1,13 +1,13 @@
 # Configuration
 
-Hypermux reads `~/.config/hypermux/hypermux.conf`, or the file named by
-`$HYPERMUX_CONFIG`. If neither exists, it uses the built-in default, which is
-[`config/hypermux.conf`](../config/hypermux.conf) compiled into the app.
-**Hypermux → Open Config…** (⌘,) writes that default to your config path the
+Hyprmux reads `~/.config/hyprmux/hyprmux.conf`, or the file named by
+`$HYPRMUX_CONFIG`. If neither exists, it uses the built-in default, which is
+[`config/hyprmux.conf`](../config/hyprmux.conf) compiled into the app.
+**Hyprmux → Open Config…** (⌘,) writes that default to your config path the
 first time and opens it.
 
 The file reloads when you save it, whether your editor writes in place or
-replaces the file. ⇧⌘R or `hypermuxctl reload` force a reload. Mistakes show in
+replaces the file. ⇧⌘R or `hyprmuxctl reload` force a reload. Mistakes show in
 a red bar at the top of the screen; the rest of the file still applies. The one
 setting that needs a restart is `web:engine`.
 
@@ -22,7 +22,7 @@ general {                     # sections nest; keys become general:gaps_in
     gaps_in = 5
 }
 general:gaps_out = 14         # the flat form works too
-source = ~/.config/hypermux/binds.conf   # include another file
+source = ~/.config/hyprmux/binds.conf   # include another file
 ```
 
 **Values:**
@@ -104,7 +104,7 @@ global
 - **border:** border color changes.
 - **workspaces:** switching workspaces.
 - **specialWorkspace:** the scratchpad.
-- **layersIn / layersOut:** Hypermux's own UI (notifications, pickers) appearing and
+- **layersIn / layersOut:** Hyprmux's own UI (notifications, pickers) appearing and
   going away. **fadeLayersIn / fadeLayersOut** fade it at the same time.
 - **layers:** a notification stack moving up or down when one comes or goes.
 
@@ -120,7 +120,7 @@ global
 
 | Option | Default | Meaning |
 |---|---|---|
-| `follow_mouse` | 1 | 1 = focus follows the pointer (only while Hypermux is active), 0 = click to focus. |
+| `follow_mouse` | 1 | 1 = focus follows the pointer (only while Hyprmux is active), 0 = click to focus. |
 
 ### `dwindle`
 
@@ -156,7 +156,7 @@ Groups hold several windows as tabs in one tile.
 
 | Option | Default | Meaning |
 |---|---|---|
-| `background_color` | near black | Behind the windows. An alpha below 1 makes Hypermux see-through; `rgba(00000000)` shows the desktop in the gaps. |
+| `background_color` | near black | Behind the windows. An alpha below 1 makes Hyprmux see-through; `rgba(00000000)` shows the desktop in the gaps. |
 | `fullscreen_style` | `fill` | `fill`: full screen on the normal desktop, so the wallpaper stays visible. `native`: macOS full screen on its own Space. |
 
 ### `web`
@@ -186,7 +186,7 @@ ghostty {
 
 ### `hud`
 
-Hypermux's own UI: notifications and pickers. It takes its font, text colors, and
+Hyprmux's own UI: notifications and pickers. It takes its font, text colors, and
 palette from your Ghostty config, and its border, rounding, shadow, and blur
 from `general` and `decoration`, so a notification looks like a focused tile.
 
@@ -237,7 +237,7 @@ anywhere. While a picker is open, binds are off and the keyboard belongs to it:
 
 The mouse works too: hover selects a row, a click chooses it, and the wheel scrolls.
 
-### `hypermux`
+### `hyprmux`
 
 | Option | Default | Meaning |
 |---|---|---|
@@ -268,19 +268,19 @@ workspace empties. Other workspace-rule keys are accepted and ignored.
 
 ### Session restore
 
-When Hypermux quits, it saves the session, and the next launch brings it back:
+When Hyprmux quits, it saves the session, and the next launch brings it back:
 workspaces and their names, the split layout, floating windows, groups, focus,
 and what each tile showed. It also saves every 30 seconds and shortly after any
 layout change, so a crash loses little. The file is
-`~/Library/Application Support/Hypermux/session.json` (the environment variable
-`HYPERMUX_SESSION` moves it). The session from the launch before is kept next to
+`~/Library/Application Support/Hyprmux/session.json` (the environment variable
+`HYPRMUX_SESSION` moves it). The session from the launch before is kept next to
 it as `session-previous.json`.
 
 What comes back:
 
 - **Terminals:** a new shell in the same directory. If a program on the
   `programs` list was running in the foreground, it starts again, typed into the
-  shell, so the shell stays when it exits. Hypermux prefers the command line you
+  shell, so the shell stays when it exits. Hyprmux prefers the command line you
   typed, which Ghostty's shell integration reports as the terminal title, over
   the process it became: `tool release` runs as `ruby …/tool release`,
   and wrappers often exec something else. Compound lines (`cd x && make`) don't
@@ -315,29 +315,29 @@ session {
 | `resume:KIND` | `pi`, `codex` | The command that resumes an agent session of that kind. `{id}` is the session id. |
 | `start:KIND` | `pi`, `codex` | The command that starts a new session of that kind. Layouts use it. |
 
-**Agent sessions.** An agent tells Hypermux which session its terminal holds with
-one line on the control socket (`hypermuxctl resume '{…}'` works too):
+**Agent sessions.** An agent tells Hyprmux which session its terminal holds with
+one line on the control socket (`hyprmuxctl resume '{…}'` works too):
 
 ```json
 resume {"client": 12, "pid": 4711, "kind": "pi", "session": "01a0…", "cwd": "/src/app", "file": "/…/session.jsonl"}
 ```
 
-`client` is the terminal's `HYPERMUX_CLIENT`, and `pid` is the agent's process.
+`client` is the terminal's `HYPRMUX_CLIENT`, and `pid` is the agent's process.
 The report counts only while that process runs in the terminal's foreground, and,
 when `file` is given, while that file exists. So an agent you exited comes back as
-a plain shell. For pi, `~/.pi/agent/extensions/hypermux-session.ts` sends the
+a plain shell. For pi, `~/.pi/agent/extensions/hyprmux-session.ts` sends the
 report on every session start (launch, `/new`, `/resume`, fork).
 
 ### Layouts
 
 A layout is a workspace template: a saved arrangement of windows you can summon
-again later. Layouts live in `~/.config/hypermux/layouts/NAME.json`, in the same
+again later. Layouts live in `~/.config/hyprmux/layouts/NAME.json`, in the same
 format as the session file.
 
 - **Save one:** arrange a workspace, then press ⇧⌘U (`picker, savelayout`) and
   give it a name. The workspace takes the name too.
 - **Summon one:** press ⌘U (`picker, layout`) and choose it. If a workspace with
-  that name already has windows, Hypermux just goes there. Otherwise it builds
+  that name already has windows, Hyprmux just goes there. Otherwise it builds
   the workspace on the empty workspace with that name, or the first free number.
   Summoning twice never opens a second copy.
 
@@ -367,7 +367,7 @@ even), and two `children`; `tabs` makes a group:
 ```
 
 A `command` in a layout you wrote runs as written (the `programs` list only
-applies to what Hypermux records). A file can hold several workspaces, each with
+applies to what Hyprmux records). A file can hold several workspaces, each with
 its own `name`; summoning it opens all of them and shows the first.
 
 ### Startup programs
@@ -377,7 +377,7 @@ exec-once = htop     # run in a new terminal at startup
 exec = btop          # also run on every config reload
 ```
 
-Without any `exec-once`, Hypermux opens one terminal at startup.
+Without any `exec-once`, Hyprmux opens one terminal at startup.
 
 ## Binds
 
@@ -411,7 +411,7 @@ submap = reset
 
 ## Dispatchers
 
-These names work in `bind` lines and with `hypermuxctl dispatch`.
+These names work in `bind` lines and with `hyprmuxctl dispatch`.
 
 | Dispatcher | Arguments | Action |
 |---|---|---|
@@ -429,11 +429,11 @@ These names work in `bind` lines and with `hypermuxctl dispatch`.
 | `workspace` | `N`, `+1`/`-1`, `e+1`/`e-1`, `previous`, `empty`, `special[:name]`, `name:NAME` | Switch workspace. `e±1` skips empty workspaces. `name:` finds the workspace with that name, or names the first free number. |
 | `movetoworkspace` / `movetoworkspacesilent` | same | Move the focused window there (and follow it, or stay). |
 | `renameworkspace` | `N [name]` | Name workspace N. No name clears it. |
-| `picker` | `workspace`, `movetoworkspace`, `movetoworkspacesilent`, `renameworkspace`, `layout`, `savelayout` | Hypermux's own pickers: go to a workspace, move the window to one, name the current one, or summon or save a layout. See [Workspaces](#workspaces) and [Layouts](#layouts). |
+| `picker` | `workspace`, `movetoworkspace`, `movetoworkspacesilent`, `renameworkspace`, `layout`, `savelayout` | Hyprmux's own pickers: go to a workspace, move the window to one, name the current one, or summon or save a layout. See [Workspaces](#workspaces) and [Layouts](#layouts). |
 | `togglespecialworkspace` | [name] | Show or hide a scratchpad. |
 | `togglefloating` | | Float or re-tile. A first float centers the window; re-tiling returns it to its old slot. |
 | `fullscreen` | `0` or `1` | 0 = cover the screen, 1 = maximize within gaps. |
-| `monitorfullscreen` | | Toggle the whole Hypermux window full screen (see `misc:fullscreen_style`). |
+| `monitorfullscreen` | | Toggle the whole Hyprmux window full screen (see `misc:fullscreen_style`). |
 | `togglesplit` / `swapsplit` | | Flip or swap the split holding the focused window. |
 | `splitratio` | `±x` or `exact x` | Change that split's ratio. |
 | `cyclenext` | [`prev`] | Focus the next window on the workspace. |
@@ -446,15 +446,15 @@ These names work in `bind` lines and with `hypermuxctl dispatch`.
 | `movegroupwindow` | `f` or `b` | Reorder the active tab. |
 | `submap` | name or `reset` | Enter or leave a submap. |
 | `reload` | | Reload the config. |
-| `exit` | | Quit Hypermux. |
+| `exit` | | Quit Hyprmux. |
 
-## IPC: `hypermuxctl`
+## IPC: `hyprmuxctl`
 
-Shells inside Hypermux get `HYPERMUX_SOCKET`, `HYPERMUX_CLIENT`, and
-`HYPERMUX_PID` in their environment. The client identifies the terminal, and
-the PID identifies its Hypermux app instance. `hypermuxctl` talks to that socket (default
-`/tmp/hypermux-<uid>/hypermux.sock`). Build it with
-`swift build --product hypermuxctl`.
+Shells inside Hyprmux get `HYPRMUX_SOCKET`, `HYPRMUX_CLIENT`, and
+`HYPRMUX_PID` in their environment. The client identifies the terminal, and
+the PID identifies its Hyprmux app instance. `hyprmuxctl` talks to that socket (default
+`/tmp/hyprmux-<uid>/hyprmux.sock`). Build it with
+`swift build --product hyprmuxctl`.
 
 | Command | Reply |
 |---|---|
@@ -470,4 +470,4 @@ the PID identifies its Hypermux app instance. `hypermuxctl` talks to that socket
 | `debug` | Focus internals: app active, key window, first responder, and which window holds the keyboard. |
 | `resume {json}` | An agent reports how to bring its terminal back. See [Session restore](#session-restore). |
 
-Coordinates are in the Hypermux window's space, from the top-left.
+Coordinates are in the Hyprmux window's space, from the top-left.

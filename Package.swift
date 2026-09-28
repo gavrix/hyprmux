@@ -2,12 +2,12 @@
 import PackageDescription
 
 let package = Package(
-    name: "Hypermux",
+    name: "Hyprmux",
     platforms: [.macOS(.v14)],
     products: [
-        .executable(name: "Hypermux", targets: ["Hypermux"]),
-        .executable(name: "hypermuxctl", targets: ["hypermuxctl"]),
-        .executable(name: "HypermuxHelper", targets: ["HypermuxHelper"]),
+        .executable(name: "Hyprmux", targets: ["Hyprmux"]),
+        .executable(name: "hyprmuxctl", targets: ["hyprmuxctl"]),
+        .executable(name: "HyprmuxHelper", targets: ["HyprmuxHelper"]),
     ],
     targets: [
         .binaryTarget(
@@ -16,13 +16,13 @@ let package = Package(
         ),
         // Pure model: layouts, workspaces, focus, config, dispatchers. No AppKit.
         .target(
-            name: "HypermuxCore",
+            name: "HyprmuxCore",
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
         // AppKit shell: window, compositor views, animations, libghostty surfaces.
         .executableTarget(
-            name: "Hypermux",
-            dependencies: ["HypermuxCore", "GhosttyKit", "ChromiumBridge", "SimulatorBridge"],
+            name: "Hyprmux",
+            dependencies: ["HyprmuxCore", "GhosttyKit", "ChromiumBridge", "SimulatorBridge"],
             swiftSettings: [.swiftLanguageMode(.v5)],
             linkerSettings: [
                 .linkedLibrary("c++"),
@@ -34,8 +34,8 @@ let package = Package(
             ]
         ),
         .executableTarget(
-            name: "hypermuxctl",
-            dependencies: ["HypermuxCore"],
+            name: "hyprmuxctl",
+            dependencies: ["HyprmuxCore"],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         // CEF's C++ wrapper (libcef_dll_wrapper), built from the SDK in vendor/cef.
@@ -68,13 +68,13 @@ let package = Package(
             linkerSettings: [.linkedFramework("IOSurface")]
         ),
         .executableTarget(
-            name: "HypermuxHelper",
+            name: "HyprmuxHelper",
             dependencies: ["ChromiumBridge"],
             cSettings: [.unsafeFlags(["-fobjc-arc"])]
         ),
         .testTarget(
-            name: "HypermuxCoreTests",
-            dependencies: ["HypermuxCore"]
+            name: "HyprmuxCoreTests",
+            dependencies: ["HyprmuxCore"]
         ),
     ],
     cxxLanguageStandard: .cxx20

@@ -28,6 +28,9 @@ configured in `hyprland.conf` syntax that reloads when you save it.
 - **Looks:** gradient borders, shadows, rounded or squircle corners
   (`rounding_power`), inactive-window opacity and blur, and a see-through
   background with a full-screen mode that keeps the wallpaper visible.
+- **Notifications:** Hypermux's own notices, styled like your terminal and
+  your window borders. Config errors, warnings, and terminal notifications
+  (OSC 9 and OSC 777) show up there.
 - **Scripting:** `hypermuxctl`, a `hyprctl`-like CLI over a Unix socket.
 
 ## Requirements

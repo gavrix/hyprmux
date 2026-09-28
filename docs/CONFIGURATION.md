@@ -92,7 +92,8 @@ global
 ├── fade ── fadeIn, fadeOut, fadeSwitch, fadeShadow, fadeDim
 ├── border ── borderangle
 ├── workspaces ── workspacesIn, workspacesOut, specialWorkspace ── In, Out
-└── layers
+├── fade ── fadeLayers ── fadeLayersIn, fadeLayersOut
+└── layers ── layersIn, layersOut
 ```
 
 **What each animation drives:**
@@ -103,11 +104,17 @@ global
 - **border:** border color changes.
 - **workspaces:** switching workspaces.
 - **specialWorkspace:** the scratchpad.
+- **layersIn / layersOut:** Hypermux's own UI (notifications) appearing and
+  going away. **fadeLayersIn / fadeLayersOut** fade it at the same time.
+- **layers:** a notification stack moving up or down when one comes or goes.
 
 **Styles:**
 
 - **windows:** `popin N%` or `slide`.
 - **workspaces:** `slide`, `slidevert`, or `fade`.
+- **layers:** `slide [top|bottom|left|right]`, `popin N%`, or `fade`. A plain
+  `slide` uses the nearest edge. With no style set, notifications slide in
+  from the side they sit on.
 
 ### `input`
 
@@ -176,6 +183,43 @@ ghostty {
     background = 1e1e2e      # no "#": that starts a comment here (or write ##1e1e2e)
 }
 ```
+
+### `hud`
+
+Hypermux's own UI: notifications for now. It takes its font, text colors, and
+palette from your Ghostty config, and its border, rounding, shadow, and blur
+from `general` and `decoration`, so a notification looks like a focused tile.
+
+```ini
+hud {
+    font_family = JetBrains Mono
+    notifications {
+        position = top_right
+        timeout = 5000
+    }
+}
+```
+
+| Option | Default | Meaning |
+|---|---|---|
+| `font_family` | Ghostty's `font-family` | Font for all HUD text. Falls back to the system monospaced font. |
+| `font_size` | Ghostty's `font-size` | Text size in points. |
+| `notifications:position` | `top_right` | `top_right`, `top_left`, `bottom_right`, `bottom_left`, `top`, `bottom`, or `center`. Inside the work area, `gaps_out` from its edges. |
+| `notifications:timeout` | 5000 | Milliseconds on screen. 0 keeps them until clicked. Hovering keeps one open. |
+| `notifications:max_visible` | 5 | More than this drops the oldest. |
+| `notifications:width` | 380 | Width in points. |
+
+**What shows up:**
+
+- **Config errors:** one red notice that updates on every save and goes away
+  once the config is clean.
+- **Warnings:** such as "no booted simulator".
+- **Terminal notifications:** a program can send one with OSC 9
+  (`printf '\e]9;Build done\a'`) or OSC 777
+  (`printf '\e]777;notify;Title;Body\a'`). Clicking it focuses that terminal.
+
+Clicking any notification closes it. The same message posted again counts up
+(`×3`) instead of stacking.
 
 ### `hypermux`
 

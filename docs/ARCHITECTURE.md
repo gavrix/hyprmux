@@ -23,6 +23,7 @@ Hypermux owns, positions, and animates itself.
 │                                            ├ WebKitSurface (WKWebView)
 │                                            ├ ChromiumSurface (CEF)  │
 │                                            └ SimulatorSurface       │
+│    HUD: overlay layer, theme, NotificationStack                     │
 │    IPCServer (Unix socket) ◄── hypermuxctl                          │
 │                                                                     │
 │  ChromiumBridge (Obj-C++)  ── CEF framework + 4 helper apps          │
@@ -93,7 +94,7 @@ input or IPC ─► wm.dispatch(...) ─► compositor.apply(animated:)
                                       ├ diff old vs new Snapshot
                                       ├ per client: move/fade with the configured animation
                                       ├ restack views by z
-                                      ├ bar, error banner, hint
+                                      ├ bar, hint
                                       └ keyboard focus to the focused surface
 ```
 
@@ -111,7 +112,8 @@ from the config.
 
 ### `ClientView`
 
-A client's frame, border, shadow, and clip:
+A client's frame, border, shadow, and clip. The decoration part lives in its base
+class, `DecoratedView`, which HUD panels share:
 
 - **Border:** a `CAGradientLayer`, masked to a ring.
 - **Shadow:** a separate layer, masked so it's drawn only outside the window
@@ -167,6 +169,34 @@ handles occlusion, close, and destroy.
   becomes first responder. Focus already somewhere inside the surface (an
   address bar, for example) is left alone.
 
+### HUD: Hypermux's own UI
+
+Notifications, and later menus and pickers, live in the HUD. It works like a
+Hyprland overlay layer: elements sit above every tile and never tile.
+
+- **Model in the core:**
+  - `HUDAnchor` places an element against the monitor, the work area, or a
+    tile, and `HUDLayout` places one element or a stack.
+  - `NoticeQueue` holds the notifications: order, expiry, duplicates, keyed
+    updates, the visible limit, and hover holds.
+  - `LayerAnimationStyle` parses Hyprland's layer styles.
+- **`HUDLayerView`:** the overlay view, above the bar. Its own hit test
+  returns nil, so the gaps between panels pass clicks through to tiles. The
+  compositor also skips click-to-focus and follow-mouse over a panel.
+- **`HUD`:** owns the layer, the theme, and the anchor geometry, and runs the
+  `layersIn`, `layersOut`, `fadeLayers*`, and `layers` animations. Elements
+  are components on top of it.
+- **`HUDTheme`:** the font, foreground, and palette come from Ghostty, the
+  frame from the decoration settings. Level colors are the terminal's own
+  bright red, yellow, and green.
+- **Panels are `DecoratedView`s,** the same base class as `ClientView`, so
+  borders, squircle corners, shadow, and blur match tiles exactly. Their blur
+  uses `.withinWindow` to blur the tiles below; tiles use `.behindWindow`.
+- **`NotificationStack`:** the first component. It diffs the queue against its
+  views: new ones animate in, gone ones out, the rest reflow.
+- **Font family:** `ghostty_config_get` can't return repeatable strings, so
+  `GhosttyConfigScan` reads `font-family` from Ghostty's config files.
+
 ### The monitor window and chrome
 
 - **`MonitorWindow`:** a normal titled window with a transparent title bar.
@@ -178,7 +208,7 @@ handles occlusion, close, and destroy.
     non-opaque. It keeps 1% alpha so clicks in the gaps still land in
     Hypermux.
 - **Chrome:** `BarView` shows workspaces, the focused title, the scratchpad,
-  and the submap. `BannerView` shows config errors and short messages.
+  and the submap. Config errors and short messages are HUD notifications.
 
 ### Config
 

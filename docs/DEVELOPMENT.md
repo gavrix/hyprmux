@@ -110,7 +110,7 @@ Rules that came out of real mistakes:
 | `hypermuxctl sendkey MODS, key` | Presses a key through the real path (binds, then the surface). Works in the background for binds and terminals. |
 | `hypermuxctl senddrag` / `sendmouse` | Mouse input, paced like a hand. `sendmouse down` … `up` for holds. |
 | `hypermuxctl hittest x y` | Which views a click reaches. This found the dim overlay that swallowed every click. |
-| `hypermuxctl debug` | App active, key window, first responder, `keyboardClient`. Use it for any "wrong window" bug. |
+| `hypermuxctl debug` | App active, key window, first responder, `keyboardClient`, and the frames of HUD panels on screen. Use it for any "wrong window" bug, and to find where to click a notification. |
 | `hypermuxctl clients` | Frames, focus, groups, URLs. |
 | `screencapture -x -o -l <windowid>` | Captures one window even when covered. Find the window ID with `CGWindowListCopyWindowInfo` for the test app's pid. |
 | Chromium `remote-debugging-port` | Set `web:chromium_flags = remote-debugging-port=9333` in a test config, then query targets and evaluate JavaScript over the DevTools protocol. |
@@ -151,6 +151,15 @@ Each one cost a debugging session.
   (group tabs).
 - **Config watching.** Watch the file as well as its directory: in-place
   saves don't touch the directory.
+- **Hidden windows don't animate.** The `Animator`'s display link stops while
+  the app is hidden, so tiles and HUD panels freeze at their start frame, often
+  offscreen or at alpha 0. Hide the test app only when no test depends on it.
+- **Ghostty filters desktop notifications.** A repeated OSC 9 with the same
+  text, or several in quick succession, may never reach Hypermux. Put
+  `$RANDOM` in test messages and space them out.
+- **First click in an inactive window.** AppKit uses it to activate the app
+  unless the view returns true from `acceptsFirstMouse`. HUD panels do, so a
+  click on a notification works while Hypermux is in the background.
 
 ## Commits
 

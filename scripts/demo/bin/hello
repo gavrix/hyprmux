@@ -1,0 +1,10 @@
+#!/bin/sh
+# A banner for the demo's first terminal.
+c() { printf '\033[38;5;%sm%s\033[0m' "$1" "$2"; }
+echo
+c 81 "  ╻ ╻╻ ╻┏━┓┏━┓┏┳┓╻ ╻╻ ╻"; echo
+c 80 "  ┣━┫┗┳┛┣━┛┣┳┛┃┃┃┃ ┃┏╋┛"; echo
+c 79 "  ╹ ╹ ╹ ╹  ╹┗╸╹ ╹┗━┛╹ ╹"; echo
+echo
+printf '  %s\n' "Hyprland-style tiling for macOS, in one window."
+printf '  %s\n\n' "$(c 245 'terminals · web · iOS Simulator · pickers · sessions')"

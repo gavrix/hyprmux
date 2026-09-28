@@ -35,7 +35,8 @@ sign() {
 swift build -c "$CONFIG" --product Hyprmux
 BIN="$(swift build -c "$CONFIG" --show-bin-path)/Hyprmux"
 
-APP="$ROOT/build/Hyprmux.app"
+# HYPRMUX_APP builds the bundle somewhere else (test copies, demo recordings).
+APP="${HYPRMUX_APP:-$ROOT/build/Hyprmux.app}"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/Hyprmux"

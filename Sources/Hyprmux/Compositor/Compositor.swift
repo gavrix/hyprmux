@@ -48,6 +48,14 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
     }
 
     private let barHeight: CGFloat = 30
+
+    /// HYPRMUX_WINDOW_SIZE=1600x1000 opens the window at that size, centered, for
+    /// reproducible demo recordings (scripts/demo/record.sh).
+    static let fixedWindowSize: CGSize? = {
+        guard let v = ProcessInfo.processInfo.environment["HYPRMUX_WINDOW_SIZE"] else { return nil }
+        let p = v.lowercased().split(separator: "x").compactMap { Double($0) }
+        return p.count == 2 && p[0] >= 400 && p[1] >= 300 ? CGSize(width: p[0], height: p[1]) : nil
+    }()
     /// Exported to child shells as HYPRMUX_SOCKET.
     var ipcPath: String?
 
@@ -55,7 +63,10 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         self.runtime = runtime
         self.config = config
         let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
-        let frame = screen.insetBy(dx: screen.width * 0.04, dy: screen.height * 0.04)
+        var frame = screen.insetBy(dx: screen.width * 0.04, dy: screen.height * 0.04)
+        if let size = Self.fixedWindowSize {
+            frame = NSRect(x: screen.midX - size.width / 2, y: screen.midY - size.height / 2, width: size.width, height: size.height)
+        }
         window = MonitorWindow(
             contentRect: frame,
             styleMask: MonitorWindow.windowedStyle,
@@ -77,7 +88,8 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         window.contentView = root
         window.delegate = self
         window.isReleasedWhenClosed = false
-        window.setFrameAutosaveName("HyprmuxMonitor")
+        // A fixed size (demo recordings) neither restores nor saves the window's frame.
+        if Self.fixedWindowSize == nil { window.setFrameAutosaveName("HyprmuxMonitor") }
 
         specialDim.wantsLayer = true
         specialDim.layer?.backgroundColor = NSColor.black.cgColor
@@ -113,7 +125,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
 
     func start() {
         window.makeKeyAndOrderFront(nil)
-        if config.fullscreenStyle == "fill", MonitorWindow.wasFilledAtQuit { setMonitorFullscreen(true) }
+        if config.fullscreenStyle == "fill", MonitorWindow.wasFilledAtQuit, Self.fixedWindowSize == nil { setMonitorFullscreen(true) }
         startSessionSaving()
         // A restored session replaces the startup programs.
         if restoreSession() { return }

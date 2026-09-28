@@ -27,6 +27,31 @@ open build/Hyprmux.app
 
 The framework copy is an APFS clone, so bundling takes a few seconds.
 
+## Demo recording
+
+The README's demo is recorded by a script, so it can be redone after a feature or
+styling change:
+
+```sh
+scripts/demo/record.sh              # -> docs/media/demo.mp4 and demo.gif
+scripts/demo/record.sh --rehearse   # play it without recording; the instance stays open
+```
+
+- **`scenario.sh`** is the demo: dispatchers, keys, and text typed into
+  terminals, with pauses. Edit it to show something new.
+- **`hyprmux.conf`** is the default config plus a few overrides: no
+  follow-mouse, no session restore, WebKit, and a plain `zsh` in a fake project
+  under `/tmp/hyprmux-demo`.
+- **`zsh/.zshrc`** gives that shell a neutral prompt and no pager.
+  `HYPRMUX_WINDOW_SIZE` (default 1440x900) fixes the window size.
+- **`recorder.swift`** records only the Hyprmux window with ScreenCaptureKit, even
+  when something covers it, without the cursor. `ffmpeg` turns the result into
+  an MP4 and a GIF.
+
+It needs Screen Recording permission for the terminal you run it from, and
+`ffmpeg`. Don't type while it plays: the pickers take real keys, so the demo
+window has to stay in front.
+
 ## Signing
 
 macOS ties privacy permissions (Screen Recording, Accessibility, folder access)
@@ -95,7 +120,7 @@ Hyprmux is often the developer's own daily environment. Test in a separate
 instance, never in theirs.
 
 ```sh
-cp -Rc build/Hyprmux.app /tmp/HyprmuxTest.app          # separate copy
+HYPRMUX_APP=/tmp/HyprmuxTest.app scripts/bundle.sh    # a separate copy; build/ stays untouched
 mkdir -p /tmp/hmcfg && cp ~/.config/hyprmux/hyprmux.conf /tmp/hmcfg/
 sed -i '' 's/follow_mouse = 1/follow_mouse = 0/' /tmp/hmcfg/hyprmux.conf
 open -g -n \

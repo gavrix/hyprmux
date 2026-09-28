@@ -1,0 +1,123 @@
+import Foundation
+
+public enum WorkspaceTarget: Equatable, Sendable {
+    case id(Int)
+    case relative(Int)          // +1 / -1: by number, creating as needed
+    case relativeExisting(Int)  // e+1 / e-1: among non-empty workspaces
+    case previous
+    case empty                  // first empty workspace
+    case special(String)        // special[:name]
+
+    public init?(hyprland raw: String) {
+        let s = raw.trimmingCharacters(in: .whitespaces)
+        if let n = Int(s), !s.hasPrefix("+"), !s.hasPrefix("-") {
+            self = .id(n)
+        } else if s.hasPrefix("+") || s.hasPrefix("-"), let n = Int(s) {
+            self = .relative(n)
+        } else if s.hasPrefix("e"), let n = Int(s.dropFirst()) {
+            self = .relativeExisting(n)
+        } else if s == "previous" {
+            self = .previous
+        } else if s == "empty" {
+            self = .empty
+        } else if s == "special" {
+            self = .special("special")
+        } else if s.hasPrefix("special:") {
+            self = .special(String(s.dropFirst("special:".count)))
+        } else {
+            return nil
+        }
+    }
+}
+
+public enum FullscreenMode: Int, Equatable, Sendable {
+    /// Cover the whole monitor, no gaps or borders.
+    case fullscreen = 0
+    /// Fill the work area but keep outer gaps and the border.
+    case maximize = 1
+}
+
+/// Hyprland-style dispatchers. The same names work in `bind =` lines and IPC.
+public enum Dispatcher: Equatable, Sendable {
+    case exec(String)
+    case killActive
+    case moveFocus(Direction)
+    case moveWindow(Direction)
+    case swapWindow(Direction)
+    case resizeActive(dx: Double, dy: Double)
+    case moveActive(dx: Double, dy: Double)
+    case workspace(WorkspaceTarget)
+    case moveToWorkspace(WorkspaceTarget, silent: Bool)
+    case toggleSpecialWorkspace(String)
+    case toggleFloating
+    case fullscreen(FullscreenMode)
+    case toggleSplit
+    case swapSplit
+    case splitRatio(Double, exact: Bool)
+    case cycleNext(previous: Bool)
+    case focusCurrentOrLast
+    case centerWindow
+    case submap(String)
+    case reload
+    case exit
+
+    public static func parse(_ name: String, _ args: String) -> Result<Dispatcher, ParseError> {
+        let a = args.trimmingCharacters(in: .whitespaces)
+        func needDirection(_ make: (Direction) -> Dispatcher) -> Result<Dispatcher, ParseError> {
+            guard let d = Direction(hyprland: a) else { return .failure(.init("\(name): bad direction '\(a)'")) }
+            return .success(make(d))
+        }
+        func needWorkspace(_ make: (WorkspaceTarget) -> Dispatcher) -> Result<Dispatcher, ParseError> {
+            guard let w = WorkspaceTarget(hyprland: a) else { return .failure(.init("\(name): bad workspace '\(a)'")) }
+            return .success(make(w))
+        }
+        func pair() -> (Double, Double)? {
+            let parts = a.split(whereSeparator: { $0 == " " || $0 == "," }).map(String.init)
+            guard parts.count == 2, let x = Double(parts[0]), let y = Double(parts[1]) else { return nil }
+            return (x, y)
+        }
+
+        switch name.trimmingCharacters(in: .whitespaces).lowercased() {
+        case "exec": return .success(.exec(a))
+        case "killactive", "kill": return .success(.killActive)
+        case "movefocus": return needDirection { .moveFocus($0) }
+        case "movewindow": return needDirection { .moveWindow($0) }
+        case "swapwindow": return needDirection { .swapWindow($0) }
+        case "resizeactive":
+            guard let (x, y) = pair() else { return .failure(.init("resizeactive: expected 'dx dy'")) }
+            return .success(.resizeActive(dx: x, dy: y))
+        case "moveactive":
+            guard let (x, y) = pair() else { return .failure(.init("moveactive: expected 'dx dy'")) }
+            return .success(.moveActive(dx: x, dy: y))
+        case "workspace": return needWorkspace { .workspace($0) }
+        case "movetoworkspace": return needWorkspace { .moveToWorkspace($0, silent: false) }
+        case "movetoworkspacesilent": return needWorkspace { .moveToWorkspace($0, silent: true) }
+        case "togglespecialworkspace": return .success(.toggleSpecialWorkspace(a.isEmpty ? "special" : a))
+        case "togglefloating": return .success(.toggleFloating)
+        case "fullscreen":
+            return .success(.fullscreen(a == "1" ? .maximize : .fullscreen))
+        case "togglesplit": return .success(.toggleSplit)
+        case "swapsplit": return .success(.swapSplit)
+        case "splitratio":
+            let parts = a.split(separator: " ").map(String.init)
+            if parts.count == 2, parts[0] == "exact", let v = Double(parts[1]) {
+                return .success(.splitRatio(v, exact: true))
+            }
+            guard let v = Double(a) else { return .failure(.init("splitratio: bad value '\(a)'")) }
+            return .success(.splitRatio(v, exact: false))
+        case "cyclenext": return .success(.cycleNext(previous: a == "prev"))
+        case "focuscurrentorlast": return .success(.focusCurrentOrLast)
+        case "centerwindow": return .success(.centerWindow)
+        case "submap": return .success(.submap(a.isEmpty ? "reset" : a))
+        case "reload", "forcerendererreload": return .success(.reload)
+        case "exit": return .success(.exit)
+        default: return .failure(.init("unknown dispatcher '\(name)'"))
+        }
+    }
+}
+
+public struct ParseError: Error, Equatable, Sendable, CustomStringConvertible {
+    public let message: String
+    public init(_ message: String) { self.message = message }
+    public var description: String { message }
+}

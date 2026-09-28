@@ -1,0 +1,170 @@
+// Generated from config/hypermux.conf by scripts/gen-default-config.sh. Do not edit.
+public let defaultConfig = #"""
+# hypermux config. Syntax follows hyprland.conf (hyprlang):
+#   key = value, nested sections, $variables, bind = MODS, key, dispatcher, args
+# Copy to ~/.config/hypermux/hypermux.conf and edit. Saving reloads it live.
+#
+# SUPER is the Command key. Keys are physical positions (US ANSI names),
+# so binds keep working with other keyboard layouts.
+
+$mod = SUPER
+
+general {
+    gaps_in = 5
+    gaps_out = 14
+    border_size = 2
+    col.active_border = rgba(33ccffee) rgba(00ff99ee) 45deg
+    col.inactive_border = rgba(595959aa)
+    layout = dwindle
+}
+
+decoration {
+    rounding = 10
+    active_opacity = 1.0
+    inactive_opacity = 1.0
+    dim_inactive = false
+    dim_strength = 0.25
+    dim_special = 0.3
+
+    shadow {
+        enabled = true
+        range = 12
+        color = rgba(1a1a1aee)
+    }
+}
+
+animations {
+    enabled = yes
+
+    bezier = easeOutQuint, 0.23, 1, 0.32, 1
+    bezier = easeInOutCubic, 0.65, 0.05, 0.36, 1
+    bezier = linear, 0, 0, 1, 1
+    bezier = almostLinear, 0.5, 0.5, 0.75, 1.0
+    bezier = quick, 0.15, 0, 0.1, 1
+
+    animation = global, 1, 10, default
+    animation = border, 1, 5.39, easeOutQuint
+    animation = windows, 1, 4.79, easeOutQuint
+    animation = windowsIn, 1, 4.1, easeOutQuint, popin 87%
+    animation = windowsOut, 1, 1.49, linear, popin 87%
+    animation = fadeIn, 1, 1.73, almostLinear
+    animation = fadeOut, 1, 1.46, almostLinear
+    animation = fade, 1, 3.03, quick
+    animation = workspaces, 1, 3.5, easeOutQuint, slide
+    animation = specialWorkspace, 1, 3, easeOutQuint, slidevert
+}
+
+input {
+    # 1 = focus follows mouse, 0 = click to focus
+    follow_mouse = 1
+}
+
+dwindle {
+    preserve_split = true
+    # 0 = split toward the mouse, 1 = new window left/top, 2 = right/bottom
+    force_split = 2
+}
+
+binds {
+    workspace_back_and_forth = false
+}
+
+misc {
+    background_color = rgb(11111b)
+}
+
+# Settings passed straight to libghostty (same keys as ~/.config/ghostty/config).
+# Your normal Ghostty config is loaded first; these override it.
+# Note: '#' starts a comment here, so write colors without it (1e1e2e) or as ##1e1e2e.
+ghostty {
+    window-padding-x = 8
+    window-padding-y = 6
+}
+
+# Programs to run in new terminals at startup.
+# exec-once = htop
+
+# --- Binds -----------------------------------------------------------------
+
+bind = $mod, Return, exec,
+bind = $mod, T, exec,
+bind = $mod, W, killactive
+bind = $mod SHIFT, M, exit
+bind = $mod SHIFT, R, reload
+
+bind = $mod SHIFT, Space, togglefloating
+bind = $mod, F, fullscreen, 1
+bind = $mod SHIFT, F, fullscreen, 0
+bind = $mod, E, togglesplit
+bind = $mod SHIFT, E, swapsplit
+bind = $mod, C, centerwindow
+bind = $mod, grave, focuscurrentorlast
+
+bind = $mod, H, movefocus, l
+bind = $mod, J, movefocus, d
+bind = $mod, K, movefocus, u
+bind = $mod, L, movefocus, r
+bind = $mod, left, movefocus, l
+bind = $mod, down, movefocus, d
+bind = $mod, up, movefocus, u
+bind = $mod, right, movefocus, r
+
+bind = $mod SHIFT, H, movewindow, l
+bind = $mod SHIFT, J, movewindow, d
+bind = $mod SHIFT, K, movewindow, u
+bind = $mod SHIFT, L, movewindow, r
+bind = $mod SHIFT, left, movewindow, l
+bind = $mod SHIFT, down, movewindow, d
+bind = $mod SHIFT, up, movewindow, u
+bind = $mod SHIFT, right, movewindow, r
+
+bind = $mod ALT, H, swapwindow, l
+bind = $mod ALT, J, swapwindow, d
+bind = $mod ALT, K, swapwindow, u
+bind = $mod ALT, L, swapwindow, r
+
+binde = $mod CTRL, H, resizeactive, -40 0
+binde = $mod CTRL, L, resizeactive, 40 0
+binde = $mod CTRL, K, resizeactive, 0 -40
+binde = $mod CTRL, J, resizeactive, 0 40
+
+bind = $mod, 1, workspace, 1
+bind = $mod, 2, workspace, 2
+bind = $mod, 3, workspace, 3
+bind = $mod, 4, workspace, 4
+bind = $mod, 5, workspace, 5
+bind = $mod, 6, workspace, 6
+bind = $mod, 7, workspace, 7
+bind = $mod, 8, workspace, 8
+bind = $mod, 9, workspace, 9
+bind = $mod, bracketleft, workspace, e-1
+bind = $mod, bracketright, workspace, e+1
+
+bind = $mod SHIFT, 1, movetoworkspace, 1
+bind = $mod SHIFT, 2, movetoworkspace, 2
+bind = $mod SHIFT, 3, movetoworkspace, 3
+bind = $mod SHIFT, 4, movetoworkspace, 4
+bind = $mod SHIFT, 5, movetoworkspace, 5
+bind = $mod SHIFT, 6, movetoworkspace, 6
+bind = $mod SHIFT, 7, movetoworkspace, 7
+bind = $mod SHIFT, 8, movetoworkspace, 8
+bind = $mod SHIFT, 9, movetoworkspace, 9
+
+bind = $mod, S, togglespecialworkspace, magic
+bind = $mod SHIFT, S, movetoworkspace, special:magic
+
+# Drag floating windows with mod + left mouse, resize with mod + right mouse.
+bindm = $mod, mouse:272, movewindow
+bindm = $mod, mouse:273, resizewindow
+
+# Resize mode: mod+R, then h/j/k/l, Escape to leave.
+bind = $mod, R, submap, resize
+submap = resize
+binde = , H, resizeactive, -30 0
+binde = , L, resizeactive, 30 0
+binde = , K, resizeactive, 0 -30
+binde = , J, resizeactive, 0 30
+bind = , escape, submap, reset
+bind = , return, submap, reset
+submap = reset
+"""#

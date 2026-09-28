@@ -5,6 +5,12 @@ class FlippedView: NSView {
     override var isFlipped: Bool { true }
 }
 
+/// Visual-only overlay: never takes mouse events. A plain NSView, even at
+/// alpha 0, would sit on top of the content and swallow every click.
+final class PassthroughView: NSView {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
+
 struct Decoration: Equatable {
     var borderSize: CGFloat = 2
     var rounding: CGFloat = 10
@@ -47,7 +53,7 @@ final class ClientView: NSView, Animatable {
     let id: ClientID
     let surface: Surface
     private let clip = FlippedView()
-    private let dimView = NSView()
+    private let dimView = PassthroughView()
     private let borderLayer = CAGradientLayer()
     private let borderMask = CAShapeLayer()
     /// Drawn only outside the window, like Hyprland, so it never shows through translucent content.

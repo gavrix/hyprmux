@@ -23,6 +23,8 @@ public enum IPCRequest: Equatable {
     case version
     /// Focus internals: app active, key window, first responder.
     case debug
+    /// Which view would receive a click at a point (monitor coordinates).
+    case hitTest(CGPoint)
     case sendText(String)
     case sendKey(Modifiers, UInt16)
     /// Mouse drag in monitor coordinates (top-left origin). Button: 272 left, 273 right.
@@ -47,6 +49,10 @@ public enum IPCRequest: Equatable {
         case "reload": return .success(.reload)
         case "version": return .success(.version)
         case "debug": return .success(.debug)
+        case "hittest":
+            let n = rest.split(separator: " ").compactMap { Double($0) }
+            guard n.count == 2 else { return .failure(ParseError("hittest: expected 'x y'")) }
+            return .success(.hitTest(CGPoint(x: n[0], y: n[1])))
         case "sendtext": return .success(.sendText(rest.replacingOccurrences(of: "\\n", with: "\n")))
         case "sendkey":
             // Keep empty pieces: ", g" means no modifiers.

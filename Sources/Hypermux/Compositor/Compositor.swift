@@ -659,6 +659,15 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
             case .sendKey(let mods, let code):
                 injectKey(mods, code)
                 return "ok"
+            case .hitTest(let p):
+                // Walk up from the hit view so the reply shows the whole chain.
+                // hitTest takes the point in the receiver's superview coordinates.
+                guard let frameView = root.superview else { return "error: no frame view" }
+                let pInFrame = frameView.convert(root.convert(p, to: nil), from: nil)
+                var chain: [String] = []
+                var v = frameView.hitTest(pInFrame)
+                while let cur = v, cur !== root { chain.append(String(describing: type(of: cur))); v = cur.superview }
+                return json(["hit": chain])
             case .sendDrag(let mods, let button, let from, let to):
                 injectDrag(mods, button: button, from: from, to: to)
                 return "ok"

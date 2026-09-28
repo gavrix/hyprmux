@@ -143,6 +143,10 @@ hypermuxctl sendtext 'ls\n'
   become touches (with edge flags, so the home swipe works), keys go to the
   device as USB HID usages, and Home/Lock are hardware buttons. Touch messages
   follow idb's wire format (`Sources/SimulatorBridge/idb`, MIT).
+  Touches stream live, one message per phase, as the mouse does it: press,
+  hold, and release are separate, so long press and hand-timed drags work.
+  Moves are "changed" contacts (digitizer mask Range|Touch|Position), not new
+  touches, and a held finger is re-reported at 60 Hz like a real digitizer.
 - `Sources/HypermuxHelper` — Chromium's helper process; the bundle script
   copies it into the four `Hypermux Helper*.app` bundles.
 - `vendor/cef` (fetched) — CEF headers, C++ wrapper sources (built by SwiftPM),

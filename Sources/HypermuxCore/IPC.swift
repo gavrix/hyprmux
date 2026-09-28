@@ -29,6 +29,8 @@ public enum IPCRequest: Equatable {
     case sendKey(Modifiers, UInt16)
     /// Mouse drag in monitor coordinates (top-left origin). Button: 272 left, 273 right.
     case sendDrag(Modifiers, button: Int, from: CGPoint, to: CGPoint)
+    /// One mouse event (down / drag / up), for holds and hand-timed gestures.
+    case sendMouse(phase: String, Modifiers, button: Int, at: CGPoint)
 
     public static func parse(_ line: String) -> Result<IPCRequest, ParseError> {
         let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -62,6 +64,18 @@ public enum IPCRequest: Equatable {
             guard case .success(let m) = Modifiers.parse(parts[0]) else { return .failure(ParseError("sendkey: bad mods")) }
             guard case .key(let k)? = KeyCodes.parse(parts[1]) else { return .failure(ParseError("sendkey: bad key")) }
             return .success(.sendKey(m, k))
+        case "sendmouse":
+            // sendmouse down|drag|up MODS, button, x y
+            guard let sp = rest.firstIndex(of: " ") else { return .failure(ParseError("sendmouse: expected 'down|drag|up MODS, button, x y'")) }
+            let phase = String(rest[..<sp]).lowercased()
+            let p = rest[rest.index(after: sp)...].split(separator: ",", omittingEmptySubsequences: false)
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+            let xy = p.count == 3 ? p[2].split(separator: " ").compactMap { Double($0) } : []
+            guard ["down", "drag", "up"].contains(phase), p.count == 3, case .success(let m) = Modifiers.parse(p[0]),
+                  let b = Int(p[1]), xy.count == 2 else {
+                return .failure(ParseError("sendmouse: expected 'down|drag|up MODS, button, x y'"))
+            }
+            return .success(.sendMouse(phase: phase, m, button: b, at: CGPoint(x: xy[0], y: xy[1])))
         case "senddrag":
             // senddrag MODS, 273, x1 y1, x2 y2
             let p = rest.split(separator: ",", omittingEmptySubsequences: false).map { $0.trimmingCharacters(in: .whitespaces) }

@@ -262,7 +262,9 @@ static NSString *DeveloperDir(void) {
 - (void)sendTouchAtRatio:(CGPoint)ratio phase:(HMSimTouchPhase)phase edge:(HMSimEdge)edge {
   if (_stopped || ![self ensureHID]) return;
   CGPoint p = CGPointMake(MIN(MAX(ratio.x, 0), 1), MIN(MAX(ratio.y, 0), 1));
-  // Moves are successive "down" contacts at the new point; "up" lifts the finger.
+  // The builder only knows down (a contact beginning) and up. Moves reuse a down message,
+  // re-marked below as a continuing contact; otherwise every move would restart the touch
+  // (scrolling survives that, long press does not).
   NSUInteger direction = phase == HMSimTouchPhaseUp ? ButtonEventTypeUp : ButtonEventTypeDown;
   IndigoMessage *source = _mouseFn(&p, NULL, ButtonEventTargetDigitizer, direction, CGSizeMake(1, 1), (uint32_t)edge);
   if (!source) return;
@@ -284,6 +286,14 @@ static NSString *DeveloperDir(void) {
   IndigoPayload *second = (IndigoPayload *)(dst + 0x20 + stride);
   second->event.touch.field1 = 1;
   second->event.touch.field2 = 2;
+  if (phase == HMSimTouchPhaseMove) {
+    // IOHIDDigitizerEventMask bits: Range 0x1, Touch 0x2, Position 0x4. Keep the builder's edge bits.
+    // Tested on iOS 27: Position alone (0x4) holds but doesn't scroll; Range|Touch alone (0x3)
+    // scrolls but restarts the touch, so long press never fires. Range|Touch|Position does both.
+    uint32_t edgeBits = msg->payload.event.touch.eventMask & ~0x7u;
+    msg->payload.event.touch.eventMask = 0x7 | edgeBits;
+    second->event.touch.eventMask = 0x7 | edgeBits;
+  }
   [self send:msg];
 }
 

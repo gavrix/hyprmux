@@ -84,6 +84,25 @@ final class SimulatorSurface: FlippedView, Surface {
 
     private var touching = false
     private var touchEdge: HMSimEdge = .none
+    private var lastRatio = CGPoint.zero
+    /// A real digitizer keeps reporting a resting finger; the Mac sends nothing while the
+    /// button is held still. Without these repeats the guest drops the contact (no long press).
+    private var holdTimer: Timer?
+
+    private func startHold() {
+        holdTimer?.invalidate()
+        let t = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] _ in
+            guard let self, self.touching else { return }
+            self.display.sendTouch(atRatio: self.lastRatio, phase: .move, edge: self.touchEdge)
+        }
+        RunLoop.main.add(t, forMode: .common)
+        holdTimer = t
+    }
+
+    private func stopHold() {
+        holdTimer?.invalidate()
+        holdTimer = nil
+    }
 
     /// A touch starting this close to a screen edge (fraction of the side) is an edge gesture.
     private static let edgeBand: CGFloat = 0.03
@@ -102,18 +121,22 @@ final class SimulatorSurface: FlippedView, Surface {
         guard (0...1).contains(r.x), (0...1).contains(r.y) else { return }
         touching = true
         touchEdge = Self.edge(for: r)
+        lastRatio = r
         touchesSent += 1
         display.sendTouch(atRatio: r, phase: .down, edge: touchEdge)
+        startHold()
     }
 
     override func mouseDragged(with event: NSEvent) {
         guard touching else { return }
-        display.sendTouch(atRatio: ratio(event), phase: .move, edge: touchEdge)
+        lastRatio = ratio(event)
+        display.sendTouch(atRatio: lastRatio, phase: .move, edge: touchEdge)
     }
 
     override func mouseUp(with event: NSEvent) {
         guard touching else { return }
         touching = false
+        stopHold()
         display.sendTouch(atRatio: ratio(event), phase: .up, edge: touchEdge)
     }
 
@@ -154,6 +177,7 @@ final class SimulatorSurface: FlippedView, Surface {
     func requestClose() {
         guard !closed else { return }
         closed = true
+        stopHold()
         display.stop()
         onClose?(self)
     }

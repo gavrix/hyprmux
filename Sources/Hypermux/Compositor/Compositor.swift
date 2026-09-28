@@ -767,6 +767,20 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
             case .sendDrag(let mods, let button, let from, let to):
                 injectDrag(mods, button: button, from: from, to: to)
                 return "ok"
+            case .sendMouse(let phase, let mods, let button, let at):
+                let right = button == 273
+                let type: NSEvent.EventType = switch phase {
+                case "down": right ? .rightMouseDown : .leftMouseDown
+                case "drag": right ? .rightMouseDragged : .leftMouseDragged
+                default: right ? .rightMouseUp : .leftMouseUp
+                }
+                if let e = NSEvent.mouseEvent(
+                    with: type, location: root.convert(at, to: nil), modifierFlags: nsFlags(mods),
+                    timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+                    context: nil, eventNumber: 0, clickCount: 1, pressure: phase == "up" ? 0 : 1) {
+                    NSApp.postEvent(e, atStart: false)
+                }
+                return "ok"
             }
         }
     }

@@ -35,5 +35,48 @@ else
   echo "warning: no Ghostty resources found; TERM falls back to xterm-256color" >&2
 fi
 
+# Chromium (CEF): framework + helper apps, when the SDK is present (scripts/fetch-cef.sh).
+CEF_FW="$ROOT/vendor/cef/Release/Chromium Embedded Framework.framework"
+if [[ -d "$CEF_FW" ]]; then
+  swift build -c "$CONFIG" --product HypermuxHelper
+  HELPER_BIN="$(swift build -c "$CONFIG" --show-bin-path)/HypermuxHelper"
+  mkdir -p "$APP/Contents/Frameworks"
+  # clonefile copy: instant on APFS, no extra disk.
+  cp -Rc "$CEF_FW" "$APP/Contents/Frameworks/" 2>/dev/null || cp -R "$CEF_FW" "$APP/Contents/Frameworks/"
+  codesign --force --sign - "$APP/Contents/Frameworks/Chromium Embedded Framework.framework" >/dev/null 2>&1 || true
+  # Chromium looks for "<App> Helper (<Kind>).app" next to the framework.
+  for kind in "" " (GPU)" " (Renderer)" " (Alerts)"; do
+    name="Hypermux Helper$kind"
+    case "$kind" in
+      " (Renderer)") bid="dev.gavrix.hypermux.helper.renderer" ;;
+      " (Alerts)") bid="dev.gavrix.hypermux.helper.alerts" ;;
+      *) bid="dev.gavrix.hypermux.helper" ;;
+    esac
+    H="$APP/Contents/Frameworks/$name.app"
+    mkdir -p "$H/Contents/MacOS"
+    cp "$HELPER_BIN" "$H/Contents/MacOS/$name"
+    cat > "$H/Contents/Info.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleExecutable</key><string>$name</string>
+  <key>CFBundleIdentifier</key><string>$bid</string>
+  <key>CFBundleName</key><string>$name</string>
+  <key>CFBundleDisplayName</key><string>$name</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+  <key>CFBundleVersion</key><string>1</string>
+  <key>LSMinimumSystemVersion</key><string>14.0</string>
+  <key>LSUIElement</key><string>1</string>
+  <key>LSEnvironment</key><dict><key>MallocNanoZone</key><string>0</string></dict>
+  <key>NSSupportsAutomaticGraphicsSwitching</key><true/>
+</dict>
+</plist>
+PLIST
+    codesign --force --sign - "$H" >/dev/null 2>&1 || true
+  done
+fi
+
 codesign --force --sign - "$APP" >/dev/null 2>&1 || true
 echo "$APP"

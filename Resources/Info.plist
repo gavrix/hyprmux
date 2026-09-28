@@ -15,5 +15,7 @@
     <key>NSHighResolutionCapable</key><true/>
     <key>NSPrincipalClass</key><string>NSApplication</string>
     <key>NSSupportsAutomaticGraphicsSwitching</key><true/>
+    <key>NSBluetoothAlwaysUsageDescription</key><string>Chromium uses Bluetooth to sign in with a passkey on your phone.</string>
+    <key>LSEnvironment</key><dict><key>MallocNanoZone</key><string>0</string></dict>
 </dict>
 </plist>

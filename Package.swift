@@ -7,6 +7,7 @@ let package = Package(
     products: [
         .executable(name: "Hypermux", targets: ["Hypermux"]),
         .executable(name: "hypermuxctl", targets: ["hypermuxctl"]),
+        .executable(name: "HypermuxHelper", targets: ["HypermuxHelper"]),
     ],
     targets: [
         .binaryTarget(
@@ -21,7 +22,7 @@ let package = Package(
         // AppKit shell: window, compositor views, animations, libghostty surfaces.
         .executableTarget(
             name: "Hypermux",
-            dependencies: ["HypermuxCore", "GhosttyKit"],
+            dependencies: ["HypermuxCore", "GhosttyKit", "ChromiumBridge"],
             swiftSettings: [.swiftLanguageMode(.v5)],
             linkerSettings: [
                 .linkedLibrary("c++"),
@@ -37,9 +38,38 @@ let package = Package(
             dependencies: ["HypermuxCore"],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
+        // CEF's C++ wrapper (libcef_dll_wrapper), built from the SDK in vendor/cef.
+        .target(
+            name: "CEFWrapper",
+            path: "vendor/cef",
+            exclude: ["include", "Release", "LICENSE.txt", "libcef_dll/CMakeLists.txt"],
+            sources: ["libcef_dll"],
+            publicHeadersPath: "swiftpm-public",
+            cxxSettings: [
+                .headerSearchPath("."),
+                .define("WRAPPING_CEF_SHARED"),
+                .unsafeFlags(["-Wno-deprecated-declarations", "-Wno-undefined-var-template"]),
+            ]
+        ),
+        // Objective-C++ bridge: CEF browsers as NSViews, exposed to Swift.
+        .target(
+            name: "ChromiumBridge",
+            dependencies: ["CEFWrapper"],
+            cxxSettings: [
+                .headerSearchPath("../../vendor/cef"),
+                .unsafeFlags(["-fobjc-arc", "-Wno-deprecated-declarations"]),
+            ],
+            linkerSettings: [.linkedFramework("AppKit")]
+        ),
+        .executableTarget(
+            name: "HypermuxHelper",
+            dependencies: ["ChromiumBridge"],
+            cSettings: [.unsafeFlags(["-fobjc-arc"])]
+        ),
         .testTarget(
             name: "HypermuxCoreTests",
             dependencies: ["HypermuxCore"]
         ),
-    ]
+    ],
+    cxxLanguageStandard: .cxx20
 )

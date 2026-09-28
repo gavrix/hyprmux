@@ -105,6 +105,14 @@ final class ConfigTests: XCTestCase {
         XCTAssertNil(WebAddress.resolve("  ", search: search))
     }
 
+    func testWebEngine() {
+        XCTAssertEqual(ConfigParser.parse("").webEngine, "webkit")
+        let c = ConfigParser.parse("web {\n    engine = chromium\n}")
+        XCTAssertEqual(c.errors, [])
+        XCTAssertEqual(c.webEngine, "chromium")
+        XCTAssertEqual(ConfigParser.parse("web:engine = gecko").errors.count, 1)
+    }
+
     func testWebDispatchers() {
         XCTAssertEqual(try? Dispatcher.parse("web", "github.com").get(), .web("github.com"))
         XCTAssertEqual(try? Dispatcher.parse("webnav", "back").get(), .webNav(.back))

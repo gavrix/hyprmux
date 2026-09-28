@@ -74,6 +74,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var compositor: Compositor!
     private var watcher: ConfigWatcher?
     private var ipc: IPCServer?
+    /// Problems found before launch, shown in the config error banner.
+    var startupNotes: [String] = []
 
     static let configPath: String = {
         if let p = ProcessInfo.processInfo.environment["HYPERMUX_CONFIG"], !p.isEmpty { return p }
@@ -89,7 +91,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         buildMenu()
-        let config = Self.loadConfig()
+        var config = Self.loadConfig()
+        config.errors += startupNotes
         for e in config.errors { log.warning("config: \(e, privacy: .public)") }
         runtime = GhosttyRuntime(extraConfig: config.ghostty)
         guard runtime.app != nil else {
@@ -113,7 +116,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func reloadConfig() {
-        compositor.reload(Self.loadConfig())
+        var c = Self.loadConfig()
+        c.errors += startupNotes
+        if c.webEngine != compositor.webEngine {
+            c.errors.append("web:engine = \(c.webEngine) takes effect after restarting Hypermux")
+        }
+        compositor.reload(c)
     }
 
     @objc func openConfig() {

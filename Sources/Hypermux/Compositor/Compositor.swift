@@ -1,9 +1,9 @@
 import AppKit
 import HypermuxCore
-import WebKit
+import ChromiumBridge
 
 /// Glue between the model (WindowManager), the monitor window, and terminal surfaces.
-final class Compositor: NSObject, TerminalViewHost, WebSurfaceHost, NSWindowDelegate {
+final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindowDelegate {
     let runtime: GhosttyRuntime
     private(set) var config: HypermuxConfig
     let wm: WindowManager
@@ -194,24 +194,30 @@ final class Compositor: NSObject, TerminalViewHost, WebSurfaceHost, NSWindowDele
         manage(term)
     }
 
-    /// Opens a web surface. `configuration` is set for pages opened by other pages.
+    /// Engine for new web tiles. Chromium only if CEF started (see main.swift).
+    var webEngine: String { HMChromium.isRunning ? "chromium" : "webkit" }
+
+    private func allocateID() -> ClientID {
+        defer { nextID += 1 }
+        return ClientID(nextID)
+    }
+
+    /// Opens a web tile. Empty input = new-tab start page with the address bar focused.
     @discardableResult
-    private func spawnWeb(_ input: String, configuration: WKWebViewConfiguration? = nil) -> WebSurface {
-        let id = ClientID(nextID)
-        nextID += 1
-        let web = WebSurface(id: id, configuration: configuration, home: config.webHome,
-                             search: config.webSearch, showAddressBar: config.webShowAddressBar)
+    private func spawnWeb(_ input: String) -> BrowserSurface {
+        let options = BrowserOptions(config)
+        let id = allocateID()
+        let web: BrowserSurface = webEngine == "chromium"
+            ? ChromiumSurface(id: id, options: options)
+            : WebKitSurface(id: id, options: options)
         web.host = self
-        manage(web)
-        if configuration == nil {
-            if input.isEmpty {
-                // Like a new tab: start page, cursor in the address bar. Deferred so the
-                // focus pass in apply() doesn't move it back to the page.
-                DispatchQueue.main.async { web.openStartPage() }
-            } else {
-                web.open(input)
-            }
+        if input.isEmpty {
+            // Deferred so the focus pass in apply() doesn't move focus back to the page.
+            DispatchQueue.main.async { web.openStartPage() }
+        } else {
+            web.open(input)
         }
+        manage(web)
         return web
     }
 
@@ -272,7 +278,7 @@ final class Compositor: NSObject, TerminalViewHost, WebSurfaceHost, NSWindowDele
         case .spawnWeb(let url):
             DispatchQueue.main.async { [weak self] in self?.spawnWeb(url) }
         case .webNav(let id, let nav):
-            (views[id]?.surface as? WebSurface)?.perform(nav)
+            (views[id]?.surface as? BrowserSurface)?.perform(nav)
         case .submap(let name):
             submap = name
             bar.submap = name
@@ -471,7 +477,7 @@ final class Compositor: NSObject, TerminalViewHost, WebSurfaceHost, NSWindowDele
         // Leave focus alone if it is already somewhere inside the surface (e.g. a web
         // page's address bar), unless the focused window just changed.
         if !changed && s.ownsFirstResponder(in: window) { return }
-        if window.firstResponder !== s.focusTarget { window.makeFirstResponder(s.focusTarget) }
+        if window.firstResponder !== s.focusTarget { s.takeFocus(in: window) }
     }
 
     // MARK: Input
@@ -779,25 +785,39 @@ final class Compositor: NSObject, TerminalViewHost, WebSurfaceHost, NSWindowDele
         return true
     }
 
-    // MARK: WebSurfaceHost
+    // MARK: BrowserSurfaceHost
 
-    func webSurfaceDidRequestFocus(_ s: WebSurface) {
-        guard wm.focused != s.clientID else { return }
+    func browserSurfaceDidRequestFocus(_ s: BrowserSurface) {
+        guard wm.focused != s.clientID, views[s.clientID] != nil else { return }
         log.debug("focus reason=web client=\(s.clientID.raw)")
         wm.focus(s.clientID)
         apply(animated: true)
     }
 
-    func webSurfaceTitleDidChange(_ s: WebSurface) {
+    func browserSurfaceTitleDidChange(_ s: BrowserSurface) {
         if s.clientID == wm.focused { bar.title = s.title }
     }
 
-    func webSurfaceDidClose(_ s: WebSurface) {
+    func browserSurfaceDidClose(_ s: BrowserSurface) {
         removeClient(s.clientID)
     }
 
-    func webSurface(_ s: WebSurface, createWith configuration: WKWebViewConfiguration, for action: WKNavigationAction) -> WKWebView? {
-        spawnWeb("", configuration: configuration).webView
+    func browserSurfaceDidBecomeReady(_ s: BrowserSurface) {
+        // Chromium's view arrives after the tile; give it focus if its tile has it,
+        // unless the user is already typing in the address bar.
+        guard wm.focused == s.clientID, !s.ownsFirstResponder(in: window) || window.firstResponder === s.content else { return }
+        s.takeFocus(in: window)
+    }
+
+    func browserSurface(_ s: BrowserSurface, openInNewTile url: String) {
+        spawnWeb(url)
+    }
+
+    func browserSurfaceNextClientID(_ s: BrowserSurface) -> ClientID { allocateID() }
+
+    func browserSurface(_ s: BrowserSurface, adoptPopup popup: BrowserSurface) {
+        popup.host = self
+        manage(popup)
     }
 
     // MARK: NSWindowDelegate

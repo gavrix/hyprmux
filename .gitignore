@@ -6,3 +6,5 @@ Resources/terminfo/
 .swiftpm/
 *.xcodeproj/xcuserdata/
 .DS_Store
+.cache/
+vendor/cef/

@@ -92,6 +92,10 @@ ghostty {
 
 # Web surfaces (WebKit for now).
 web {
+    # webkit: light, native, but no passkeys (Apple only allows them in approved browsers).
+    # chromium: bundled Chromium (CEF). Passkeys from your phone or a security key work,
+    # so Okta and GitHub sign-in work. Your Mac's own Touch ID passkeys don't. Needs a restart.
+    engine = webkit
     home = https://duckduckgo.com
     # %s is replaced by the search terms typed in the address bar.
     search = https://duckduckgo.com/?q=%s

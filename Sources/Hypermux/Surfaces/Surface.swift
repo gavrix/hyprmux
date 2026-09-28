@@ -19,6 +19,8 @@ protocol Surface: AnyObject {
     var info: [String: Any] { get }
 
     func setOccluded(_ occluded: Bool)
+    /// Give keyboard focus to the surface.
+    func takeFocus(in window: NSWindow)
     /// Ask to close. The surface calls `SurfaceHost.surfaceDidClose` when it is gone.
     func requestClose()
     /// Release resources after the close animation.
@@ -26,6 +28,8 @@ protocol Surface: AnyObject {
 }
 
 extension Surface {
+    func takeFocus(in window: NSWindow) { window.makeFirstResponder(focusTarget) }
+
     /// True if the window's first responder sits inside this surface (e.g. its address bar).
     func ownsFirstResponder(in window: NSWindow) -> Bool {
         guard let r = window.firstResponder as? NSView else { return false }

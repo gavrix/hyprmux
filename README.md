@@ -12,6 +12,7 @@ file uses `hyprland.conf` syntax and reloads on save.
 Requirements: macOS 14+, Xcode 16+ (Swift 6).
 
 ```sh
+scripts/fetch-cef.sh         # optional: Chromium (CEF) SDK, ~130 MB download, for web { engine = chromium }
 scripts/bundle.sh            # fetches libghostty, builds, assembles build/Hypermux.app
 open build/Hypermux.app
 swift test                   # core model tests
@@ -77,9 +78,17 @@ Web tiles: `web { home, search, open_terminal_links, address_bar }`. The
 address bar takes URLs, hosts (`github.com/x`, `localhost:3000`), paths, or
 search terms. Pages that open windows get their own tile. ⌘-click in a
 terminal opens http(s) links in a web tile (set `open_terminal_links = false`
-to use your default browser). Web tiles run on WebKit today. The `Surface`
-protocol keeps the engine behind one class, so a Chromium (CEF) backend can be
-added next to it.
+to use your default browser).
+
+Two engines, picked with `web { engine = webkit | chromium }` (restart needed):
+
+- **webkit**: WKWebView. Light, but no passkeys or security keys. Apple only
+  allows WebAuthn in web views of apps it approved as browsers.
+- **chromium**: bundled Chromium via CEF (+~370 MB). Chromium does WebAuthn
+  itself, so passkeys from a phone (QR code) or a USB security key work. That
+  covers Okta and GitHub. Passkeys stored on this Mac (Touch ID, iCloud
+  Keychain) still need Apple's browser entitlement, so they don't. The profile
+  lives in `~/Library/Application Support/Hypermux/Chromium`.
 
 A `ghostty { ... }` block passes settings to libghostty. Your normal
 `~/.config/ghostty/config` loads first.
@@ -108,12 +117,19 @@ hypermuxctl sendtext 'ls\n'
     close) go out as `Effect`s.
   - `Config` — hyprlang-style parser. `Dispatcher`, `Keys`, `Bezier`, `IPC`.
 - `Sources/Hypermux` — the AppKit shell.
-  - `Surfaces/` — the `Surface` protocol (terminal, web) and `WebSurface`
-    (WKWebView plus an address bar).
+  - `Surfaces/` — the `Surface` protocol; `BrowserSurface` (address bar, start
+    page, navigation) with `WebKitSurface` and `ChromiumSurface` engines.
   - `Ghostty/` — libghostty runtime callbacks and `TerminalView` (keyboard, IME,
     mouse, clipboard). Ported from Ghostty's macOS app.
   - `Compositor/` — applies snapshots to views, runs animations on a display link,
     routes binds and mouse drags, draws the bar and error banner.
+- `Sources/ChromiumBridge` — Objective-C++ bridge to CEF: an NSApplication
+  subclass, lifecycle, and browsers as child NSViews. CEF runs in "Alloy" style
+  (required for embedding), which still shows Chrome's passkey dialog.
+- `Sources/HypermuxHelper` — Chromium's helper process; the bundle script
+  copies it into the four `Hypermux Helper*.app` bundles.
+- `vendor/cef` (fetched) — CEF headers, C++ wrapper sources (built by SwiftPM),
+  and the framework.
 - `Sources/hypermuxctl` — the IPC client.
 
 When a window animates, its terminal jumps to its final size once and the

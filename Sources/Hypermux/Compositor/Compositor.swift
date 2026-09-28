@@ -32,6 +32,9 @@ final class Compositor: NSObject, TerminalViewHost, NSWindowDelegate {
         let startFrame: CGRect
         var lastMouse: CGPoint
         let button: Int
+        /// Edges being resized: the ones nearest the grab point, like Hyprland.
+        var hEdge: Direction { startMouse.x < startFrame.midX ? .left : .right }
+        var vEdge: Direction { startMouse.y < startFrame.midY ? .up : .down }
     }
 
     private let barHeight: CGFloat = 30
@@ -501,8 +504,22 @@ final class Compositor: NSObject, TerminalViewHost, NSWindowDelegate {
             if d.floating {
                 var r = d.startFrame
                 if d.resize {
-                    r.size.width = max(120, r.width + dx)
-                    r.size.height = max(80, r.height + dy)
+                    // Resize from the grabbed corner; the opposite corner stays put.
+                    let minW: CGFloat = 120, minH: CGFloat = 80
+                    if d.hEdge == .left {
+                        let w = max(minW, r.width - dx)
+                        r.origin.x = r.maxX - w
+                        r.size.width = w
+                    } else {
+                        r.size.width = max(minW, r.width + dx)
+                    }
+                    if d.vEdge == .up {
+                        let h = max(minH, r.height - dy)
+                        r.origin.y = r.maxY - h
+                        r.size.height = h
+                    } else {
+                        r.size.height = max(minH, r.height + dy)
+                    }
                 } else {
                     r.origin.x += dx
                     r.origin.y += dy
@@ -510,7 +527,8 @@ final class Compositor: NSObject, TerminalViewHost, NSWindowDelegate {
                 wm.setFloatingFrame(d.id, r)
                 apply(animated: false)
             } else if d.resize {
-                wm.dispatch(.resizeActive(dx: p.x - d.lastMouse.x, dy: p.y - d.lastMouse.y))
+                wm.moveTiledEdges(d.id, horizontal: d.hEdge, dx: p.x - d.lastMouse.x,
+                                  vertical: d.vEdge, dy: p.y - d.lastMouse.y)
                 apply(animated: false)
             } else {
                 // Tiled drag: the window follows the pointer; it lands on mouse-up.
@@ -570,6 +588,9 @@ final class Compositor: NSObject, TerminalViewHost, NSWindowDelegate {
             case .sendKey(let mods, let code):
                 injectKey(mods, code)
                 return "ok"
+            case .sendDrag(let mods, let button, let from, let to):
+                injectDrag(mods, button: button, from: from, to: to)
+                return "ok"
             }
         }
     }
@@ -591,13 +612,42 @@ final class Compositor: NSObject, TerminalViewHost, NSWindowDelegate {
         return s
     }
 
-    /// Posts a synthetic key press through the normal event path (monitors, then responders).
-    private func injectKey(_ mods: Modifiers, _ code: UInt16) {
+    private func nsFlags(_ mods: Modifiers) -> NSEvent.ModifierFlags {
         var flags: NSEvent.ModifierFlags = []
         if mods.contains(.shift) { flags.insert(.shift) }
         if mods.contains(.ctrl) { flags.insert(.control) }
         if mods.contains(.alt) { flags.insert(.option) }
         if mods.contains(.super) { flags.insert(.command) }
+        return flags
+    }
+
+    /// Posts a synthetic mouse drag (down, 10 drag steps, up) through the normal event path.
+    private func injectDrag(_ mods: Modifiers, button: Int, from: CGPoint, to: CGPoint) {
+        let flags = nsFlags(mods)
+        let right = button == 273
+        let types: (NSEvent.EventType, NSEvent.EventType, NSEvent.EventType) = right
+            ? (.rightMouseDown, .rightMouseDragged, .rightMouseUp)
+            : (.leftMouseDown, .leftMouseDragged, .leftMouseUp)
+        func post(_ type: NSEvent.EventType, _ p: CGPoint) {
+            let loc = root.convert(p, to: nil)
+            if let e = NSEvent.mouseEvent(
+                with: type, location: loc, modifierFlags: flags, timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1,
+                pressure: type == types.2 ? 0 : 1) {
+                NSApp.postEvent(e, atStart: false)
+            }
+        }
+        post(types.0, from)
+        for i in 1...10 {
+            let t = CGFloat(i) / 10
+            post(types.1, CGPoint(x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t))
+        }
+        post(types.2, to)
+    }
+
+    /// Posts a synthetic key press through the normal event path (monitors, then responders).
+    private func injectKey(_ mods: Modifiers, _ code: UInt16) {
+        let flags = nsFlags(mods)
         let name = KeyCodes.table.first { $0.value == code && $0.key.count == 1 }?.key ?? ""
         let chars: String
         switch code {

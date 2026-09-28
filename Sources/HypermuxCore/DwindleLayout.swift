@@ -146,6 +146,31 @@ public final class DwindleLayout {
         if dy != 0 { resizeAxis(node, delta: dy, splitTop: true) }
     }
 
+    /// Moves one edge of the client by `delta` points along its axis
+    /// (positive = right/down), whatever that does to the client's size.
+    /// Used for mouse resizes, where the grabbed edge must follow the pointer.
+    /// Edges on the work-area border don't move.
+    public func moveEdge(_ id: ClientID, _ edge: Direction, by delta: Double) {
+        guard delta != 0, let node = leaf(id) else { return }
+        let splitTop = !edge.isHorizontal
+        // Right/bottom edge: divider of the nearest ancestor where we're in the first half.
+        // Left/top edge: divider of the nearest ancestor where we're in the second half.
+        let wantFirst = edge == .right || edge == .down
+        var child = node
+        var cur = node.parent
+        while let p = cur {
+            if p.splitTop == splitTop, (p.children[0] === child) == wantFirst {
+                let size = splitTop ? p.box.height : p.box.width
+                guard size > 0 else { return }
+                // Moving the divider by d points changes ratio by 2d/size.
+                p.ratio = clampRatio(p.ratio + delta * 2 / size)
+                return
+            }
+            child = p
+            cur = p.parent
+        }
+    }
+
     private func resizeAxis(_ node: Node, delta: Double, splitTop: Bool) {
         // First choice: an ancestor where we sit in the first half (our far edge moves).
         // Fallback: an ancestor where we sit in the second half (our near edge moves).

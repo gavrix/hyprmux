@@ -14,6 +14,7 @@ guard !args.isEmpty, args[0] != "-h", args[0] != "--help" else {
       reload                         reload the config
       sendtext <text>                type text into the focused terminal (\\n = enter)
       sendkey <MODS>, <key>          inject a key press, e.g. 'SUPER, Return'
+      senddrag <MODS>, <button>, <x1 y1>, <x2 y2>   inject a mouse drag (272 left, 273 right)
     """)
     exit(args.isEmpty ? 1 : 0)
 }

@@ -512,6 +512,14 @@ public final class WindowManager {
         clients[id]!.floatRect = rect
     }
 
+    /// Mouse resize of a tiled client: moves the grabbed edges with the pointer.
+    public func moveTiledEdges(_ id: ClientID, horizontal: Direction, dx: Double, vertical: Direction, dy: Double) {
+        guard let st = clients[id], !st.floating, let ws = workspaces[st.workspace] else { return }
+        ws.tiled.layout(in: tileArea)
+        ws.tiled.moveEdge(id, horizontal, by: dx)
+        ws.tiled.moveEdge(id, vertical, by: dy)
+    }
+
     /// Drops a tiled client at a point: re-inserts it next to the client there,
     /// on the side of the point. Used by mouse drag-and-drop.
     public func dropTiled(_ id: ClientID, at point: CGPoint) {

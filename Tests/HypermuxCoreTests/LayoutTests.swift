@@ -59,6 +59,38 @@ final class DwindleTests: XCTestCase {
         XCTAssertEqual(d.layout(in: area)[ClientID(1)]?.width, 800)
     }
 
+    func testMoveEdgeFollowsPointer() {
+        // [1 | 2 | 3]: dragging an edge right moves that divider right, whichever client grabs it.
+        let d = DwindleLayout()
+        d.insert(ClientID(1), target: nil, focalPoint: nil, area: area)
+        d.insert(ClientID(2), target: ClientID(1), focalPoint: nil, area: area)
+        d.layout(in: area)
+        d.moveEdge(ClientID(2), .left, by: 100)   // right client's left edge, dragged right
+        var l = d.layout(in: area)
+        XCTAssertEqual(l[ClientID(1)]?.width, 900)
+        XCTAssertEqual(l[ClientID(2)]?.minX, 900)
+        d.moveEdge(ClientID(1), .right, by: -200) // left client's right edge, dragged left
+        l = d.layout(in: area)
+        XCTAssertEqual(l[ClientID(2)]?.minX, 700)
+        d.moveEdge(ClientID(1), .left, by: 50)    // on the work-area border: no-op
+        XCTAssertEqual(d.layout(in: area)[ClientID(1)]?.minX, 0)
+    }
+
+    func testMoveEdgePicksTheRightDivider() {
+        // [1 | [2 | 3]]: 2's left edge is the root divider; its right edge is the inner one.
+        let d = DwindleLayout(settings: { var s = DwindleSettings(); s.preserveSplit = true; return s }())
+        d.insert(ClientID(1), target: nil, focalPoint: nil, area: area)
+        d.insert(ClientID(2), target: ClientID(1), focalPoint: nil, area: area)
+        d.insert(ClientID(3), target: ClientID(2), focalPoint: nil, area: area)
+        d.toggleSplit(ClientID(3))  // make the inner split side by side
+        d.layout(in: area)
+        d.moveEdge(ClientID(2), .left, by: -100)
+        let l = d.layout(in: area)
+        XCTAssertEqual(l[ClientID(1)]?.width, 700)
+        XCTAssertEqual(l[ClientID(3)]?.maxX, 1600)
+        XCTAssertEqual(l[ClientID(2)]?.minX, 700)
+    }
+
     func testToggleSplitWithPreserve() {
         var s = DwindleSettings()
         s.preserveSplit = true

@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 /// Where the control socket lives. Child shells get HYPERMUX_SOCKET so
@@ -22,6 +23,8 @@ public enum IPCRequest: Equatable {
     case version
     case sendText(String)
     case sendKey(Modifiers, UInt16)
+    /// Mouse drag in monitor coordinates (top-left origin). Button: 272 left, 273 right.
+    case sendDrag(Modifiers, button: Int, from: CGPoint, to: CGPoint)
 
     public static func parse(_ line: String) -> Result<IPCRequest, ParseError> {
         let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -48,6 +51,18 @@ public enum IPCRequest: Equatable {
             guard case .success(let m) = Modifiers.parse(parts[0]) else { return .failure(ParseError("sendkey: bad mods")) }
             guard case .key(let k)? = KeyCodes.parse(parts[1]) else { return .failure(ParseError("sendkey: bad key")) }
             return .success(.sendKey(m, k))
+        case "senddrag":
+            // senddrag MODS, 273, x1 y1, x2 y2
+            let p = rest.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+            func pt(_ s: String) -> CGPoint? {
+                let n = s.split(separator: " ").compactMap { Double($0) }
+                return n.count == 2 ? CGPoint(x: n[0], y: n[1]) : nil
+            }
+            guard p.count == 4, case .success(let m) = Modifiers.parse(p[0]), let b = Int(p[1]),
+                  let a = pt(p[2]), let z = pt(p[3]) else {
+                return .failure(ParseError("senddrag: expected 'MODS, button, x1 y1, x2 y2'"))
+            }
+            return .success(.sendDrag(m, button: b, from: a, to: z))
         default:
             return .failure(ParseError("unknown command '\(cmd)'"))
         }

@@ -14,6 +14,7 @@ final class PassthroughView: NSView {
 struct Decoration: Equatable {
     var borderSize: CGFloat = 2
     var rounding: CGFloat = 10
+    var roundingPower: CGFloat = 2
     var activeBorder: Gradient
     var inactiveBorder: Gradient
     var activeOpacity: CGFloat = 1
@@ -28,6 +29,7 @@ struct Decoration: Equatable {
     init(_ c: HypermuxConfig) {
         borderSize = c.wm.borderSize
         rounding = c.rounding
+        roundingPower = c.roundingPower
         activeBorder = c.activeBorder
         inactiveBorder = c.inactiveBorder
         activeOpacity = c.activeOpacity
@@ -61,6 +63,11 @@ final class ClientView: NSView, Animatable {
     private let shadowMask = CAShapeLayer()
     /// Blurs what is behind the window (other apps, the desktop). Only with `decoration:blur`.
     private var blurView: NSVisualEffectView?
+    /// Holds the blur and gives it the window's shape (NSVisualEffectView manages its own layers).
+    private let blurHost = NSView()
+    private let blurMask = CAShapeLayer()
+    /// Content clip shape when corners aren't circular (Core Animation's cornerRadius only does arcs).
+    private let clipMask = CAShapeLayer()
 
     private(set) var targetFrame: CGRect = .zero
     private var frameTween: Tween<CGRect>?
@@ -129,11 +136,15 @@ final class ClientView: NSView, Animatable {
         shadowLayer.mask = shadowMask
         layer?.addSublayer(shadowLayer)
 
+        blurHost.wantsLayer = true
+        blurHost.layer?.mask = blurMask
+
         clip.wantsLayer = true
         clip.layer?.masksToBounds = true
         clip.layer?.backgroundColor = surface.backdropColor.cgColor
         // Opacity applies to the terminal and its backdrop as one image.
         clip.layer?.allowsGroupOpacity = true
+        addSubview(blurHost)  // below the content
         addSubview(clip)
         clip.addSubview(surface.view)
 
@@ -196,9 +207,9 @@ final class ClientView: NSView, Animatable {
             v.material = .hudWindow
             v.state = .active
             v.appearance = NSAppearance(named: .darkAqua)
-            v.wantsLayer = true
-            v.layer?.masksToBounds = true
-            addSubview(v, positioned: .below, relativeTo: clip)
+            blurHost.addSubview(v)
+            v.autoresizingMask = [.width, .height]
+            v.frame = blurHost.bounds
             blurView = v
         } else if !decoration.blur, let v = blurView {
             v.removeFromSuperview()
@@ -241,15 +252,28 @@ final class ClientView: NSView, Animatable {
         let bounds = self.bounds
         CATransaction.begin()
         CATransaction.setDisableActions(true)
+        let power = Double(decoration.roundingPower)
+        func shape(_ rect: CGRect, _ radius: CGFloat) -> CGPath {
+            RoundedShape.path(in: rect, radius: Double(radius), power: power)
+        }
         clip.frame = bounds.insetBy(dx: b, dy: b)
-        clip.layer?.cornerRadius = max(0, r - b)
+        let clipRadius = max(0, r - b)
+        if abs(power - 2) < 0.01 {
+            // Circular corners: Core Animation's own rounding is cheaper than a mask.
+            clip.layer?.mask = nil
+            clip.layer?.cornerRadius = clipRadius
+        } else {
+            clip.layer?.cornerRadius = 0
+            clipMask.frame = clip.bounds
+            clipMask.path = shape(clip.bounds, clipRadius)
+            if clip.layer?.mask !== clipMask { clip.layer?.mask = clipMask }
+        }
         borderLayer.frame = bounds
         borderMask.frame = bounds
         borderMask.lineWidth = b
-        let inset = bounds.insetBy(dx: b / 2, dy: b / 2)
-        borderMask.path = CGPath(roundedRect: inset, cornerWidth: max(0, r - b / 2), cornerHeight: max(0, r - b / 2), transform: nil)
+        borderMask.path = shape(bounds.insetBy(dx: b / 2, dy: b / 2), max(0, r - b / 2))
         borderLayer.isHidden = b <= 0
-        let outline = CGPath(roundedRect: bounds, cornerWidth: r, cornerHeight: r, transform: nil)
+        let outline = shape(bounds, r)
         shadowLayer.frame = bounds
         shadowLayer.shadowPath = outline
         // Mask = a generous outer rect minus the window shape (even-odd).
@@ -259,10 +283,10 @@ final class ClientView: NSView, Animatable {
         maskPath.addPath(outline)
         shadowMask.frame = bounds
         shadowMask.path = maskPath
-        if let v = blurView {
-            v.frame = clip.frame
-            v.layer?.cornerRadius = max(0, r - b)
-        }
+        blurHost.frame = clip.frame
+        blurHost.isHidden = blurView == nil
+        blurMask.frame = blurHost.bounds
+        blurMask.path = shape(blurHost.bounds, clipRadius)
         dimView.frame = clip.bounds
         CATransaction.commit()
     }

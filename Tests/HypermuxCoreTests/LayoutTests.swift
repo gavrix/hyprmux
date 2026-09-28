@@ -429,3 +429,35 @@ final class WindowManagerTests: XCTestCase {
         XCTAssertEqual(effects, [.spawn(command: "htop"), .close(ClientID(7))])
     }
 }
+
+final class RoundedShapeTests: XCTestCase {
+    let rect = CGRect(x: 0, y: 0, width: 200, height: 100)
+
+    func testBoundsMatchRect() {
+        for p in [1.5, 2.0, 4.0, 8.0] {
+            let b = RoundedShape.path(in: rect, radius: 20, power: p).boundingBox
+            XCTAssertEqual(b.minX, 0, accuracy: 0.01); XCTAssertEqual(b.maxX, 200, accuracy: 0.01)
+            XCTAssertEqual(b.minY, 0, accuracy: 0.01); XCTAssertEqual(b.maxY, 100, accuracy: 0.01)
+        }
+    }
+
+    func testPowerTwoIsCircular() {
+        // At 45 degrees a circular corner of radius 20 is 20 from its center (20, 20).
+        let path = RoundedShape.path(in: rect, radius: 20, power: 2)
+        let d = 20 - 20 / 2.0.squareRoot()
+        XCTAssertTrue(path.contains(CGPoint(x: d + 0.5, y: d + 0.5)))
+        XCTAssertFalse(path.contains(CGPoint(x: d - 0.5, y: d - 0.5)))
+    }
+
+    func testSquircleFillsMoreOfTheCorner() {
+        // A squircle corner sits closer to the square corner than a circular one.
+        let probe = CGPoint(x: 4.5, y: 4.5)
+        XCTAssertFalse(RoundedShape.path(in: rect, radius: 20, power: 2).contains(probe))
+        XCTAssertTrue(RoundedShape.path(in: rect, radius: 20, power: 4).contains(probe))
+    }
+
+    func testRadiusClampsToHalfTheShortSide() {
+        let b = RoundedShape.path(in: rect, radius: 500, power: 4).boundingBox
+        XCTAssertEqual(b.height, 100, accuracy: 0.01)
+    }
+}

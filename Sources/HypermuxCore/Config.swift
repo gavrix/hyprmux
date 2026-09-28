@@ -96,6 +96,8 @@ public struct HypermuxConfig: Sendable {
     public var activeBorder = Gradient([Color(r: 0.2, g: 0.8, b: 1, a: 0.93), Color(r: 0, g: 1, b: 0.6, a: 0.93)], angle: 45)
     public var inactiveBorder = Gradient([Color(r: 0.35, g: 0.35, b: 0.35, a: 0.67)])
     public var rounding: Double = 10
+    /// Corner curve: 2 = circular, 4 = squircle, higher = squarer (Hyprland decoration:rounding_power).
+    public var roundingPower: Double = 2
     public var activeOpacity: Double = 1
     public var inactiveOpacity: Double = 1
     public var dimInactive = false
@@ -344,6 +346,7 @@ public enum ConfigParser {
             case "general:layout":
                 if value != "dwindle" { error(file, line, "general:layout: only 'dwindle' is supported so far") }
             case "decoration:rounding": if let v = num() { config.rounding = v }
+            case "decoration:rounding_power": if let v = num() { config.roundingPower = min(max(v, 1), 10) }
             case "decoration:active_opacity": if let v = num() { config.activeOpacity = v }
             case "decoration:inactive_opacity": if let v = num() { config.inactiveOpacity = v }
             case "decoration:dim_inactive": if let v = bool() { config.dimInactive = v }

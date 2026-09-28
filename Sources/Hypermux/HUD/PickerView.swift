@@ -186,7 +186,7 @@ final class PickerView: DecoratedView, NSTextFieldDelegate {
         field.caretColor = t.accent
         (field.currentEditor() as? NSTextView)?.insertionPointColor = t.accent
         field.placeholderAttributedString = NSAttributedString(
-            string: picker.mode == .prompt ? "" : "type to filter",
+            string: picker.placeholder ?? (picker.mode == .prompt ? "" : "type to filter"),
             attributes: [.font: t.font, .foregroundColor: t.secondary.withAlphaComponent(0.4)])
         counter.font = t.font
         counter.textColor = t.secondary

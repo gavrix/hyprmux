@@ -296,6 +296,47 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         manage(sim)
     }
 
+    // MARK: Pickers
+
+    /// `picker, KIND`: the workspace pickers and the rename prompt.
+    private func presentPicker(_ kind: PickerKind) {
+        switch kind {
+        case .workspace, .moveToWorkspace, .moveToWorkspaceSilent:
+            let moving = kind != .workspace
+            guard !moving || wm.focused != nil else {
+                flash("No window to move")
+                return
+            }
+            let choices = wm.workspaceChoices(extraSpecials: moving ? scratchpadNames : [])
+            var picker = Picker(title: moving ? "move to" : "workspace", items: WorkspacePicker.items(choices),
+                                allowsCustom: true, searchesDetail: false, maxVisible: config.hud.pickerMaxRows)
+            picker.placeholder = "number or name; a new name makes a workspace"
+            hud.picker.present(picker) { [weak self] r in
+                guard let self, let r, let t = WorkspacePicker.target(for: r) else { return }
+                self.dispatch(moving ? .moveToWorkspace(t, silent: kind == .moveToWorkspaceSilent) : .workspace(t))
+            }
+        case .renameWorkspace:
+            let n = wm.activeWorkspace
+            var picker = Picker(title: "name \(n)", mode: .prompt, query: wm.name(of: n) ?? "")
+            picker.placeholder = "empty clears the name"
+            hud.picker.present(picker) { [weak self] r in
+                guard case .text(let name)? = r else { return }
+                self?.dispatch(.renameWorkspace(n, name))
+            }
+        }
+    }
+
+    /// Special workspaces the binds use, so "move to" offers them even when empty.
+    private var scratchpadNames: [String] {
+        Array(Set(config.binds.compactMap { b -> String? in
+            switch b.dispatcher {
+            case .toggleSpecialWorkspace(let s): return s
+            case .moveToWorkspace(.special(let s), _): return s
+            default: return nil
+            }
+        })).sorted()
+    }
+
     /// Picker of booted simulators: type to filter by name or runtime.
     private func pickSimulator(_ devices: [HMSimDeviceInfo]) {
         let items = devices.map { PickerItem(id: $0.udid, title: $0.name, detail: Self.runtimeName($0.runtime)) }
@@ -382,6 +423,8 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         case .submap(let name):
             submap = name
             bar.submap = name
+        case .picker(let kind):
+            DispatchQueue.main.async { [weak self] in self?.presentPicker(kind) }
         case .reload:
             NotificationCenter.default.post(name: .hypermuxReloadConfig, object: nil)
         case .monitorFullscreen:
@@ -596,6 +639,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
 
     private func updateChrome(_ snap: Snapshot) {
         bar.workspaces = snap.workspaces
+        bar.names = snap.workspaceNames
         bar.active = snap.activeWorkspace
         bar.special = snap.specialVisible
         bar.title = focusedSurface?.title ?? ""
@@ -797,7 +841,9 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
                 if let s = snap.specialVisible { ids.append(.special(s)) }
                 return json(ids.map { id -> [String: Any] in
                     let members = snap.placements.filter { $0.workspace == id }
-                    return ["id": id.description, "windows": members.count,
+                    var name: Any = NSNull()
+                    if case .regular(let n) = id, let s = wm.name(of: n) { name = s }
+                    return ["id": id.description, "name": name, "windows": members.count,
                             "active": id == .regular(snap.activeWorkspace) || id == snap.specialVisible.map { .special($0) }]
                 })
             case .reload:

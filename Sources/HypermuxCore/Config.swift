@@ -422,6 +422,15 @@ public enum ConfigParser {
             case "hud:notifications:width": if let v = num() { config.hud.notificationWidth = min(max(v, 160), 1200) }
             case "hud:picker:width": if let v = num() { config.hud.pickerWidth = min(max(v, 240), 1600) }
             case "hud:picker:max_rows": if let v = num() { config.hud.pickerMaxRows = min(max(1, Int(v)), 40) }
+            case "workspace":
+                // Hyprland workspace rule: "workspace = 3, defaultName:mail, persistent:true".
+                // Only defaultName applies here; other rules are accepted and ignored.
+                let parts = value.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+                guard let first = parts.first, !first.isEmpty else { error(file, line, "workspace: expected 'ID, rules'"); return }
+                guard let n = Int(first), n >= 1 else { return }  // name:/special: selectors: not supported yet
+                for rule in parts.dropFirst() where rule.lowercased().hasPrefix("defaultname:") {
+                    config.wm.workspaceNames[n] = String(rule.dropFirst("defaultname:".count)).trimmingCharacters(in: .whitespaces)
+                }
             case "hypermux:float_size": if let v = num() { config.wm.floatSizeFraction = min(max(v, 0.1), 1) }
             default:
                 // Unknown keys are reported but never fatal, so Hyprland configs mostly load.

@@ -136,6 +136,11 @@ public struct Picker: Sendable {
     public let allowsCustom: Bool
     /// Rows shown at once; the list scrolls to keep the selection in view.
     public let maxVisible: Int
+    /// Whether the filter looks at details too. Off where details are just counts, so
+    /// typing "12" doesn't match workspace 1's "2 windows".
+    public let searchesDetail: Bool
+    /// Hint shown in the empty query field.
+    public var placeholder: String?
 
     public private(set) var query = ""
     public private(set) var rows: [Row] = []
@@ -145,8 +150,9 @@ public struct Picker: Sendable {
     public private(set) var scroll = 0
 
     public init(title: String, items: [PickerItem] = [], mode: Mode = .list, allowsCustom: Bool = false,
-                query: String = "", maxVisible: Int = 10) {
+                searchesDetail: Bool = true, query: String = "", maxVisible: Int = 10) {
         self.title = title
+        self.searchesDetail = searchesDetail
         self.items = items
         self.mode = mode
         self.allowsCustom = allowsCustom
@@ -167,7 +173,7 @@ public struct Picker: Sendable {
         } else {
             rows = items.enumerated().compactMap { i, item in
                 // Title and detail are searched as one line; the offsets are split back afterwards.
-                let line = item.detail.isEmpty ? item.title : item.title + " " + item.detail
+                let line = item.detail.isEmpty || !searchesDetail ? item.title : item.title + " " + item.detail
                 guard let m = FuzzyMatch.match(q, in: line) else { return nil }
                 let n = item.title.count
                 return Row(index: i, score: m.score, titleMatches: m.positions.filter { $0 < n },
@@ -216,6 +222,36 @@ public struct Picker: Sendable {
             if let item = selectedItem { return .item(item.id) }
             let q = query.trimmingCharacters(in: .whitespaces)
             return allowsCustom && !q.isEmpty ? .text(q) : nil
+        }
+    }
+}
+
+/// Rows and results for the workspace pickers (`picker, workspace` and friends).
+public enum WorkspacePicker {
+    public static func items(_ choices: [WindowManager.WorkspaceChoice]) -> [PickerItem] {
+        choices.map { c in
+            let title: String
+            switch c.id {
+            case .regular(let n): title = c.name.map { "\(n)  \($0)" } ?? "\(n)"
+            case .special(let s): title = "special:\(s)"
+            }
+            var detail = c.windows == 0 ? "empty" : c.windows == 1 ? "1 window" : "\(c.windows) windows"
+            if c.active { detail += " · current" }
+            return PickerItem(id: c.id.description, title: title, detail: detail)
+        }
+    }
+
+    /// Where a picker result points: a listed workspace, a typed number, or a typed name
+    /// (an existing one, or a new workspace that takes the name).
+    public static func target(for r: PickerResult) -> WorkspaceTarget? {
+        switch r {
+        case .item(let id):
+            return WorkspaceTarget(hyprland: id)
+        case .text(let q):
+            let s = q.trimmingCharacters(in: .whitespaces)
+            guard !s.isEmpty else { return nil }
+            if let n = Int(s), n >= 1 { return .id(n) }
+            return .named(s)
         }
     }
 }

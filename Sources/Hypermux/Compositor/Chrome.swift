@@ -26,6 +26,8 @@ final class CompositorView: FlippedView {
 final class BarView: NSView {
     var leadingInset: CGFloat = 0 { didSet { needsDisplay = true } }
     var workspaces: [Int] = [] { didSet { if workspaces != oldValue { needsDisplay = true } } }
+    /// Workspace names, shown after the number (the number always stays, for ⌘1…9).
+    var names: [Int: String] = [:] { didSet { if names != oldValue { needsDisplay = true } } }
     var active = 1 { didSet { if active != oldValue { needsDisplay = true } } }
     var special: String? { didSet { if special != oldValue { needsDisplay = true } } }
     var title = "" { didSet { if title != oldValue { needsDisplay = true } } }
@@ -44,20 +46,24 @@ final class BarView: NSView {
         let h = bounds.height
         var x = leadingInset + 8
         let pillH: CGFloat = min(18, h - 6)
+        let nameFont = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
         for n in workspaces {
             let isActive = n == active
-            let label = "\(n)" as NSString
-            let attrs: [NSAttributedString.Key: Any] = [
-                .font: font,
-                .foregroundColor: isActive ? NSColor.black : NSColor(white: 0.85, alpha: 1),
-            ]
-            let size = label.size(withAttributes: attrs)
-            let w = max(pillH + (isActive ? 10 : 0), size.width + 12)
+            let color = isActive ? NSColor.black : NSColor(white: 0.85, alpha: 1)
+            let label = NSMutableAttributedString(string: "\(n)", attributes: [.font: font, .foregroundColor: color])
+            if var name = names[n] {
+                if name.count > 18 { name = String(name.prefix(17)) + "…" }
+                label.append(NSAttributedString(string: " " + name, attributes: [
+                    .font: nameFont, .foregroundColor: isActive ? color : NSColor(white: 0.85, alpha: 0.75),
+                ]))
+            }
+            let size = label.size()
+            let w = max(pillH + (isActive ? 10 : 0), size.width + (names[n] == nil ? 12 : 16))
             let r = CGRect(x: x, y: (h - pillH) / 2, width: w, height: pillH)
             let path = NSBezierPath(roundedRect: r, xRadius: pillH / 2, yRadius: pillH / 2)
             (isActive ? accent : NSColor(white: 1, alpha: 0.08)).setFill()
             path.fill()
-            label.draw(at: CGPoint(x: r.midX - size.width / 2, y: r.midY - size.height / 2), withAttributes: attrs)
+            label.draw(at: CGPoint(x: r.midX - size.width / 2, y: r.midY - size.height / 2))
             pillRects.append((n, r))
             x += w + 5
         }

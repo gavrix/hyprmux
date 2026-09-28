@@ -7,6 +7,7 @@ public enum WorkspaceTarget: Equatable, Sendable {
     case previous
     case empty                  // first empty workspace
     case special(String)        // special[:name]
+    case named(String)          // name:NAME, created on the first empty number if new
 
     public init?(hyprland raw: String) {
         let s = raw.trimmingCharacters(in: .whitespaces)
@@ -24,6 +25,10 @@ public enum WorkspaceTarget: Equatable, Sendable {
             self = .special("special")
         } else if s.hasPrefix("special:") {
             self = .special(String(s.dropFirst("special:".count)))
+        } else if s.hasPrefix("name:") {
+            let name = s.dropFirst("name:".count).trimmingCharacters(in: .whitespaces)
+            guard !name.isEmpty else { return nil }
+            self = .named(name)
         } else {
             return nil
         }
@@ -37,6 +42,18 @@ public enum WebNav: String, Equatable, Sendable, CaseIterable {
     case focusurl
     /// Open Web Inspector.
     case inspect
+}
+
+/// Hypermux's own pickers, opened with `picker, KIND`. No Hyprland equivalent.
+public enum PickerKind: String, Equatable, Sendable, CaseIterable {
+    /// Go to a workspace: pick one, or type a number or a new name.
+    case workspace
+    /// Move the focused window to a workspace, and follow it.
+    case moveToWorkspace = "movetoworkspace"
+    /// Move the focused window to a workspace, and stay.
+    case moveToWorkspaceSilent = "movetoworkspacesilent"
+    /// Name the active workspace.
+    case renameWorkspace = "renameworkspace"
 }
 
 public enum FullscreenMode: Int, Equatable, Sendable {
@@ -74,6 +91,9 @@ public enum Dispatcher: Equatable, Sendable {
     case focusCurrentOrLast
     case centerWindow
     case submap(String)
+    /// Name a regular workspace. An empty name clears it (back to its workspace-rule name, if any).
+    case renameWorkspace(Int, String)
+    case picker(PickerKind)
     /// Toggle the monitor window between windowed and full screen (see misc:fullscreen_style).
     case monitorFullscreen
     // Groups (tabbed windows), Hyprland names.
@@ -143,6 +163,18 @@ public enum Dispatcher: Equatable, Sendable {
         case "focuscurrentorlast": return .success(.focusCurrentOrLast)
         case "centerwindow": return .success(.centerWindow)
         case "submap": return .success(.submap(a.isEmpty ? "reset" : a))
+        case "renameworkspace":
+            // Hyprland: "renameworkspace, 2 work".
+            let parts = a.split(separator: " ", maxSplits: 1).map(String.init)
+            guard let first = parts.first, let n = Int(first), n >= 1 else {
+                return .failure(.init("renameworkspace: expected 'ID [name]'"))
+            }
+            return .success(.renameWorkspace(n, parts.count > 1 ? parts[1].trimmingCharacters(in: .whitespaces) : ""))
+        case "picker":
+            guard let k = PickerKind(rawValue: a.lowercased()) else {
+                return .failure(.init("picker: expected one of \(PickerKind.allCases.map(\.rawValue).joined(separator: ", "))"))
+            }
+            return .success(.picker(k))
         case "monitorfullscreen": return .success(.monitorFullscreen)
         case "togglegroup": return .success(.toggleGroup)
         case "changegroupactive":

@@ -22,6 +22,8 @@ public struct WMSettings: Equatable, Sendable {
     public var floatSizeFraction: Double = 0.6
     /// New windows opened while a group is focused join it as a tab (Hyprland group:auto_group).
     public var autoGroup = true
+    /// Names from workspace rules (`workspace = 3, defaultName:mail`).
+    public var workspaceNames: [Int: String] = [:]
     public init() {}
 }
 
@@ -34,6 +36,7 @@ public enum Effect: Equatable, Sendable {
     case webNav(ClientID, WebNav)
     case close(ClientID)
     case submap(String)
+    case picker(PickerKind)
     case monitorFullscreen
     case reload
     case exit
@@ -59,6 +62,8 @@ public struct Snapshot: Equatable, Sendable {
     public let specialVisible: String?
     /// Regular workspaces that have clients, plus the active one. Sorted.
     public let workspaces: [Int]
+    /// Names of the workspaces in `workspaces` that have one.
+    public var workspaceNames: [Int: String] = [:]
     public let focused: ClientID?
 
     public func placement(_ id: ClientID) -> Placement? { placements.first { $0.id == id } }
@@ -216,6 +221,8 @@ public final class WindowManager {
         case .focusCurrentOrLast: focusCurrentOrLast()
         case .centerWindow: centerWindow()
         case .submap(let name): perform(.submap(name))
+        case .renameWorkspace(let n, let name): rename(n, to: name)
+        case .picker(let kind): perform(.picker(kind))
         case .monitorFullscreen: perform(.monitorFullscreen)
         case .toggleGroup: toggleGroup()
         case .changeGroupActive(let step): changeGroupActive(step)
@@ -274,8 +281,69 @@ public final class WindowManager {
             return nil
         })
         nums.insert(activeWorkspace)
-        return Snapshot(placements: out, activeWorkspace: activeWorkspace,
-                        specialVisible: specialVisible, workspaces: nums.sorted(), focused: focused)
+        var snap = Snapshot(placements: out, activeWorkspace: activeWorkspace,
+                            specialVisible: specialVisible, workspaces: nums.sorted(), focused: focused)
+        for n in nums { if let name = name(of: n) { snap.workspaceNames[n] = name } }
+        return snap
+    }
+
+    // MARK: Workspace names
+
+    /// Runtime names (`renameworkspace`). They win over workspace-rule names.
+    private var renamed: [Int: String] = [:]
+
+    /// A workspace's name: the runtime one, else its workspace rule's. Nil when unnamed.
+    /// Names outlive the workspace: an emptied, dropped workspace keeps its name for next time.
+    public func name(of n: Int) -> String? {
+        let s = renamed[n] ?? settings.workspaceNames[n]
+        return s?.isEmpty == false ? s : nil
+    }
+
+    /// The regular workspace with this name (case-insensitive).
+    public func workspace(named name: String) -> Int? {
+        let key = name.lowercased()
+        let all = Set(renamed.keys).union(settings.workspaceNames.keys)
+        return all.sorted().first { self.name(of: $0)?.lowercased() == key }
+    }
+
+    private func rename(_ n: Int, to name: String) {
+        let s = name.trimmingCharacters(in: .whitespaces)
+        if s.isEmpty { renamed[n] = nil } else { renamed[n] = s }
+    }
+
+    public struct WorkspaceChoice: Equatable, Sendable {
+        public let id: WorkspaceID
+        public let name: String?
+        public let windows: Int
+        public let active: Bool
+    }
+
+    /// Workspaces to offer in a picker: regular ones that have windows, a name, or focus,
+    /// by number; then special workspaces with windows, plus `extraSpecials` even when
+    /// empty (the scratchpads the binds use, as places to move a window to).
+    public func workspaceChoices(extraSpecials: [String] = []) -> [WorkspaceChoice] {
+        func count(_ id: WorkspaceID) -> Int {
+            clients.values.filter { $0.workspace == id }.count
+        }
+        var nums = Set(workspaces.keys.compactMap { id -> Int? in
+            if case .regular(let n) = id, !(workspaces[id]?.isEmpty ?? true) { return n }
+            return nil
+        })
+        nums.insert(activeWorkspace)
+        for n in Set(renamed.keys).union(settings.workspaceNames.keys) where name(of: n) != nil { nums.insert(n) }
+        var out = nums.sorted().map {
+            WorkspaceChoice(id: .regular($0), name: name(of: $0), windows: count(.regular($0)),
+                            active: $0 == activeWorkspace && specialVisible == nil)
+        }
+        var specials = Set(workspaces.keys.compactMap { id -> String? in
+            if case .special(let s) = id, !(workspaces[id]?.isEmpty ?? true) { return s }
+            return nil
+        })
+        specials.formUnion(extraSpecials)
+        for s in specials.sorted() {
+            out.append(WorkspaceChoice(id: .special(s), name: nil, windows: count(.special(s)), active: s == specialVisible))
+        }
+        return out
     }
 
     /// Top-most visible client under a point.
@@ -335,11 +403,23 @@ public final class WindowManager {
             while used.contains(n) { n += 1 }
             return .regular(n)
         case .special(let s): return .special(s)
+        case .named(let s):
+            if let n = workspace(named: s) { return .regular(n) }
+            // A new name takes the first number that has neither windows nor a name.
+            var n = 1
+            while used.contains(n) || name(of: n) != nil { n += 1 }
+            return .regular(n)
         }
+    }
+
+    /// `name:NEW` just picked an unnamed number: give it the name.
+    private func nameIfNew(_ t: WorkspaceTarget, _ target: WorkspaceID) {
+        if case .named(let s) = t, case .regular(let n) = target, name(of: n) == nil { rename(n, to: s) }
     }
 
     private func gotoWorkspace(_ t: WorkspaceTarget) {
         guard let target = resolve(t) else { return }
+        nameIfNew(t, target)
         switch target {
         case .special(let s): toggleSpecial(s)
         case .regular(var n):
@@ -389,6 +469,7 @@ public final class WindowManager {
     private func moveToWorkspace(_ t: WorkspaceTarget, silent: Bool) {
         guard let id = focused, let state = clients[id], let target = resolve(t),
               target != state.workspace, let from = workspaces[state.workspace] else { return }
+        nameIfNew(t, target)
         detach(id, from: from)
         if from.lastFocused == id { from.lastFocused = nil }
         clients[id]!.tiledSlot = nil  // a slot only makes sense on its own workspace

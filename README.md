@@ -133,8 +133,12 @@ Shells inside Hypermux get `HYPERMUX_SOCKET` and `HYPERMUX_CLIENT`, so
 - **Private frameworks:** simulator tiles and the libghostty fork depend on
   private or fast-moving APIs, so an Xcode or libghostty update can break them.
 
+## License
+
+MIT, see [LICENSE](LICENSE). Third-party components keep their own licenses;
+see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
 ## Credits
 
-Built on Ghostty, the Chromium Embedded Framework, and pieces of idb; see
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Inspired by
+Built on Ghostty, the Chromium Embedded Framework, and pieces of idb. Inspired by
 [Hyprland](https://hyprland.org) and [cmux](https://github.com/manaflow-ai/cmux).

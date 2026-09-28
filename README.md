@@ -45,6 +45,9 @@ installed Ghostty.app or cmux.app.
 | ⌘R | resize submap (h/j/k/l, Esc to leave) |
 | ⌘ + drag | move window (tiled: drop into place; floating: move) |
 | ⌘ + right-drag | resize window |
+| ⌘G / ⇧⌘G | make the focused window a group (or dissolve it) / take it out of its group |
+| ⌃Tab / ⌃⇧Tab | next / previous tab in a group |
+| ⌃⇧⌘H/J/K/L | move the window into the neighbouring group (makes one if needed) |
 | ⌘I | show a booted iOS Simulator in a tile (a menu if several are booted) |
 | ⌘Esc / ⇧⌘Esc | simulator Home / Lock (`simbutton home|lock`) |
 | ⌃⌘F (or the green button) | fill the screen / back to a window |
@@ -78,6 +81,15 @@ so they don't show through. Native fullscreen puts the window on its own Space,
 with only black behind it. The default `misc:fullscreen_style = fill` avoids
 that: full screen makes the window borderless and screen-sized on the normal
 desktop, and auto-hides the menu bar and Dock while Hypermux is in front.
+
+Groups (Hyprland-style tabs): a group is one tile holding several windows, one
+shown at a time, with a tab strip on top (click a tab to switch). New windows
+opened while a group is focused join it (`group:auto_group`). A group floats,
+fullscreens, and moves between workspaces as a whole. Config:
+`group { col.border_active, col.border_inactive, groupbar { enabled, height,
+font_size, col.active, col.inactive, text_color } }`. Dispatchers: `togglegroup`,
+`changegroupactive f|b|N`, `moveintogroup l|r|u|d`, `moveoutofgroup`,
+`movegroupwindow f|b`.
 
 Web tiles: `web { home, search, open_terminal_links, address_bar }`. The
 address bar takes URLs, hosts (`github.com/x`, `localhost:3000`), paths, or

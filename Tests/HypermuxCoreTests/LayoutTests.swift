@@ -264,6 +264,103 @@ final class WindowManagerTests: XCTestCase {
         XCTAssertEqual(snap.placements.filter { !$0.floating }.count, 2)
     }
 
+    // MARK: Groups
+
+    private func info(_ wm: WindowManager, _ i: UInt64) -> Placement { wm.snapshot().placement(ClientID(i))! }
+
+    func testMoveIntoGroupStacksTabs() {
+        let wm = makeWM()
+        wm.addClient(ClientID(1))
+        wm.addClient(ClientID(2))
+        wm.dispatch(.moveIntoGroup(.left))  // 2 joins 1 (1 becomes a group)
+        XCTAssertEqual(info(wm, 2).frame, CGRect(x: 0, y: 0, width: 1600, height: 1000), "one tile for the group")
+        XCTAssertTrue(info(wm, 2).visible)
+        XCTAssertFalse(info(wm, 1).visible, "the other tab is hidden")
+        XCTAssertEqual(info(wm, 1).frame, info(wm, 2).frame, "hidden tabs sit at the slot")
+        XCTAssertEqual(info(wm, 2).group?.members, [ClientID(1), ClientID(2)])
+        XCTAssertEqual(info(wm, 2).group?.active, ClientID(2))
+        XCTAssertEqual(wm.focused, ClientID(2))
+    }
+
+    func testChangeGroupActiveAndFocusHiddenTab() {
+        let wm = makeWM()
+        wm.addClient(ClientID(1))
+        wm.addClient(ClientID(2))
+        wm.dispatch(.moveIntoGroup(.left))
+        wm.dispatch(.changeGroupActive(.next))
+        XCTAssertEqual(wm.focused, ClientID(1))
+        XCTAssertTrue(info(wm, 1).visible)
+        XCTAssertFalse(info(wm, 2).visible)
+        wm.focus(ClientID(2))  // focusing a hidden tab shows it
+        XCTAssertTrue(info(wm, 2).visible)
+        XCTAssertFalse(info(wm, 1).visible)
+        wm.dispatch(.changeGroupActive(.index(1)))
+        XCTAssertEqual(wm.focused, ClientID(1))
+    }
+
+    func testClosingShownTabShowsNext() {
+        let wm = makeWM()
+        for i in 1...3 { wm.addClient(ClientID(UInt64(i))) }
+        wm.focus(ClientID(1))
+        wm.dispatch(.toggleGroup)                       // 1 is a one-tab group
+        wm.focus(ClientID(2)); wm.dispatch(.moveIntoGroup(.left))
+        wm.focus(ClientID(3)); wm.dispatch(.moveIntoGroup(.left))
+        XCTAssertEqual(info(wm, 3).group?.members.count, 3)
+        wm.removeClient(ClientID(3))
+        XCTAssertEqual(wm.focused, ClientID(2), "next tab shown and focused")
+        XCTAssertTrue(info(wm, 2).visible)
+        XCTAssertEqual(info(wm, 2).frame, CGRect(x: 0, y: 0, width: 1600, height: 1000))
+    }
+
+    func testMoveOutOfGroupAndDissolve() {
+        let wm = makeWM()
+        for i in 1...3 { wm.addClient(ClientID(UInt64(i))) }
+        wm.focus(ClientID(2)); wm.dispatch(.moveIntoGroup(.left))
+        wm.focus(ClientID(3)); wm.dispatch(.moveIntoGroup(.left))
+        XCTAssertEqual(wm.snapshot().placements.filter(\.visible).count, 1)
+        wm.dispatch(.moveOutOfGroup)                    // 3 gets its own tile again
+        XCTAssertEqual(wm.snapshot().placements.filter(\.visible).count, 2)
+        XCTAssertNil(info(wm, 3).group)
+        wm.focus(ClientID(1))
+        wm.dispatch(.toggleGroup)                       // dissolve [1, 2]
+        let visible = wm.snapshot().placements.filter(\.visible)
+        XCTAssertEqual(visible.count, 3)
+        XCTAssertTrue(visible.allSatisfy { $0.group == nil })
+    }
+
+    func testGroupMovesToWorkspaceAsWhole() {
+        let wm = makeWM()
+        wm.addClient(ClientID(1))
+        wm.addClient(ClientID(2))
+        wm.dispatch(.moveIntoGroup(.left))
+        wm.dispatch(.moveToWorkspace(.id(2), silent: false))
+        XCTAssertEqual(wm.workspace(of: ClientID(1)), .regular(2))
+        XCTAssertEqual(wm.workspace(of: ClientID(2)), .regular(2))
+        wm.dispatch(.changeGroupActive(.next))
+        XCTAssertTrue(info(wm, 1).visible)
+    }
+
+    func testAutoGroupAddsTab() {
+        let wm = makeWM()
+        wm.addClient(ClientID(1))
+        wm.dispatch(.toggleGroup)
+        wm.addClient(ClientID(2))
+        XCTAssertEqual(info(wm, 2).group?.members, [ClientID(1), ClientID(2)])
+        XCTAssertEqual(wm.snapshot().placements.filter(\.visible).count, 1)
+    }
+
+    func testGroupFloatsAsWhole() {
+        let wm = makeWM()
+        wm.addClient(ClientID(1))
+        wm.dispatch(.toggleGroup)
+        wm.addClient(ClientID(2))
+        wm.dispatch(.toggleFloating)
+        XCTAssertTrue(info(wm, 2).floating)
+        wm.dispatch(.changeGroupActive(.next))
+        XCTAssertTrue(info(wm, 1).floating)
+        XCTAssertEqual(info(wm, 1).frame, CGRect(x: 320, y: 200, width: 960, height: 600), "tab keeps the slot's frame")
+    }
+
     func testTilesStackByFocus() {
         let wm = makeWM()
         for i in 1...3 { wm.addClient(ClientID(UInt64(i))) }

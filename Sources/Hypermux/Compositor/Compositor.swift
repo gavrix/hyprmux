@@ -408,8 +408,16 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
 
         for p in snap.placements {
             guard let v = views[p.id] else { continue }
-            v.setDecoration(deco, active: p.focused, borderDuration: dur(border),
+            var d = deco
+            if p.group != nil {
+                d.activeBorder = config.groupActiveBorder
+                d.inactiveBorder = config.groupInactiveBorder
+            }
+            // Hidden tabs look "active" too, so a tab switch doesn't flash dimmed content.
+            let isActive = p.focused || (p.group.map { $0.members.contains(snap.focused ?? ClientID(0)) } ?? false)
+            v.setDecoration(d, active: isActive, borderDuration: dur(border),
                             opacityAnimation: (dur(fadeSwitch), fadeSwitch.curve))
+            updateGroupBar(v, p.group)
             let before = prev?.placement(p.id)
 
             if p.visible {
@@ -475,6 +483,34 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         restack(snap)
         updateChrome(snap)
         updateFocus(snap)
+    }
+
+    /// Tab strip for a grouped placement (nil removes it).
+    private func updateGroupBar(_ v: ClientView, _ info: GroupInfo?) {
+        guard let info, config.groupbarEnabled else {
+            v.setGroupBar(nil, style: GroupBarStyle(config))
+            return
+        }
+        let titles = info.members.map { m -> String in
+            guard let s = views[m]?.surface else { return "" }
+            return s.title.isEmpty ? s.kind : s.title
+        }
+        let active = info.members.firstIndex(of: info.active) ?? 0
+        v.setGroupBar((titles, active), style: GroupBarStyle(config))
+        let members = info.members
+        v.onSelectTab = { [weak self] i in
+            guard let self, i < members.count else { return }
+            self.wm.focus(members[i])
+            self.apply(animated: true)
+        }
+    }
+
+    /// Titles changed: refresh the tab strips without touching layout.
+    private func refreshGroupBars() {
+        guard let last else { return }
+        for p in last.placements where p.group != nil {
+            if let v = views[p.id] { updateGroupBar(v, p.group) }
+        }
     }
 
     private static func fades(_ style: String?) -> Bool {
@@ -807,6 +843,9 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
             "title": s?.title ?? "", "kind": s?.kind ?? "",
         ]
         for (k, v) in s?.info ?? [:] { info[k] = v }
+        if let g = p.group {
+            info["group"] = ["id": g.id.raw, "members": g.members.map(\.raw), "active": g.active.raw]
+        }
         return info
     }
 
@@ -891,6 +930,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
     }
 
     func terminalTitleDidChange(_ view: TerminalView) {
+        refreshGroupBars()
         if view.clientID == wm.focused { bar.title = view.title }
     }
 
@@ -955,6 +995,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
     }
 
     func browserSurfaceTitleDidChange(_ s: BrowserSurface) {
+        refreshGroupBars()
         if s.clientID == wm.focused { bar.title = s.title }
     }
 

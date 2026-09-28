@@ -76,6 +76,12 @@ public enum Dispatcher: Equatable, Sendable {
     case submap(String)
     /// Toggle the monitor window between windowed and full screen (see misc:fullscreen_style).
     case monitorFullscreen
+    // Groups (tabbed windows), Hyprland names.
+    case toggleGroup
+    case changeGroupActive(GroupStep)
+    case moveIntoGroup(Direction)
+    case moveOutOfGroup
+    case moveGroupWindow(forward: Bool)
     case reload
     case exit
 
@@ -138,6 +144,19 @@ public enum Dispatcher: Equatable, Sendable {
         case "centerwindow": return .success(.centerWindow)
         case "submap": return .success(.submap(a.isEmpty ? "reset" : a))
         case "monitorfullscreen": return .success(.monitorFullscreen)
+        case "togglegroup": return .success(.toggleGroup)
+        case "changegroupactive":
+            switch a.lowercased() {
+            case "", "f", "forward", "next": return .success(.changeGroupActive(.next))
+            case "b", "back", "prev", "previous": return .success(.changeGroupActive(.previous))
+            default:
+                guard let n = Int(a), n >= 1 else { return .failure(.init("changegroupactive: expected f, b or a tab number")) }
+                return .success(.changeGroupActive(.index(n)))
+            }
+        case "moveintogroup": return needDirection { .moveIntoGroup($0) }
+        case "moveoutofgroup": return .success(.moveOutOfGroup)
+        case "movegroupwindow":
+            return .success(.moveGroupWindow(forward: !["b", "back", "prev", "previous"].contains(a.lowercased())))
         case "reload", "forcerendererreload": return .success(.reload)
         case "exit": return .success(.exit)
         default: return .failure(.init("unknown dispatcher '\(name)'"))

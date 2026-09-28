@@ -93,6 +93,22 @@ ghostty {
     window-padding-y = 6
 }
 
+# Groups: several windows as tabs in one tile (Hyprland-style).
+group {
+    # New windows opened while a group is focused join it as a tab.
+    auto_group = true
+    col.border_active = rgba(ffaa33ee) rgba(ff5f5fee) 45deg
+    col.border_inactive = rgba(775533aa)
+    groupbar {
+        enabled = true
+        height = 20
+        font_size = 11
+        col.active = rgba(33ccffee)
+        col.inactive = rgba(3a3a4aee)
+        text_color = rgba(ffffffee)
+    }
+}
+
 # Web surfaces (WebKit for now).
 web {
     # webkit: light, native, but no passkeys (Apple only allows them in approved browsers).
@@ -126,6 +142,18 @@ bind = $mod, E, togglesplit
 bind = $mod SHIFT, E, swapsplit
 bind = $mod, C, centerwindow
 bind = $mod, grave, focuscurrentorlast
+
+# Groups: SUPER+G makes a group (or dissolves it), CTRL+Tab cycles tabs,
+# SUPER+CTRL+SHIFT+H/J/K/L moves the window into the neighbour's group,
+# SUPER+SHIFT+G takes it out again.
+bind = $mod, G, togglegroup
+bind = $mod SHIFT, G, moveoutofgroup
+bind = CTRL, Tab, changegroupactive, f
+bind = CTRL SHIFT, Tab, changegroupactive, b
+bind = $mod CTRL SHIFT, H, moveintogroup, l
+bind = $mod CTRL SHIFT, J, moveintogroup, d
+bind = $mod CTRL SHIFT, K, moveintogroup, u
+bind = $mod CTRL SHIFT, L, moveintogroup, r
 
 # Web: new browser tile, address bar, back/forward/reload, Web Inspector.
 bind = $mod, B, web,

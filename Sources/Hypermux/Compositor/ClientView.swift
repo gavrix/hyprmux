@@ -73,6 +73,48 @@ final class ClientView: NSView, Animatable {
     /// Whether the compositor currently shows this client (its workspace is visible).
     var shown = false
 
+    /// Tab strip for grouped windows, inside the rounded clip above the content.
+    private var groupBar: GroupBarView?
+    private var barHeight: CGFloat { groupBar == nil ? 0 : groupBarHeight }
+    private var groupBarHeight: CGFloat = 20
+    var onSelectTab: ((Int) -> Void)?
+
+    /// Shows (or removes, with nil) the tab strip.
+    func setGroupBar(_ tabs: (titles: [String], active: Int)?, style: GroupBarStyle) {
+        guard let tabs else {
+            if groupBar != nil {
+                groupBar?.removeFromSuperview()
+                groupBar = nil
+                layoutContent()
+            }
+            return
+        }
+        let bar: GroupBarView
+        if let existing = groupBar {
+            bar = existing
+        } else {
+            bar = GroupBarView()
+            bar.onSelect = { [weak self] i in self?.onSelectTab?(i) }
+            clip.addSubview(bar, positioned: .above, relativeTo: surface.view)
+            groupBar = bar
+        }
+        let heightChanged = groupBarHeight != style.height
+        groupBarHeight = style.height
+        bar.update(titles: tabs.titles, active: tabs.active, style: style)
+        if heightChanged || bar.frame.height != style.height { layoutContent() }
+    }
+
+    /// Sizes the content (and tab strip) for the current target frame.
+    private func layoutContent() {
+        let b = decoration.borderSize
+        let w = max(1, targetFrame.width - 2 * b)
+        let h = max(1, targetFrame.height - 2 * b)
+        let bh = min(barHeight, h - 1)
+        groupBar?.frame = CGRect(x: 0, y: 0, width: w, height: bh)
+        let content = CGRect(x: 0, y: bh, width: w, height: h - bh)
+        if surface.view.frame != content { surface.view.frame = content }
+    }
+
     init(id: ClientID, surface: Surface, decoration: Decoration) {
         self.id = id
         self.surface = surface
@@ -229,11 +271,7 @@ final class ClientView: NSView, Animatable {
     func move(to target: CGRect, from: CGRect? = nil, duration: Double, curve: Bezier, animator: Animator, completion: (() -> Void)? = nil) {
         targetFrame = target
         // Resize the content once, to its final size.
-        let b = decoration.borderSize
-        let content = CGSize(width: max(1, target.width - 2 * b), height: max(1, target.height - 2 * b))
-        if surface.view.frame.size != content {
-            surface.view.frame = CGRect(origin: .zero, size: content)
-        }
+        layoutContent()
         let start = from ?? frame
         if duration <= 0 || start == target {
             // A newer move supersedes any pending completion (e.g. hide after slide-out).

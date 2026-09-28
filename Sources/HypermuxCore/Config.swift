@@ -118,6 +118,16 @@ public struct HypermuxConfig: Sendable {
     /// "fill": cover the display on the normal desktop (wallpaper stays visible behind
     /// a transparent window). "native": macOS full screen on its own Space.
     public var fullscreenStyle = "fill"
+
+    // Groups (tabbed windows).
+    public var groupActiveBorder = Gradient([Color(r: 1, g: 0.67, b: 0.2, a: 0.93), Color(r: 1, g: 0.37, b: 0.37, a: 0.93)], angle: 45)
+    public var groupInactiveBorder = Gradient([Color(r: 0.47, g: 0.33, b: 0.2, a: 0.67)])
+    public var groupbarEnabled = true
+    public var groupbarHeight: Double = 20
+    public var groupbarFontSize: Double = 11
+    public var groupbarActive = Color(r: 0.2, g: 0.8, b: 1, a: 0.93)
+    public var groupbarInactive = Color(r: 0.23, g: 0.23, b: 0.29, a: 0.93)
+    public var groupbarText = Color(r: 1, g: 1, b: 1, a: 0.93)
     /// Extra lines handed to libghostty's config (from a `ghostty { ... }` block).
     public var ghostty: [String] = []
     public var errors: [String] = []
@@ -374,6 +384,21 @@ public enum ConfigParser {
             case "misc:fullscreen_style":
                 let v = value.lowercased()
                 if v == "fill" || v == "native" { config.fullscreenStyle = v } else { error(file, line, "misc:fullscreen_style: expected fill or native") }
+            case "group:auto_group": if let v = bool() { config.wm.autoGroup = v }
+            case "group:col.border_active": if let g = gradient() { config.groupActiveBorder = g }
+            case "group:col.border_inactive": if let g = gradient() { config.groupInactiveBorder = g }
+            case "group:groupbar:enabled": if let v = bool() { config.groupbarEnabled = v }
+            case "group:groupbar:height": if let v = num() { config.groupbarHeight = max(12, v) }
+            case "group:groupbar:font_size": if let v = num() { config.groupbarFontSize = max(6, v) }
+            case "group:groupbar:col.active": if let g = gradient() { config.groupbarActive = g.colors[0] }
+            case "group:groupbar:col.inactive": if let g = gradient() { config.groupbarInactive = g.colors[0] }
+            case "group:groupbar:text_color": if let g = gradient() { config.groupbarText = g.colors[0] }
+            case "group:insert_after_current", "group:focus_removed_window", "group:merge_groups_on_drag",
+                 "group:drag_into_group", "group:col.border_locked_active", "group:col.border_locked_inactive",
+                 "group:groupbar:gradients", "group:groupbar:render_titles", "group:groupbar:scrolling",
+                 "group:groupbar:font_family", "group:groupbar:col.locked_active", "group:groupbar:col.locked_inactive",
+                 "group:groupbar:priority", "group:groupbar:stacked":
+                break  // Hyprland group options without an equivalent here yet.
             case "hypermux:float_size": if let v = num() { config.wm.floatSizeFraction = min(max(v, 0.1), 1) }
             default:
                 // Unknown keys are reported but never fatal, so Hyprland configs mostly load.

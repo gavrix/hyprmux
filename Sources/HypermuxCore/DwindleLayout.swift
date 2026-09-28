@@ -180,6 +180,12 @@ public final class DwindleLayout {
         p.ratio = clampRatio(exact ? value : p.ratio + value)
     }
 
+    /// Puts `new` in `old`'s slot (same box, same splits). Used when a group switches tabs.
+    public func replaceClient(_ old: ClientID, with new: ClientID) {
+        precondition(!contains(new), "\(new) already in layout")
+        leaf(old)?.client = new
+    }
+
     public func swap(_ a: ClientID, _ b: ClientID) {
         guard let na = leaf(a), let nb = leaf(b) else { return }
         na.client = b

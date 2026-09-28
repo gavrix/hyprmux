@@ -20,6 +20,8 @@ public struct WMSettings: Equatable, Sendable {
     public var workspaceBackAndForth = false
     /// Size of a new floating window relative to the work area.
     public var floatSizeFraction: Double = 0.6
+    /// New windows opened while a group is focused join it as a tab (Hyprland group:auto_group).
+    public var autoGroup = true
     public init() {}
 }
 
@@ -47,6 +49,8 @@ public struct Placement: Equatable, Sendable {
     public let floating: Bool
     public let fullscreen: FullscreenMode?
     public let z: Int
+    /// Set for group members, shown or hidden.
+    public var group: GroupInfo? = nil
 }
 
 public struct Snapshot: Equatable, Sendable {
@@ -84,6 +88,7 @@ public final class WindowManager {
         var floatRect: CGRect?
         /// Where the client was tiled before it floated, to return there.
         var tiledSlot: DwindleLayout.Slot?
+        var group: GroupID?
     }
 
     public var settings: WMSettings {
@@ -102,9 +107,11 @@ public final class WindowManager {
     public private(set) var specialVisible: String?
     public private(set) var focused: ClientID?
 
-    private var clients: [ClientID: ClientState] = [:]
-    private var workspaces: [WorkspaceID: Workspace] = [:]
-    private var recency: [ClientID: Int] = [:]
+    var clients: [ClientID: ClientState] = [:]
+    var workspaces: [WorkspaceID: Workspace] = [:]
+    var recency: [ClientID: Int] = [:]
+    var groups: [GroupID: Group] = [:]
+    var nextGroupID: UInt64 = 1
     private var focusCounter = 0
 
     public init(monitor: CGRect, settings: WMSettings = .init()) {
@@ -125,6 +132,18 @@ public final class WindowManager {
         let ws = ensure(wsID)
         if ws.fullscreen != nil { ws.fullscreen = nil }
         clients[id] = ClientState(workspace: wsID, floating: floating)
+        // Opened from a focused group: become its new tab instead of a new tile.
+        if settings.autoGroup, workspace == nil, let f = focused, let gid = clients[f]?.group, let g = groups[gid],
+           clients[f]?.workspace == wsID {
+            let at = g.members.firstIndex(of: g.active)! + 1
+            g.members.insert(id, at: at)
+            clients[id]!.group = gid
+            clients[id]!.floating = clients[f]!.floating
+            replaceInSlot(g.active, with: id, in: ws)
+            g.active = id
+            if focus || focused == nil { self.focus(id) }
+            return
+        }
         if floating {
             clients[id]!.floatRect = defaultFloatRect()
             ws.floating.append(id)
@@ -136,13 +155,15 @@ public final class WindowManager {
 
     public func removeClient(_ id: ClientID) {
         guard let state = clients[id], let ws = workspaces[state.workspace] else { return }
-        detach(id, from: ws)
+        let nextTab = state.group != nil ? leaveGroup(id) : nil
+        if nextTab == nil { detach(id, from: ws) }
         clients[id] = nil
         recency[id] = nil
         if ws.lastFocused == id { ws.lastFocused = mostRecent(in: ws) }
         if focused == id {
             focused = nil
-            if let next = mostRecent(in: ws) ?? fallbackFocus() { focus(next) }
+            // Closing a tab shows the next one, and it keeps focus.
+            if let next = nextTab ?? mostRecent(in: ws) ?? fallbackFocus() { focus(next) }
         }
         collectEmptyWorkspaces()
     }
@@ -150,6 +171,7 @@ public final class WindowManager {
     /// Focuses a client, switching to its workspace if needed.
     public func focus(_ id: ClientID) {
         guard let state = clients[id], let ws = workspaces[state.workspace] else { return }
+        if isHiddenMember(id) { activate(id) }
         switch state.workspace {
         case .regular(let n):
             if n != activeWorkspace { switchTo(n, focusAfter: false) }
@@ -195,6 +217,11 @@ public final class WindowManager {
         case .centerWindow: centerWindow()
         case .submap(let name): perform(.submap(name))
         case .monitorFullscreen: perform(.monitorFullscreen)
+        case .toggleGroup: toggleGroup()
+        case .changeGroupActive(let step): changeGroupActive(step)
+        case .moveIntoGroup(let dir): moveIntoGroup(dir)
+        case .moveOutOfGroup: moveOutOfGroup()
+        case .moveGroupWindow(let fwd): moveGroupWindow(forward: fwd)
         case .reload: perform(.reload)
         case .exit: perform(.exit)
         }
@@ -231,6 +258,16 @@ public final class WindowManager {
                     fullscreen: fs, z: zBase + (fs != nil ? 5_000 : 1_000 + i)))
             }
         }
+        // Group info on every member; hidden members sit at their slot's frame, below it.
+        for (i, p) in out.enumerated() {
+            guard let info = groupInfo(of: p.id) else { continue }
+            out[i].group = info
+            for m in info.members where m != p.id {
+                out.append(Placement(
+                    id: m, workspace: p.workspace, frame: p.frame, visible: false, focused: false,
+                    floating: p.floating, fullscreen: nil, z: p.z - 1, group: info))
+            }
+        }
         out.sort { $0.z < $1.z || ($0.z == $1.z && $0.id < $1.id) }
         var nums = Set(workspaces.keys.compactMap { id -> Int? in
             if case .regular(let n) = id, !(workspaces[id]?.isEmpty ?? true) { return n }
@@ -248,7 +285,7 @@ public final class WindowManager {
 
     // MARK: Internals: workspaces
 
-    private var visibleWorkspaces: [WorkspaceID] {
+    var visibleWorkspaces: [WorkspaceID] {
         var v: [WorkspaceID] = [.regular(activeWorkspace)]
         if let s = specialVisible { v.append(.special(s)) }
         return v
@@ -262,14 +299,14 @@ public final class WindowManager {
     }
 
     @discardableResult
-    private func ensure(_ id: WorkspaceID) -> Workspace {
+    func ensure(_ id: WorkspaceID) -> Workspace {
         if let ws = workspaces[id] { return ws }
         let ws = Workspace(id: id, settings: settings.dwindle)
         workspaces[id] = ws
         return ws
     }
 
-    private func collectEmptyWorkspaces() {
+    func collectEmptyWorkspaces() {
         for (id, ws) in workspaces where ws.isEmpty {
             if id == .regular(activeWorkspace) { continue }
             if case .special(let s) = id, s == specialVisible { continue }
@@ -358,6 +395,8 @@ public final class WindowManager {
         let to = ensure(target)
         if to.fullscreen != nil { to.fullscreen = nil }
         clients[id]!.workspace = target
+        // A group moves as a whole: hidden tabs follow the shown one.
+        if let g = group(of: id) { for m in g.members { clients[m]!.workspace = target } }
         if state.floating { to.floating.append(id) } else { insertTiled(id, into: to, useCursor: false) }
         to.lastFocused = id
 
@@ -373,9 +412,9 @@ public final class WindowManager {
 
     // MARK: Internals: tiling
 
-    private var tileArea: CGRect { workArea }
+    var tileArea: CGRect { workArea }
 
-    private func insertTiled(_ id: ClientID, into ws: Workspace, useCursor: Bool = true, focal: CGPoint? = nil) {
+    func insertTiled(_ id: ClientID, into ws: Workspace, useCursor: Bool = true, focal: CGPoint? = nil) {
         let target = ws.lastFocused.flatMap { ws.tiled.contains($0) ? $0 : nil }
         var focalPoint = focal
         if focalPoint == nil, useCursor, settings.dwindle.forceSplit == 0, let c = cursor, tileArea.contains(c) {
@@ -384,13 +423,13 @@ public final class WindowManager {
         ws.tiled.insert(id, target: target, focalPoint: focalPoint, area: tileArea)
     }
 
-    private func detach(_ id: ClientID, from ws: Workspace) {
+    func detach(_ id: ClientID, from ws: Workspace) {
         ws.tiled.remove(id)
         ws.floating.removeAll { $0 == id }
         if ws.fullscreen?.id == id { ws.fullscreen = nil }
     }
 
-    private func tiledFrames(_ ws: Workspace) -> [ClientID: CGRect] {
+    func tiledFrames(_ ws: Workspace) -> [ClientID: CGRect] {
         let area = tileArea
         let boxes = ws.tiled.layout(in: area)
         return boxes.mapValues { applyGaps($0, area: area) }
@@ -414,7 +453,7 @@ public final class WindowManager {
         }
     }
 
-    private func defaultFloatRect() -> CGRect {
+    func defaultFloatRect() -> CGRect {
         let a = workArea
         let w = (a.width * settings.floatSizeFraction).rounded()
         let h = (a.height * settings.floatSizeFraction).rounded()
@@ -423,7 +462,7 @@ public final class WindowManager {
 
     // MARK: Internals: focus
 
-    private func mostRecent(in ws: Workspace) -> ClientID? {
+    func mostRecent(in ws: Workspace) -> ClientID? {
         ws.clients.max { (recency[$0] ?? -1) < (recency[$1] ?? -1) }
     }
 
@@ -434,7 +473,7 @@ public final class WindowManager {
         return nil
     }
 
-    private func focusedContext() -> (ClientID, Workspace, ClientState)? {
+    func focusedContext() -> (ClientID, Workspace, ClientState)? {
         guard let f = focused, let st = clients[f], let ws = workspaces[st.workspace] else { return nil }
         return (f, ws, st)
     }
@@ -444,7 +483,7 @@ public final class WindowManager {
         body(ws, f)
     }
 
-    private func frames(in ws: Workspace) -> [ClientID: CGRect] {
+    func frames(in ws: Workspace) -> [ClientID: CGRect] {
         var out = tiledFrames(ws)
         for id in ws.floating { out[id] = clients[id]?.floatRect }
         return out
@@ -546,6 +585,10 @@ public final class WindowManager {
 
     private func toggleFloating() {
         guard let (f, ws, st) = focusedContext() else { return }
+        defer {
+            // Hidden tabs share the slot's floating state.
+            if let g = group(of: f) { for m in g.members { clients[m]!.floating = clients[f]!.floating } }
+        }
         if ws.fullscreen?.id == f { ws.fullscreen = nil }
         if st.floating {
             let center = clients[f]?.floatRect?.center

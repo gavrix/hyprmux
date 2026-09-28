@@ -210,7 +210,10 @@ public final class WindowManager {
             let zBase: Int
             if case .special = ws.id { zBase = 10_000 } else { zBase = 0 }
             let tiledFrames = tiledFrames(ws)
-            for (i, id) in ws.tiled.clients.enumerated() {
+            // Tiles stack by focus recency (most recent on top). Settled tiles never overlap,
+            // but while animating, the window you just touched stays above the rest.
+            let stacked = ws.tiled.clients.sorted { (recency[$0] ?? -1) < (recency[$1] ?? -1) }
+            for (i, id) in stacked.enumerated() {
                 let fs = ws.fullscreen?.id == id ? ws.fullscreen?.mode : nil
                 out.append(Placement(
                     id: id, workspace: ws.id,

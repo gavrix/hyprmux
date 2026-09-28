@@ -256,6 +256,21 @@ final class WindowManagerTests: XCTestCase {
         XCTAssertEqual(snap.placements.filter { !$0.floating }.count, 2)
     }
 
+    func testTilesStackByFocus() {
+        let wm = makeWM()
+        for i in 1...3 { wm.addClient(ClientID(UInt64(i))) }
+        func z(_ i: UInt64) -> Int { wm.snapshot().placement(ClientID(i))!.z }
+        wm.focus(ClientID(1))
+        XCTAssertGreaterThan(z(1), z(2))
+        XCTAssertGreaterThan(z(1), z(3))
+        // Re-tiling a floated window puts it on top of the tiles it animates across.
+        wm.focus(ClientID(2))
+        wm.dispatch(.toggleFloating)
+        wm.dispatch(.toggleFloating)
+        XCTAssertGreaterThan(z(2), z(1))
+        XCTAssertGreaterThan(z(2), z(3))
+    }
+
     func testFloatingAloneStartsCentered() {
         let wm = makeWM()
         wm.addClient(ClientID(1))

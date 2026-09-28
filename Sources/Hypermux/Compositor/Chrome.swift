@@ -96,33 +96,6 @@ final class BarView: NSView {
     }
 }
 
-/// Hyprland-style red bar listing config errors.
-final class BannerView: NSView {
-    private let label = NSTextField(wrappingLabelWithString: "")
-
-    override init(frame: NSRect) {
-        super.init(frame: frame)
-        wantsLayer = true
-        layer?.backgroundColor = NSColor(srgbRed: 0.75, green: 0.15, blue: 0.2, alpha: 0.95).cgColor
-        layer?.cornerRadius = 8
-        label.textColor = .white
-        label.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
-        label.maximumNumberOfLines = 6
-        addSubview(label)
-    }
-
-    required init?(coder: NSCoder) { fatalError("not supported") }
-    override var isFlipped: Bool { true }
-
-    func show(_ errors: [String], width: CGFloat) -> CGFloat {
-        let shown = errors.prefix(5) + (errors.count > 5 ? ["…and \(errors.count - 5) more"] : [])
-        label.stringValue = shown.joined(separator: "\n")
-        let size = label.sizeThatFits(CGSize(width: width - 24, height: 1000))
-        label.frame = CGRect(x: 12, y: 8, width: width - 24, height: size.height)
-        return size.height + 16
-    }
-}
-
 /// Centered hint shown on an empty workspace.
 final class HintView: NSTextField {
     convenience init() {

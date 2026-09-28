@@ -12,10 +12,11 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
     let window: MonitorWindow
     let root: CompositorView
     private let bar = BarView()
-    private let banner = BannerView()
     private let hint = HintView()
     private let specialDim = NSView()
     private let animator: Animator
+    /// Hypermux's own UI (notifications), above all tiles.
+    private let hud: HUD
 
     private var views: [ClientID: ClientView] = [:]
     private var closing: [ClientID: ClientView] = [:]
@@ -55,6 +56,8 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         root = CompositorView(frame: NSRect(origin: .zero, size: frame.size))
         animator = Animator(hostView: root)
         wm = WindowManager(monitor: CGRect(origin: .zero, size: frame.size), settings: config.wm)
+        hud = HUD(config: config, theme: HUDTheme(config: config, terminal: runtime.style, background: runtime.backgroundColor),
+                  animator: animator)
         super.init()
 
         window.title = "Hypermux"
@@ -76,13 +79,16 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         root.addSubview(specialDim)
         root.addSubview(hint)
         root.addSubview(bar)
-        root.addSubview(banner)
+        root.addSubview(hud.layer)
         bar.onSelectWorkspace = { [weak self] n in self?.dispatch(.workspace(.id(n))) }
+        hud.clientFrame = { [weak self] id in self?.views[id]?.targetFrame }
+        hud.onFocusClient = { [weak self] id in self?.focusFromHUD(id) }
 
         wm.perform = { [weak self] e in self?.handle(e) }
         root.onResize = { [weak self] in self?.monitorChanged(animated: false) }
         applyConfigVisuals()
         monitorChanged(animated: false)
+        syncConfigErrors()
         installEventMonitors()
         let nc = NotificationCenter.default
         nc.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
@@ -115,8 +121,29 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         if ghosttyChanged { runtime.reload(extraConfig: newConfig.ghostty) }
         if submap != "reset" && !newConfig.binds.contains(where: { $0.submap == submap }) { submap = "reset" }
         applyConfigVisuals()
+        hud.reload(config: newConfig, theme: HUDTheme(config: newConfig, terminal: runtime.style, background: runtime.backgroundColor))
+        syncConfigErrors()
         for c in newConfig.exec { spawn(command: c, inheritFrom: nil) }
         monitorChanged(animated: true)
+    }
+
+    /// Config errors stay on screen as one notice until the config is fixed (or it's clicked away).
+    private func syncConfigErrors() {
+        let errors = config.errors
+        guard !errors.isEmpty else {
+            hud.notifications.dismiss(key: "config-errors")
+            return
+        }
+        let shown = errors.prefix(5) + (errors.count > 5 ? ["…and \(errors.count - 5) more"] : [])
+        hud.notifications.post(.error, title: errors.count == 1 ? "Config error" : "\(errors.count) config errors",
+                               shown.joined(separator: "\n"), sticky: true, key: "config-errors")
+    }
+
+    /// A notice raised by a tile was clicked: show that tile.
+    private func focusFromHUD(_ id: ClientID) {
+        guard views[id] != nil else { return }
+        wm.focus(id)  // switches to its workspace (or scratchpad) and shows a hidden group tab
+        apply(animated: true)
     }
 
     private func applyConfigVisuals() {
@@ -183,6 +210,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         bar.frame = CGRect(x: 0, y: 0, width: b.width, height: top)
         bar.leadingInset = titlebarHeight > 0 ? 70 : 0
         specialDim.frame = b
+        hud.layout(monitor: wm.monitor, workArea: wm.workArea, animated: animated)
         apply(animated: animated)
     }
 
@@ -297,15 +325,9 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         return os + " " + parts.dropFirst().joined(separator: ".")
     }
 
-    /// Shows a message in the banner for a few seconds.
+    /// A short-lived warning, e.g. "no booted simulator".
     private func flash(_ message: String) {
-        transientNotes = [message]
-        if let last { updateChrome(last) }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
-            guard let self, self.transientNotes == [message] else { return }
-            self.transientNotes = []
-            if let last = self.last { self.updateChrome(last) }
-        }
+        hud.notifications.post(.warning, message)
     }
 
     private func manage(_ surface: Surface) {
@@ -323,8 +345,6 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
     private weak var lastTerminal: TerminalView?
     /// Focused client as of the last updateFocus, to tell focus changes from re-applies.
     private var lastFocusApplied: ClientID?
-    /// Short-lived messages shown in the banner (e.g. "no booted simulator").
-    private var transientNotes: [String] = []
 
     private func removeClient(_ id: ClientID) {
         guard let v = views.removeValue(forKey: id) else { return }
@@ -572,7 +592,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         order[ObjectIdentifier(specialDim)] = 9_999
         order[ObjectIdentifier(hint)] = -1
         order[ObjectIdentifier(bar)] = 30_000
-        order[ObjectIdentifier(banner)] = 30_001
+        order[ObjectIdentifier(hud.layer)] = 30_001
         if let d = drag, let v = views[d.id] { order[ObjectIdentifier(v)] = 25_000 }
         let current = root.subviews
         let sorted = current.sorted { (order[ObjectIdentifier($0)] ?? 0) < (order[ObjectIdentifier($1)] ?? 0) }
@@ -599,16 +619,6 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         hint.isHidden = !empty
         hint.sizeToFit()
         hint.frame = CGRect(x: area.midX - 250, y: area.midY - hint.frame.height / 2, width: 500, height: hint.frame.height)
-
-        let notes = config.errors + transientNotes
-        if notes.isEmpty {
-            banner.isHidden = true
-        } else {
-            banner.isHidden = false
-            let w = min(900, area.width - 40)
-            let h = banner.show(notes, width: w)
-            banner.frame = CGRect(x: area.midX - w / 2, y: area.minY + 10, width: w, height: h)
-        }
     }
 
     private func updateFocus(_ snap: Snapshot) {
@@ -679,7 +689,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         wm.cursor = p
         // Views track the mouse even while Hypermux is in the background. Without this,
         // passing the pointer over the window from another app silently moved focus.
-        guard NSApp.isActive, window.isKeyWindow else { return }
+        guard NSApp.isActive, window.isKeyWindow, !hud.contains(p) else { return }
         guard config.followMouse == 1, let id = wm.client(at: p), id != wm.focused else { return }
         log.debug("focus reason=mouse client=\(id.raw)")
         wm.focus(id)
@@ -691,6 +701,8 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         let p = point(e)
         switch e.type {
         case .leftMouseDown, .rightMouseDown:
+            // HUD panels take their own clicks; the tile under them must not react.
+            if hud.contains(p) { return e }
             let button = e.type == .leftMouseDown ? 272 : 273
             let mods = modifiers(e.modifierFlags)
             guard let bind = config.binds.first(where: {
@@ -808,7 +820,8 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
                 }
                 return json(["appActive": NSApp.isActive, "isKeyWindow": window.isKeyWindow,
                              "firstResponder": frDesc, "keyboardClient": owner,
-                             "focused": wm.focused?.raw as Any? ?? NSNull()])
+                             "focused": wm.focused?.raw as Any? ?? NSNull(),
+                             "hud": hud.debugFrames.map { [$0.minX, $0.minY, $0.width, $0.height] }])
             case .sendText(let t):
                 guard let term = focusedTerminal else { return "error: no focused terminal" }
                 term.sendText(t)
@@ -989,6 +1002,11 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         guard config.fullscreenStyle == "fill" else { return true }
         setMonitorFullscreen(true)
         return false
+    }
+
+    func terminal(_ view: TerminalView, notifyTitle title: String, body: String) {
+        // OSC 9 has no title. The body then reads as the headline; clicking still finds the tile.
+        hud.notifications.post(.info, title: title, body, source: view.clientID)
     }
 
     func terminal(_ view: TerminalView, openURL url: URL) -> Bool {

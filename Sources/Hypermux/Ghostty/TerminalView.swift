@@ -13,6 +13,8 @@ protocol TerminalViewHost: AnyObject {
     func terminalDidToggleWindowFullscreen(_ view: TerminalView)
     /// A link was opened (cmd+click). Return true if handled, else it goes to macOS.
     func terminal(_ view: TerminalView, openURL url: URL) -> Bool
+    /// A desktop notification (OSC 9 / OSC 777).
+    func terminal(_ view: TerminalView, notifyTitle title: String, body: String)
 }
 
 struct SurfaceOptions {

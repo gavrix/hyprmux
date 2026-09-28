@@ -12,11 +12,35 @@ final class GhosttyRuntime {
 
     /// Terminal background, so gaps around a resizing surface match its color.
     private(set) var backgroundColor = NSColor(calibratedRed: 0.11, green: 0.11, blue: 0.13, alpha: 1)
+    /// The terminal look, for Hypermux's own UI (see HUDTheme).
+    private(set) var style = TerminalStyle()
+
+    struct TerminalStyle {
+        var foreground = NSColor(white: 0.9, alpha: 1)
+        /// The 16 ANSI colors.
+        var palette: [NSColor] = TerminalStyle.fallbackPalette
+        var fontFamily: String?
+        var fontSize: CGFloat = 13
+
+        static let fallbackPalette: [NSColor] = {
+            let hex: [UInt32] = [
+                0x1d1f21, 0xcc6666, 0xb5bd68, 0xf0c674, 0x81a2be, 0xb294bb, 0x8abeb7, 0xc5c8c6,
+                0x666666, 0xd54e53, 0xb9ca4a, 0xe7c547, 0x7aa6da, 0xc397d8, 0x70c0b1, 0xeaeaea,
+            ]
+            return hex.map { (v: UInt32) -> NSColor in
+                let r = CGFloat((v >> 16) & 0xff) / 255
+                let g = CGFloat((v >> 8) & 0xff) / 255
+                let b = CGFloat(v & 0xff) / 255
+                return NSColor(srgbRed: r, green: g, blue: b, alpha: 1)
+            }
+        }()
+    }
 
     init(extraConfig: [String]) {
         guard let cfg = Self.makeConfig(extraConfig) else { return }
         config = cfg
         readColors(cfg)
+        readStyle(cfg, extraConfig: extraConfig)
 
         var rt = ghostty_runtime_config_s(
             userdata: Unmanaged.passUnretained(self).toOpaque(),
@@ -68,6 +92,7 @@ final class GhosttyRuntime {
         guard let app, let cfg = Self.makeConfig(extraConfig) else { return }
         ghostty_app_update_config(app, cfg)
         readColors(cfg)
+        readStyle(cfg, extraConfig: extraConfig)
         if let old = config { ghostty_config_free(old) }
         config = cfg
     }
@@ -83,6 +108,29 @@ final class GhosttyRuntime {
             backgroundColor = NSColor(srgbRed: CGFloat(c.r) / 255, green: CGFloat(c.g) / 255, blue: CGFloat(c.b) / 255,
                                       alpha: CGFloat(min(max(opacity, 0), 1)))
         }
+    }
+
+    private func readStyle(_ cfg: ghostty_config_t, extraConfig: [String]) {
+        func color(_ c: ghostty_config_color_s) -> NSColor {
+            NSColor(srgbRed: CGFloat(c.r) / 255, green: CGFloat(c.g) / 255, blue: CGFloat(c.b) / 255, alpha: 1)
+        }
+        var s = TerminalStyle()
+        var fg = ghostty_config_color_s()
+        let fkey = "foreground"
+        if ghostty_config_get(cfg, &fg, fkey, UInt(fkey.utf8.count)) { s.foreground = color(fg) }
+        var palette = ghostty_config_palette_s()
+        let pkey = "palette"
+        if ghostty_config_get(cfg, &palette, pkey, UInt(pkey.utf8.count)) {
+            s.palette = withUnsafeBytes(of: palette.colors) { raw in
+                Array(raw.bindMemory(to: ghostty_config_color_s.self).prefix(16)).map(color)
+            }
+        }
+        var size: Float = 0
+        let skey = "font-size"
+        if ghostty_config_get(cfg, &size, skey, UInt(skey.utf8.count)), size > 0 { s.fontSize = CGFloat(size) }
+        // font-family is a repeatable string, which the C API can't return.
+        s.fontFamily = GhosttyConfigScan.fontFamily(in: GhosttyConfigScan.loadTexts(extra: extraConfig))
+        style = s
     }
 
     func tick() {
@@ -174,6 +222,12 @@ final class GhosttyRuntime {
             let url = URL(string: str) ?? URL(fileURLWithPath: (str as NSString).expandingTildeInPath)
             if let v, v.host?.terminal(v, openURL: url) == true { return true }
             NSWorkspace.shared.open(url)
+        case GHOSTTY_ACTION_DESKTOP_NOTIFICATION:
+            // OSC 9 / OSC 777 from a program in the terminal.
+            guard let v else { return false }
+            let n = action.action.desktop_notification
+            v.host?.terminal(v, notifyTitle: n.title.map { String(cString: $0) } ?? "",
+                             body: n.body.map { String(cString: $0) } ?? "")
         case GHOSTTY_ACTION_RING_BELL:
             NSSound.beep()
         case GHOSTTY_ACTION_RENDER:

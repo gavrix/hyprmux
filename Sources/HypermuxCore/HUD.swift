@@ -164,6 +164,12 @@ public enum LayerAnimationStyle: Equatable, Sendable {
         }
     }
 
+    /// The edge a slide uses for an element at `position`. Nil for popin and fade.
+    public func slideEdge(at position: HUDPosition) -> Direction? {
+        guard case .slide(let edge) = self else { return nil }
+        return edge ?? position.nearestEdge ?? .up
+    }
+
     /// Where an element with final frame `frame` starts (on the way in) or ends (on the way out).
     /// A slide travels `distance` points; Hyprland moves it fully off the edge, which inside
     /// a window would cross other tiles, so the host passes something shorter.
@@ -174,8 +180,8 @@ public enum LayerAnimationStyle: Equatable, Sendable {
         case .popin(let s):
             let w = frame.width * s, h = frame.height * s
             return CGRect(x: frame.midX - w / 2, y: frame.midY - h / 2, width: w, height: h)
-        case .slide(let edge):
-            switch edge ?? position.nearestEdge ?? .up {
+        case .slide:
+            switch slideEdge(at: position) ?? .up {
             case .left: return frame.offsetBy(dx: -distance, dy: 0)
             case .right: return frame.offsetBy(dx: distance, dy: 0)
             case .up: return frame.offsetBy(dx: 0, dy: -distance)

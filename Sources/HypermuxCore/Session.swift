@@ -484,17 +484,42 @@ public enum RestorePolicy {
     /// A foreground shell means nothing else is running.
     static let shells: Set<String> = ["zsh", "bash", "fish", "sh", "dash", "tcsh", "csh", "ksh", "nu", "xonsh", "login"]
 
-    /// The command to relaunch a foreground program with, or nil when it isn't allowed
-    /// (or is just the shell).
-    public static func programCommand(argv: [String], settings: RestoreSettings) -> String? {
+    /// The command to relaunch a terminal's foreground program with, or nil when it isn't
+    /// allowed (or is just the shell).
+    ///
+    /// `typed` is the command line as the shell reported it: Ghostty's shell integration
+    /// sets the title to it when a command starts. It's preferred, because the process
+    /// often isn't what was typed: `tool release` runs as `ruby …/tool release`
+    /// (tool is a shell function), and a wrapper may exec something else entirely. It's used
+    /// only when it matches an entry by name, since a program can set its own title.
+    /// Entries can be several words: `tool release` allows that and not `tool deploy`.
+    public static func programCommand(argv: [String], typed: String? = nil, settings: RestoreSettings) -> String? {
         guard let first = argv.first, !first.isEmpty else { return nil }
         var name = (first as NSString).lastPathComponent
         if name.hasPrefix("-") { name.removeFirst() }  // login shells: "-zsh"
         guard !shells.contains(name) else { return nil }
-        let allowed = settings.programs.contains("*") || settings.programs.contains(name)
-        guard allowed, !settings.deny.contains(name) else { return nil }
-        return ([name] + argv.dropFirst()).map(shellQuote).joined(separator: " ")
+        if let line = typed?.trimmingCharacters(in: .whitespaces), !line.isEmpty {
+            var words = line.split(separator: " ").map(String.init)
+            // Leading VAR=value assignments aren't the program.
+            while let w = words.first, w.contains("="), !w.hasPrefix("=") { words.removeFirst() }
+            if !words.isEmpty, !denied(words, settings), listed(words, settings.programs) { return line }
+        }
+        let words = [name] + argv.dropFirst()
+        guard !denied(words, settings), settings.programs.contains("*") || listed(words, settings.programs) else { return nil }
+        return words.map(shellQuote).joined(separator: " ")
     }
+
+    /// Whether a list entry (one or more words) is a prefix of the command's words.
+    static func listed(_ words: [String], _ entries: [String]) -> Bool {
+        let name = (words[0] as NSString).lastPathComponent
+        let w = [name] + words.dropFirst()
+        return entries.contains { e in
+            let ew = e.split(separator: " ").map(String.init)
+            return !ew.isEmpty && ew != ["*"] && w.count >= ew.count && Array(w.prefix(ew.count)) == ew
+        }
+    }
+
+    static func denied(_ words: [String], _ s: RestoreSettings) -> Bool { listed(words, s.deny) }
 
     /// The command that resumes an agent session (`session:resume:KIND`), or starts a new
     /// one when there's no session id (`session:start:KIND`).

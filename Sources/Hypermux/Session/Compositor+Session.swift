@@ -92,7 +92,7 @@ extension Compositor {
                 tile.agent = SessionAgent(kind: r.kind, session: forLayout ? nil : r.session)
                 if let c = r.cwd { tile.cwd = c }
             } else if let argv = ProcessInspector.argv(fg),
-                      let cmd = RestorePolicy.programCommand(argv: argv, settings: config.session) {
+                      let cmd = RestorePolicy.programCommand(argv: argv, typed: t.title, settings: config.session) {
                 tile.command = cmd
                 tile.cwd = ProcessInspector.cwd(fg) ?? tile.cwd
             }

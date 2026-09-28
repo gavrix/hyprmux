@@ -145,6 +145,28 @@ final class RestorePolicyTests: XCTestCase {
         XCTAssertNil(RestorePolicy.programCommand(argv: ["/usr/bin/ssh", "prod"], settings: s))
     }
 
+    func testTypedCommandLine() {
+        var s = RestoreSettings()
+        s.programs = ["nvim", "tool release"]
+        let ruby = ["/nix/store/x-ruby/bin/ruby", "--disable-all", "/usr/local/libexec/tool", "release"]
+        // The shell's title is what was typed; the process is ruby.
+        XCTAssertEqual(RestorePolicy.programCommand(argv: ruby, typed: "tool release", settings: s), "tool release")
+        XCTAssertEqual(RestorePolicy.programCommand(argv: ruby, typed: "FOO=1 tool release --fast", settings: s),
+                       "FOO=1 tool release --fast")
+        XCTAssertNil(RestorePolicy.programCommand(argv: ruby, typed: "tool deploy", settings: s), "entry is two words")
+        XCTAssertNil(RestorePolicy.programCommand(argv: ruby, settings: s), "ruby isn't listed")
+        // A title the program set itself doesn't match, so argv is used.
+        XCTAssertEqual(RestorePolicy.programCommand(argv: ["nvim", "a.txt"], typed: "a.txt - NVIM", settings: s), "nvim a.txt")
+        // The shell in the foreground: nothing, whatever the title says.
+        XCTAssertNil(RestorePolicy.programCommand(argv: ["-zsh"], typed: "tool release", settings: s))
+        s.deny = ["tool release"]
+        XCTAssertNil(RestorePolicy.programCommand(argv: ruby, typed: "tool release", settings: s))
+        // "*" trusts only argv, never a title.
+        s = RestoreSettings()
+        s.programs = ["*"]
+        XCTAssertEqual(RestorePolicy.programCommand(argv: ["htop"], typed: "π - whatever", settings: s), "htop")
+    }
+
     func testResumeAndQuoting() {
         var s = RestoreSettings()
         s.resume["pi"] = "mywrapper pi --session {id}"

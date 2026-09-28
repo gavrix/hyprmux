@@ -278,8 +278,12 @@ it as `session-previous.json`.
 What comes back:
 
 - **Terminals:** a new shell in the same directory. If a program on the
-  `programs` list was running in the foreground, it starts again with the same
-  arguments, typed into the shell, so the shell stays when it exits.
+  `programs` list was running in the foreground, it starts again, typed into the
+  shell, so the shell stays when it exits. Hypermux prefers the command line you
+  typed, which Ghostty's shell integration reports as the terminal title, over
+  the process it became: `tool release` runs as `ruby …/tool release`,
+  and wrappers often exec something else. Compound lines (`cd x && make`) don't
+  match an entry; then the foreground process's own arguments are used.
 - **Agent sessions:** an agent that reported its session (below) resumes with the
   command from `resume`.
 - **Web tiles:** the page they were on.
@@ -305,8 +309,8 @@ session {
 | Option | Default | Meaning |
 |---|---|---|
 | `restore` | true | Restore the last session on launch. |
-| `programs` | `nvim, vim, lazygit, htop, btop, less, man` | Foreground programs that start again. `*` allows any. Only these re-run: a restart must not repeat a deploy. |
-| `deny` | — | Programs never re-run, even with `programs = *`. |
+| `programs` | `nvim, vim, lazygit, htop, btop, less, man` | Foreground programs that start again. `*` allows any. Only these re-run: a restart must not repeat a deploy. An entry can be several words: `tool release` allows that command and not `tool deploy`. |
+| `deny` | — | Programs never re-run, even with `programs = *`. Entries work the same way. |
 | `resume:KIND` | `pi`, `codex` | The command that resumes an agent session of that kind. `{id}` is the session id. |
 | `start:KIND` | `pi`, `codex` | The command that starts a new session of that kind. Layouts use it. |
 

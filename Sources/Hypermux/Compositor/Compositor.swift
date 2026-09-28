@@ -83,6 +83,11 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         bar.onSelectWorkspace = { [weak self] n in self?.dispatch(.workspace(.id(n))) }
         hud.clientFrame = { [weak self] id in self?.views[id]?.targetFrame }
         hud.onFocusClient = { [weak self] id in self?.focusFromHUD(id) }
+        hud.picker.onClose = { [weak self] in
+            guard let self, let last = self.last else { return }
+            self.lastFocusApplied = nil  // hand the keyboard back to the focused tile
+            self.updateFocus(last)
+        }
 
         wm.perform = { [weak self] e in self?.handle(e) }
         root.onResize = { [weak self] in self?.monitorChanged(animated: false) }
@@ -291,30 +296,12 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         manage(sim)
     }
 
-    /// Menu of booted simulators, centered in the work area. Arrow keys + Return work.
+    /// Picker of booted simulators: type to filter by name or runtime.
     private func pickSimulator(_ devices: [HMSimDeviceInfo]) {
-        let menu = NSMenu(title: "Simulators")
-        let header = NSMenuItem(title: "Show simulator", action: nil, keyEquivalent: "")
-        header.isEnabled = false
-        menu.addItem(header)
-        for d in devices {
-            let item = NSMenuItem(title: "\(d.name)   \(Self.runtimeName(d.runtime))",
-                                  action: #selector(pickedSimulator(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = d.udid
-            menu.addItem(item)
+        let items = devices.map { PickerItem(id: $0.udid, title: $0.name, detail: Self.runtimeName($0.runtime)) }
+        hud.picker.present(Picker(title: "simulator", items: items, maxVisible: config.hud.pickerMaxRows)) { [weak self] r in
+            if case .item(let udid)? = r { self?.spawnSim(udid) }
         }
-        let area = wm.workArea
-        let at = NSPoint(x: area.midX - 150, y: area.midY - CGFloat(devices.count) * 11)
-        // popUp runs a modal tracking loop; start it after the current event/IPC call returns.
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            menu.popUp(positioning: nil, at: at, in: self.root)
-        }
-    }
-
-    @objc private func pickedSimulator(_ item: NSMenuItem) {
-        if let udid = item.representedObject as? String { spawnSim(udid) }
     }
 
     /// "com.apple.CoreSimulator.SimRuntime.iOS-27-0" → "iOS 27.0".
@@ -622,6 +609,10 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
     }
 
     private func updateFocus(_ snap: Snapshot) {
+        if hud.picker.isOpen {
+            hud.picker.focus(in: window)
+            return
+        }
         let changed = snap.focused != lastFocusApplied
         if changed { log.debug("focus \(self.lastFocusApplied?.raw ?? 0) -> \(snap.focused?.raw ?? 0)") }
         lastFocusApplied = snap.focused
@@ -670,6 +661,13 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         guard e.window === window else { return e }
         if e.type == .keyUp {
             return consumedKeyUps.remove(e.keyCode) != nil ? nil : e
+        }
+        // An open picker holds the keyboard: no binds; its keys, or the query field's.
+        if hud.picker.isOpen {
+            hud.picker.focus(in: window)
+            guard hud.picker.handleKey(e) else { return e }
+            consumedKeyUps.insert(e.keyCode)
+            return nil
         }
         let mods = modifiers(e.modifierFlags)
         guard let bind = config.binds.first(where: {
@@ -821,7 +819,8 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
                 return json(["appActive": NSApp.isActive, "isKeyWindow": window.isKeyWindow,
                              "firstResponder": frDesc, "keyboardClient": owner,
                              "focused": wm.focused?.raw as Any? ?? NSNull(),
-                             "hud": hud.debugFrames.map { [$0.minX, $0.minY, $0.width, $0.height] }])
+                             "hud": hud.debugFrames.map { [$0.minX, $0.minY, $0.width, $0.height] },
+                             "picker": hud.debugPicker])
             case .sendText(let t):
                 guard let term = focusedTerminal else { return "error: no focused terminal" }
                 term.sendText(t)

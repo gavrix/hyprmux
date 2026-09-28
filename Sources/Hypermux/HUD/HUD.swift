@@ -27,6 +27,7 @@ final class HUD {
     var onFocusClient: ((ClientID) -> Void)?
 
     private(set) var notifications: NotificationStack!
+    private(set) var picker: PickerPresenter!
 
     init(config: HypermuxConfig, theme: HUDTheme, animator: Animator) {
         self.config = config
@@ -35,12 +36,14 @@ final class HUD {
         layer.wantsLayer = true
         layer.layer?.masksToBounds = false
         notifications = NotificationStack(hud: self)
+        picker = PickerPresenter(hud: self)
     }
 
     func reload(config: HypermuxConfig, theme: HUDTheme) {
         self.config = config
         self.theme = theme
         notifications.reload()
+        picker.reload()
     }
 
     /// The monitor window resized or the bar moved.
@@ -49,7 +52,10 @@ final class HUD {
         self.monitor = monitor
         self.workArea = workArea
         layer.frame = monitor
-        if changed { notifications.relayout(animated: animated) }
+        if changed {
+            notifications.relayout(animated: animated)
+            picker.relayout()
+        }
     }
 
     /// Whether a point (monitor coordinates) is over a HUD element, so tile clicks and
@@ -59,7 +65,16 @@ final class HUD {
     }
 
     /// Frames of the HUD panels on screen, for `hypermuxctl debug`.
-    var debugFrames: [CGRect] { layer.subviews.filter { !$0.isHidden && $0.alphaValue > 0 }.map(\.frame) }
+    var debugFrames: [CGRect] {
+        layer.subviews.filter { !($0 is PickerScrim) && !$0.isHidden && $0.alphaValue > 0 }.map(\.frame)
+    }
+
+    /// The open picker, for `hypermuxctl debug`.
+    var debugPicker: Any {
+        guard let p = picker.current else { return NSNull() }
+        return ["title": p.title, "query": p.query, "selection": p.selection as Any? ?? NSNull(),
+                "rows": p.rows.map { p.items[$0.index].title }]
+    }
 
     func area(for anchor: HUDAnchor) -> CGRect? {
         HUDLayout.area(for: anchor, monitor: monitor, workArea: workArea, clientFrame: clientFrame)

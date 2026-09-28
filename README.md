@@ -63,6 +63,13 @@ and `popin`/`slide`/`slidevert`/`fade` styles), `input:follow_mouse`, `dwindle`
 `default_split_ratio`), `binds:workspace_back_and_forth`, `bind[elnmrd]`,
 `submap`, `exec-once`, `exec`.
 
+Transparency: `misc:background_color = rgba(00000000)` makes the monitor window
+see-through. `decoration:inactive_opacity` / `active_opacity` fade window
+content (animated with `fadeSwitch`). `decoration:blur:enabled` adds a macOS
+frosted-glass blur behind each window. Shadows are drawn only outside windows,
+so they don't show through. Native fullscreen puts the window on its own Space,
+with only black behind it, so use a zoomed window for transparency.
+
 A `ghostty { ... }` block passes settings to libghostty. Your normal
 `~/.config/ghostty/config` loads first.
 

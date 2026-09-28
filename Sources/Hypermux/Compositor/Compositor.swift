@@ -104,9 +104,16 @@ final class Compositor: NSObject, TerminalViewHost, NSWindowDelegate {
     }
 
     private func applyConfigVisuals() {
+        // A background alpha below 1 makes the monitor window see-through (desktop shows in the gaps).
         let bg = config.backgroundColor
-        root.layer?.backgroundColor = bg.cg
-        window.backgroundColor = NSColor(cgColor: bg.cg)
+        let transparent = bg.a < 1
+        window.isOpaque = !transparent
+        window.hasShadow = !transparent
+        window.backgroundColor = transparent ? .clear : NSColor(cgColor: bg.cg)
+        // Keep a sliver of alpha: fully clear pixels let clicks fall through to apps behind.
+        var paint = bg
+        if transparent { paint.a = max(paint.a, 0.01) }
+        root.layer?.backgroundColor = paint.cg
         if let c = config.activeBorder.colors.first {
             bar.accent = NSColor(cgColor: HypermuxCore.Color(r: c.r, g: c.g, b: c.b, a: 1).cg) ?? bar.accent
         }
@@ -245,6 +252,7 @@ final class Compositor: NSObject, TerminalViewHost, NSWindowDelegate {
         let specialClosed = prev?.specialVisible != nil && snap.specialVisible != prev?.specialVisible
         let deco = Decoration(config)
         let border = config.animation("border")
+        let fadeSwitch = config.animation("fadeSwitch")
         let move = config.animation("windowsMove")
         let winIn = config.animation("windowsIn")
         let fadeIn = config.animation("fadeIn")
@@ -256,7 +264,8 @@ final class Compositor: NSObject, TerminalViewHost, NSWindowDelegate {
 
         for p in snap.placements {
             guard let v = views[p.id] else { continue }
-            v.setDecoration(deco, active: p.focused, borderDuration: dur(border))
+            v.setDecoration(deco, active: p.focused, borderDuration: dur(border),
+                            opacityAnimation: (dur(fadeSwitch), fadeSwitch.curve))
             let before = prev?.placement(p.id)
 
             if p.visible {

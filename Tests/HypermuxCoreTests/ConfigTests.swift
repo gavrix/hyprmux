@@ -70,6 +70,26 @@ final class ConfigTests: XCTestCase {
         XCTAssertEqual(c.errors.count, 3)
     }
 
+    func testTransparencyOptions() {
+        let c = ConfigParser.parse("""
+        decoration {
+            inactive_opacity = 0.7
+            blur {
+                enabled = true
+                size = 8
+                passes = 2
+            }
+        }
+        misc {
+            background_color = rgba(00000000)
+        }
+        """)
+        XCTAssertEqual(c.errors, [])
+        XCTAssertEqual(c.inactiveOpacity, 0.7)
+        XCTAssertTrue(c.blurEnabled)
+        XCTAssertEqual(c.backgroundColor.a, 0)
+    }
+
     func testColors() {
         XCTAssertEqual(Color.parse("rgba(ff000080)"), Color(r: 1, g: 0, b: 0, a: 128.0 / 255))
         XCTAssertEqual(Color.parse("rgb(0, 255, 0)"), Color(r: 0, g: 1, b: 0))

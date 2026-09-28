@@ -17,6 +17,7 @@ struct Decoration: Equatable {
     var shadow = true
     var shadowRange: CGFloat = 12
     var shadowColor: HypermuxCore.Color
+    var blur = false
 
     init(_ c: HypermuxConfig) {
         borderSize = c.wm.borderSize
@@ -30,6 +31,7 @@ struct Decoration: Equatable {
         shadow = c.shadowEnabled
         shadowRange = c.shadowRange
         shadowColor = c.shadowColor
+        blur = c.blurEnabled
     }
 }
 
@@ -48,6 +50,11 @@ final class ClientView: NSView, Animatable {
     private let dimView = NSView()
     private let borderLayer = CAGradientLayer()
     private let borderMask = CAShapeLayer()
+    /// Drawn only outside the window, like Hyprland, so it never shows through translucent content.
+    private let shadowLayer = CALayer()
+    private let shadowMask = CAShapeLayer()
+    /// Blurs what is behind the window (other apps, the desktop). Only with `decoration:blur`.
+    private var blurView: NSVisualEffectView?
 
     private(set) var targetFrame: CGRect = .zero
     private var frameTween: Tween<CGRect>?
@@ -68,9 +75,17 @@ final class ClientView: NSView, Animatable {
         wantsLayer = true
         layer?.masksToBounds = false
 
+        shadowLayer.zPosition = -100
+        shadowLayer.shadowOffset = .zero
+        shadowMask.fillRule = .evenOdd
+        shadowLayer.mask = shadowMask
+        layer?.addSublayer(shadowLayer)
+
         clip.wantsLayer = true
         clip.layer?.masksToBounds = true
         clip.layer?.backgroundColor = background.cgColor
+        // Opacity applies to the terminal and its backdrop as one image.
+        clip.layer?.allowsGroupOpacity = true
         addSubview(clip)
         clip.addSubview(terminal)
 
@@ -85,6 +100,7 @@ final class ClientView: NSView, Animatable {
         borderMask.strokeColor = NSColor.black.cgColor
         layer?.addSublayer(borderLayer)
         applyDecoration(animated: false, duration: 0)
+        applyOpacity(animation: nil)
     }
 
     required init?(coder: NSCoder) { fatalError("not supported") }
@@ -98,11 +114,48 @@ final class ClientView: NSView, Animatable {
 
     // MARK: Decoration
 
-    func setDecoration(_ d: Decoration, active: Bool, borderDuration: Double) {
+    /// `opacityAnimation` is Hyprland's fadeSwitch: the active/inactive opacity change.
+    func setDecoration(_ d: Decoration, active: Bool, borderDuration: Double, opacityAnimation: (Double, Bezier)? = nil) {
         let changed = d != decoration || active != isActive
         decoration = d
         isActive = active
-        if changed { applyDecoration(animated: borderDuration > 0, duration: borderDuration) }
+        guard changed else { return }
+        applyDecoration(animated: borderDuration > 0, duration: borderDuration)
+        applyOpacity(animation: opacityAnimation)
+    }
+
+    private var contentOpacity: CGFloat { isActive ? decoration.activeOpacity : decoration.inactiveOpacity }
+
+    private func applyOpacity(animation: (Double, Bezier)?) {
+        let target = contentOpacity
+        guard clip.alphaValue != target else { return }
+        guard let (duration, curve) = animation, duration > 0 else {
+            clip.alphaValue = target
+            return
+        }
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = duration
+            ctx.timingFunction = CAMediaTimingFunction(
+                controlPoints: Float(curve.x1), Float(curve.y1), Float(curve.x2), Float(curve.y2))
+            clip.animator().alphaValue = target
+        }
+    }
+
+    private func updateBlur() {
+        if decoration.blur, blurView == nil {
+            let v = NSVisualEffectView()
+            v.blendingMode = .behindWindow
+            v.material = .hudWindow
+            v.state = .active
+            v.appearance = NSAppearance(named: .darkAqua)
+            v.wantsLayer = true
+            v.layer?.masksToBounds = true
+            addSubview(v, positioned: .below, relativeTo: clip)
+            blurView = v
+        } else if !decoration.blur, let v = blurView {
+            v.removeFromSuperview()
+            blurView = nil
+        }
     }
 
     private func applyDecoration(animated: Bool, duration: Double) {
@@ -119,17 +172,13 @@ final class ClientView: NSView, Animatable {
         borderLayer.endPoint = CGPoint(x: 0.5 + dx, y: 0.5 + dy)
         dimView.alphaValue = (!isActive && decoration.dimInactive) ? decoration.dimStrength : 0
         CATransaction.commit()
-        if alphaTween == nil { alphaValue = baseAlpha }
-        if let l = layer {
-            l.shadowOpacity = decoration.shadow ? 1 : 0
-            l.shadowRadius = decoration.shadowRange / 2
-            l.shadowColor = decoration.shadowColor.cg
-            l.shadowOffset = .zero
-        }
+        shadowLayer.shadowOpacity = decoration.shadow ? 1 : 0
+        shadowLayer.shadowRadius = decoration.shadowRange / 2
+        shadowLayer.shadowColor = decoration.shadowColor.cg
+        updateBlur()
         layoutChrome()
     }
 
-    private var baseAlpha: CGFloat { isActive ? decoration.activeOpacity : decoration.inactiveOpacity }
 
     // MARK: Geometry
 
@@ -152,7 +201,20 @@ final class ClientView: NSView, Animatable {
         let inset = bounds.insetBy(dx: b / 2, dy: b / 2)
         borderMask.path = CGPath(roundedRect: inset, cornerWidth: max(0, r - b / 2), cornerHeight: max(0, r - b / 2), transform: nil)
         borderLayer.isHidden = b <= 0
-        layer?.shadowPath = CGPath(roundedRect: bounds, cornerWidth: r, cornerHeight: r, transform: nil)
+        let outline = CGPath(roundedRect: bounds, cornerWidth: r, cornerHeight: r, transform: nil)
+        shadowLayer.frame = bounds
+        shadowLayer.shadowPath = outline
+        // Mask = a generous outer rect minus the window shape (even-odd).
+        let spread = decoration.shadowRange * 3 + 10
+        let maskPath = CGMutablePath()
+        maskPath.addRect(bounds.insetBy(dx: -spread, dy: -spread))
+        maskPath.addPath(outline)
+        shadowMask.frame = bounds
+        shadowMask.path = maskPath
+        if let v = blurView {
+            v.frame = clip.frame
+            v.layer?.cornerRadius = max(0, r - b)
+        }
         dimView.frame = clip.bounds
         CATransaction.commit()
     }
@@ -182,8 +244,9 @@ final class ClientView: NSView, Animatable {
     }
 
     func fade(from: CGFloat? = nil, to: CGFloat, duration: Double, curve: Bezier, animator: Animator, completion: (() -> Void)? = nil) {
-        let target = to * baseAlpha
-        let start = from.map { $0 * baseAlpha } ?? alphaValue
+        // Whole-view alpha: only open/close/workspace fades. Active/inactive opacity lives on `clip`.
+        let target = to
+        let start = from ?? alphaValue
         if duration <= 0 {
             alphaTween = nil
             alphaDone = nil

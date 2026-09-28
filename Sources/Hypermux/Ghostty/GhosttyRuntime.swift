@@ -75,8 +75,13 @@ final class GhosttyRuntime {
     private func readColors(_ cfg: ghostty_config_t) {
         var c = ghostty_config_color_s()
         let key = "background"
+        // Match Ghostty's own background-opacity so the backdrop never makes a translucent terminal opaque.
+        var opacity: Double = 1
+        let okey = "background-opacity"
+        _ = ghostty_config_get(cfg, &opacity, okey, UInt(okey.utf8.count))
         if ghostty_config_get(cfg, &c, key, UInt(key.utf8.count)) {
-            backgroundColor = NSColor(srgbRed: CGFloat(c.r) / 255, green: CGFloat(c.g) / 255, blue: CGFloat(c.b) / 255, alpha: 1)
+            backgroundColor = NSColor(srgbRed: CGFloat(c.r) / 255, green: CGFloat(c.g) / 255, blue: CGFloat(c.b) / 255,
+                                      alpha: CGFloat(min(max(opacity, 0), 1)))
         }
     }
 

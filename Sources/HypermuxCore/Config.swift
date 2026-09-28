@@ -104,6 +104,8 @@ public struct HypermuxConfig: Sendable {
     public var shadowEnabled = true
     public var shadowRange: Double = 4
     public var shadowColor = Color(r: 0.1, g: 0.1, b: 0.1, a: 0.93)
+    /// Blur whatever is behind each window (macOS behind-window blur).
+    public var blurEnabled = false
     public var animationsEnabled = true
     public var beziers: [String: Bezier] = ["default": .hyprDefault, "linear": .linear]
     public var animations: [String: AnimationSpec] = [:]
@@ -324,6 +326,11 @@ public enum ConfigParser {
             case "decoration:shadow:range", "decoration:shadow_range": if let v = num() { config.shadowRange = v }
             case "decoration:shadow:color", "decoration:col.shadow":
                 if let c = Color.parse(value) { config.shadowColor = c } else { error(file, line, "\(key): bad color") }
+            case "decoration:blur:enabled": if let v = bool() { config.blurEnabled = v }
+            case "decoration:blur:size", "decoration:blur:passes", "decoration:blur:noise", "decoration:blur:contrast",
+                 "decoration:blur:brightness", "decoration:blur:vibrancy", "decoration:blur:new_optimizations",
+                 "decoration:blur:xray", "decoration:blur:ignore_opacity", "decoration:blur:popups":
+                break  // Hyprland blur tuning; macOS blur has no equivalent knobs.
             case "animations:enabled": if let v = bool() { config.animationsEnabled = v }
             case "input:follow_mouse": if let v = num() { config.followMouse = Int(v) }
             case "dwindle:preserve_split": if let v = bool() { config.wm.dwindle.preserveSplit = v }

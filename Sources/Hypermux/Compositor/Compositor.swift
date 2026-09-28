@@ -420,12 +420,20 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
             updateGroupBar(v, p.group)
             let before = prev?.placement(p.id)
 
+            // A group switching tabs (same group, same workspace): swap instantly, like
+            // Hyprland. A cross-fade let the transparent background blink through.
+            let tabSwitch = wsDelta == 0 && before != nil && p.group != nil && before?.group?.id == p.group?.id
+                && before?.workspace == p.workspace
+
             if p.visible {
                 if !v.shown {
                     v.shown = true
                     v.isHidden = false
                     v.surface.setOccluded(false)
-                    if before == nil {
+                    if tabSwitch {
+                        v.move(to: p.frame, duration: 0, curve: .linear, animator: animator)
+                        v.fade(from: 1, to: 1, duration: 0, curve: .linear, animator: animator)
+                    } else if before == nil {
                         // New window.
                         let from = Self.popin(p.frame, style: winIn.style)
                         v.move(to: p.frame, from: from, duration: dur(winIn), curve: winIn.curve, animator: animator)
@@ -454,7 +462,12 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
                 }
                 let anim: ResolvedAnimation
                 let to: CGRect
-                if case .special = p.workspace, specialClosed {
+                if tabSwitch {
+                    // Hidden in the same frame the new tab appears.
+                    v.move(to: p.frame, duration: 0, curve: .linear, animator: animator)
+                    hide()
+                    continue
+                } else if case .special = p.workspace, specialClosed {
                     anim = spAnim
                     to = Self.offset(p.frame, style: spAnim.style, delta: -1, width: width, height: height)
                 } else if wsDelta != 0, before?.visible == true, before?.workspace == p.workspace {

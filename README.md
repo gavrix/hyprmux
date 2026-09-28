@@ -93,6 +93,12 @@ Two engines, picked with `web { engine = webkit | chromium }` (restart needed):
   Keychain) still need Apple's browser entitlement, so they don't. The profile
   lives in `~/Library/Application Support/Hypermux/Chromium`.
 
+Chromium extras: `web:chromium_flags` passes switches (e.g.
+`remote-debugging-port=9333`), and `web:chromium_extensions` loads unpacked
+extensions. Extensions that only use content scripts or network rules can work.
+Extensions that need tabs or windows (like 1Password) don't: embedded CEF
+browsers aren't part of Chrome's tab model, so `chrome.tabs.query` finds nothing.
+
 A `ghostty { ... }` block passes settings to libghostty. Your normal
 `~/.config/ghostty/config` loads first.
 

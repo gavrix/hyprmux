@@ -27,7 +27,8 @@ NS_ASSUME_NONNULL_BEGIN
 /// Process-wide CEF lifecycle. Main thread only.
 @interface HMChromium : NSObject
 /// Loads the framework and starts CEF. Call after NSApp exists, before the run loop.
-+ (BOOL)startWithRootCachePath:(NSString *)rootCachePath;
+/// `switches` are extra Chromium switches ("name" or "name=value").
++ (BOOL)startWithRootCachePath:(NSString *)rootCachePath switches:(NSArray<NSString *> *)switches;
 @property (class, readonly) BOOL isRunning;
 /// Runs the app's event loop (replaces -[NSApplication run]). Returns after quit.
 + (void)runMessageLoop;

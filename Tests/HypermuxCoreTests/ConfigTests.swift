@@ -103,6 +103,7 @@ final class ConfigTests: XCTestCase {
         XCTAssertEqual(WebAddress.resolve("hello", search: search)?.host, "duckduckgo.com")
         XCTAssertEqual(WebAddress.resolve("/tmp/a.html", search: search)?.isFileURL, true)
         XCTAssertNil(WebAddress.resolve("  ", search: search))
+        XCTAssertEqual(WebAddress.resolve("chrome-extension://abc/popup/index.html", search: search)?.scheme, "chrome-extension")
     }
 
     func testWebEngine() {

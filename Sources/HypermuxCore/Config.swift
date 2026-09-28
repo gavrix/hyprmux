@@ -132,6 +132,10 @@ public struct HypermuxConfig: Sendable {
     public var webShowAddressBar = true
     /// "webkit" (light, no passkeys) or "chromium" (CEF; passkeys via phone or security key).
     public var webEngine = "webkit"
+    /// Unpacked Chrome extensions (directories) to load into Chromium.
+    public var chromiumExtensions: [String] = []
+    /// Extra Chromium command-line switches, e.g. "disable-gpu" or "lang=en-US".
+    public var chromiumFlags: [String] = []
 
     public init() {}
 
@@ -358,6 +362,12 @@ public enum ConfigParser {
                 if value.contains("%s") { config.webSearch = value } else { error(file, line, "web:search: needs %s for the query") }
             case "web:open_terminal_links": if let v = bool() { config.webOpenTerminalLinks = v }
             case "web:address_bar": if let v = bool() { config.webShowAddressBar = v }
+            case "web:chromium_extensions":
+                config.chromiumExtensions = value.split(separator: ",")
+                    .map { ($0.trimmingCharacters(in: .whitespaces) as NSString).expandingTildeInPath }
+                    .filter { !$0.isEmpty }
+            case "web:chromium_flags":
+                config.chromiumFlags = value.split(separator: " ").map { String($0).trimmingCharacters(in: CharacterSet(charactersIn: "-")) }
             case "web:engine":
                 let v = value.lowercased()
                 if v == "webkit" || v == "chromium" { config.webEngine = v } else { error(file, line, "web:engine: expected webkit or chromium") }

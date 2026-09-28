@@ -37,17 +37,28 @@ namespace {
 
 class HMApp : public CefApp, public CefBrowserProcessHandler {
  public:
+  explicit HMApp(NSArray<NSString *> *switches) : switches_(switches) {}
+
   void OnBeforeCommandLineProcessing(const CefString &process_type,
                                      CefRefPtr<CefCommandLine> command_line) override {
-    if (process_type.empty()) {
-      // Ad-hoc signed builds change identity each build; a real keychain item
-      // would prompt every time. Cookies still persist on disk.
-      command_line->AppendSwitch("use-mock-keychain");
+    if (!process_type.empty()) return;
+    // Ad-hoc signed builds change identity each build; a real keychain item
+    // would prompt every time. Cookies still persist on disk.
+    command_line->AppendSwitch("use-mock-keychain");
+    for (NSString *sw in switches_) {
+      NSRange eq = [sw rangeOfString:@"="];
+      if (eq.location == NSNotFound) {
+        command_line->AppendSwitch(sw.UTF8String);
+      } else {
+        command_line->AppendSwitchWithValue([sw substringToIndex:eq.location].UTF8String,
+                                            [sw substringFromIndex:eq.location + 1].UTF8String);
+      }
     }
   }
   CefRefPtr<CefBrowserProcessHandler> GetBrowserProcessHandler() override { return this; }
 
  private:
+  NSArray<NSString *> *switches_;
   IMPLEMENT_REFCOUNTING(HMApp);
 };
 
@@ -204,7 +215,7 @@ class HMClient : public CefClient,
 
 + (BOOL)isRunning { return gRunning; }
 
-+ (BOOL)startWithRootCachePath:(NSString *)rootCachePath {
++ (BOOL)startWithRootCachePath:(NSString *)rootCachePath switches:(NSArray<NSString *> *)switches {
   if (gRunning) return YES;
   gLoader = new CefScopedLibraryLoader();
   if (!gLoader->LoadInMain()) {
@@ -223,7 +234,7 @@ class HMClient : public CefClient,
   CefString(&settings.cache_path) = [rootCachePath stringByAppendingPathComponent:@"Default"].UTF8String;
   settings.log_severity = LOGSEVERITY_WARNING;
 
-  CefRefPtr<HMApp> app(new HMApp);
+  CefRefPtr<HMApp> app(new HMApp(switches));
   if (!CefInitialize(args, settings, app.get(), nullptr)) {
     NSLog(@"hypermux: CefInitialize failed (exit code %d)", CefGetExitCode());
     return NO;

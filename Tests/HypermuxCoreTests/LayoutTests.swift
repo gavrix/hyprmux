@@ -228,6 +228,14 @@ final class WindowManagerTests: XCTestCase {
         XCTAssertEqual(wm.snapshot().placement(ClientID(2))?.floating, false)
     }
 
+    func testFloatingAloneStartsCentered() {
+        let wm = makeWM()
+        wm.addClient(ClientID(1))
+        wm.dispatch(.toggleFloating)
+        let f = wm.snapshot().placement(ClientID(1))!.frame
+        XCTAssertEqual(f, CGRect(x: 320, y: 200, width: 960, height: 600), "60% of 1600x1000, centered")
+    }
+
     func testFullscreen() {
         let wm = makeWM()
         wm.reserved = Insets(top: 30, right: 0, bottom: 0, left: 0)

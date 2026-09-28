@@ -546,7 +546,17 @@ public final class WindowManager {
             let current = tiledFrames(ws)[f]
             ws.tiled.remove(f)
             clients[f]!.floating = true
-            if clients[f]!.floatRect == nil { clients[f]!.floatRect = current ?? defaultFloatRect() }
+            if clients[f]!.floatRect == nil {
+                // Keep the tiled size, like Hyprland, unless that nearly fills the
+                // work area (e.g. the only window): then floating would look like
+                // nothing happened, so start centered at hypermux:float_size.
+                let a = workArea
+                if let c = current, c.width < a.width * 0.8 || c.height < a.height * 0.8 {
+                    clients[f]!.floatRect = c
+                } else {
+                    clients[f]!.floatRect = defaultFloatRect()
+                }
+            }
             ws.floating.append(f)
         }
     }

@@ -2,10 +2,15 @@ import AppKit
 import GhosttyKit
 import HypermuxCore
 
-/// Watches the config directory. Editors often save by rename, so we watch the
-/// directory and compare the file's modification date.
+/// Watches the config file for changes.
+///
+/// Editors save in two ways: writing the file in place, or writing a temp file
+/// and renaming it over the original. So we watch both the directory (renames,
+/// creation) and the file itself (in-place writes), and re-arm the file watch
+/// when the file is replaced. A modification-date check filters duplicates.
 final class ConfigWatcher {
-    private var source: DispatchSourceFileSystemObject?
+    private var dirSource: DispatchSourceFileSystemObject?
+    private var fileSource: DispatchSourceFileSystemObject?
     private let path: String
     private var lastModified: Date?
     private let onChange: () -> Void
@@ -14,26 +19,48 @@ final class ConfigWatcher {
         self.path = path
         self.onChange = onChange
         let dir = (path as NSString).deletingLastPathComponent
-        let fd = open(dir, O_EVTONLY)
-        guard fd >= 0 else { return nil }
+        guard let d = Self.watch(dir, [.write, .rename, .delete], handler: { [weak self] in self?.changed() }) else { return nil }
+        dirSource = d
         lastModified = Self.mtime(path)
-        let src = DispatchSource.makeFileSystemObjectSource(fileDescriptor: fd, eventMask: [.write, .rename, .delete], queue: .main)
-        src.setEventHandler { [weak self] in self?.check() }
-        src.setCancelHandler { close(fd) }
-        src.resume()
-        source = src
+        armFileWatch()
     }
 
-    deinit { source?.cancel() }
+    deinit {
+        dirSource?.cancel()
+        fileSource?.cancel()
+    }
+
+    private static func watch(
+        _ p: String, _ mask: DispatchSource.FileSystemEvent, handler: @escaping () -> Void
+    ) -> DispatchSourceFileSystemObject? {
+        let fd = open(p, O_EVTONLY)
+        guard fd >= 0 else { return nil }
+        let src = DispatchSource.makeFileSystemObjectSource(fileDescriptor: fd, eventMask: mask, queue: .main)
+        src.setEventHandler(handler: handler)
+        src.setCancelHandler { close(fd) }
+        src.resume()
+        return src
+    }
+
+    /// (Re)opens the watch on the file. The old descriptor goes stale when an editor replaces the file.
+    private func armFileWatch() {
+        fileSource?.cancel()
+        fileSource = Self.watch(path, [.write, .extend, .attrib, .rename, .delete]) { [weak self] in
+            guard let self else { return }
+            if let ev = self.fileSource?.data, !ev.isDisjoint(with: [.rename, .delete]) { self.armFileWatch() }
+            self.changed()
+        }
+    }
 
     private static func mtime(_ p: String) -> Date? {
         (try? FileManager.default.attributesOfItem(atPath: p))?[.modificationDate] as? Date
     }
 
-    private func check() {
+    private func changed() {
         // Let the editor finish writing.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
             guard let self else { return }
+            if self.fileSource == nil { self.armFileWatch() }  // file created after launch
             let m = Self.mtime(self.path)
             guard m != nil, m != self.lastModified else { return }
             self.lastModified = m

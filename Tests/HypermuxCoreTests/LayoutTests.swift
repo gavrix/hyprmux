@@ -213,14 +213,22 @@ final class WindowManagerTests: XCTestCase {
         XCTAssertEqual(wm.snapshot().placement(ClientID(2))?.visible, false)
     }
 
-    func testFloatingToggleKeepsFrame() {
+    func testFloatingLiftsOffThenRemembers() {
         let wm = makeWM()
         wm.addClient(ClientID(1))
         wm.addClient(ClientID(2))
-        let before = wm.snapshot().placement(ClientID(2))!.frame
         wm.dispatch(.toggleFloating)
-        let snap = wm.snapshot()
-        XCTAssertEqual(snap.placement(ClientID(2))?.frame, before)
+        var snap = wm.snapshot()
+        XCTAssertEqual(snap.placement(ClientID(2))?.frame, CGRect(x: 320, y: 200, width: 960, height: 600),
+                       "first float: centered at float_size, visibly different from the tile")
+        let moved = CGRect(x: 100, y: 100, width: 500, height: 400)
+        wm.setFloatingFrame(ClientID(2), moved)
+        wm.dispatch(.toggleFloating)
+        wm.dispatch(.toggleFloating)
+        XCTAssertEqual(wm.snapshot().placement(ClientID(2))?.frame, moved, "later floats: last user position")
+        wm.dispatch(.toggleFloating)
+        wm.dispatch(.toggleFloating)
+        snap = wm.snapshot()
         XCTAssertEqual(snap.placement(ClientID(2))?.floating, true)
         XCTAssertEqual(snap.placement(ClientID(1))?.frame.width, 1600)
         XCTAssertGreaterThan(snap.placement(ClientID(2))!.z, snap.placement(ClientID(1))!.z)

@@ -559,21 +559,14 @@ public final class WindowManager {
                 insertTiled(f, into: ws, useCursor: false, focal: center)
             }
         } else {
-            let current = tiledFrames(ws)[f]
             clients[f]!.tiledSlot = ws.tiled.slot(of: f)
             ws.tiled.remove(f)
             clients[f]!.floating = true
-            if clients[f]!.floatRect == nil {
-                // Keep the tiled size, like Hyprland, unless that nearly fills the
-                // work area (e.g. the only window): then floating would look like
-                // nothing happened, so start centered at hypermux:float_size.
-                let a = workArea
-                if let c = current, c.width < a.width * 0.8 || c.height < a.height * 0.8 {
-                    clients[f]!.floatRect = c
-                } else {
-                    clients[f]!.floatRect = defaultFloatRect()
-                }
-            }
+            // First float: lift off as a centered window at hypermux:float_size. Floating in
+            // place (Hyprland's default) looked like nothing happened, while the tile behind
+            // grew and reflowed, so it seemed the *other* window had toggled. Later floats
+            // return to wherever the user last put it.
+            if clients[f]!.floatRect == nil { clients[f]!.floatRect = defaultFloatRect() }
             ws.floating.append(f)
         }
     }

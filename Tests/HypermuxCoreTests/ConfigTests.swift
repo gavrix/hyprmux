@@ -121,7 +121,9 @@ final class ConfigTests: XCTestCase {
     }
 
     func testSimDispatcher() {
-        XCTAssertEqual(try? Dispatcher.parse("sim", "").get(), .sim("booted"))
+        XCTAssertEqual(try? Dispatcher.parse("sim", "").get(), .sim(""))
+        XCTAssertEqual(try? Dispatcher.parse("simbutton", "Home").get(), .simButton("home"))
+        XCTAssertNil(try? Dispatcher.parse("simbutton", "power").get())
         XCTAssertEqual(try? Dispatcher.parse("sim", "iPhone 17 Pro").get(), .sim("iPhone 17 Pro"))
     }
 

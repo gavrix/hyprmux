@@ -234,7 +234,23 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
     }
 
     /// Shows a booted simulator's screen in a tile. The simulator keeps running when the tile closes.
+    /// Empty query: the only booted device, or a menu to pick one when several are booted.
     private func spawnSim(_ query: String) {
+        if query.isEmpty {
+            let booted: [HMSimDeviceInfo]
+            do {
+                booted = try HMSimulator.devices().filter(\.booted)
+            } catch {
+                flash("Simulator: \(error.localizedDescription)")
+                return
+            }
+            switch booted.count {
+            case 0: flash("No booted simulator. Boot one in Xcode or with xcrun simctl boot.")
+            case 1: spawnSim(booted[0].udid)
+            default: pickSimulator(booted)
+            }
+            return
+        }
         let display: HMSimDisplay
         do {
             display = try HMSimDisplay(query: query)
@@ -245,6 +261,40 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         let sim = SimulatorSurface(id: allocateID(), display: display)
         sim.onClose = { [weak self] s in self?.removeClient(s.clientID) }
         manage(sim)
+    }
+
+    /// Menu of booted simulators, centered in the work area. Arrow keys + Return work.
+    private func pickSimulator(_ devices: [HMSimDeviceInfo]) {
+        let menu = NSMenu(title: "Simulators")
+        let header = NSMenuItem(title: "Show simulator", action: nil, keyEquivalent: "")
+        header.isEnabled = false
+        menu.addItem(header)
+        for d in devices {
+            let item = NSMenuItem(title: "\(d.name)   \(Self.runtimeName(d.runtime))",
+                                  action: #selector(pickedSimulator(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = d.udid
+            menu.addItem(item)
+        }
+        let area = wm.workArea
+        let at = NSPoint(x: area.midX - 150, y: area.midY - CGFloat(devices.count) * 11)
+        // popUp runs a modal tracking loop; start it after the current event/IPC call returns.
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            menu.popUp(positioning: nil, at: at, in: self.root)
+        }
+    }
+
+    @objc private func pickedSimulator(_ item: NSMenuItem) {
+        if let udid = item.representedObject as? String { spawnSim(udid) }
+    }
+
+    /// "com.apple.CoreSimulator.SimRuntime.iOS-27-0" → "iOS 27.0".
+    static func runtimeName(_ id: String) -> String {
+        guard let last = id.split(separator: ".").last else { return id }
+        let parts = last.split(separator: "-")
+        guard let os = parts.first else { return String(last) }
+        return os + " " + parts.dropFirst().joined(separator: ".")
     }
 
     /// Shows a message in the banner for a few seconds.
@@ -316,6 +366,8 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
             views[id]?.surface.requestClose()
         case .spawnSim(let q):
             DispatchQueue.main.async { [weak self] in self?.spawnSim(q) }
+        case .simButton(let id, let name):
+            (views[id]?.surface as? SimulatorSurface)?.press(name == "lock" ? .lock : .home)
         case .spawnWeb(let url):
             DispatchQueue.main.async { [weak self] in self?.spawnWeb(url) }
         case .webNav(let id, let nav):
@@ -763,12 +815,16 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
                 NSApp.postEvent(e, atStart: false)
             }
         }
+        // Paced like a hand: ~16 ms per step, so gesture recognizers see a real drag, not a teleport.
         post(types.0, from)
-        for i in 1...10 {
-            let t = CGFloat(i) / 10
-            post(types.1, CGPoint(x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t))
+        let steps = 20
+        for i in 1...steps {
+            DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(16 * i)) {
+                let t = CGFloat(i) / CGFloat(steps)
+                post(types.1, CGPoint(x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t))
+            }
         }
-        post(types.2, to)
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(16 * (steps + 1))) { post(types.2, to) }
     }
 
     /// Posts a synthetic key press through the normal event path (monitors, then responders).

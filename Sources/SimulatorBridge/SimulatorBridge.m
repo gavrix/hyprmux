@@ -3,6 +3,30 @@
 #import "SimulatorBridge.h"
 
 #import <dlfcn.h>
+#import <mach/mach_time.h>
+#import <malloc/malloc.h>
+#import <objc/runtime.h>
+
+// Wire-format structs, from facebook/idb (MIT): Sources/SimulatorBridge/idb/.
+#import "idb/Indigo.h"
+
+// The wire layout idb documents; a mismatch would send garbage to the guest.
+_Static_assert(sizeof(IndigoPayload) == 0x90, "IndigoPayload size");
+_Static_assert(sizeof(IndigoMessage) == 0xB0, "IndigoMessage size");
+_Static_assert(__builtin_offsetof(IndigoMessage, payload) == 0x20, "payload offset");
+_Static_assert(__builtin_offsetof(IndigoMessage, payload.event) == 0x30, "event offset");
+_Static_assert(__builtin_offsetof(IndigoMessage, payload.event.touch.xRatio) == 0x3C, "xRatio offset");
+
+// SimulatorKit message builders (signatures from idb's SimulatorIndigoHID.swift).
+typedef IndigoMessage *(*HMMouseEventFn)(CGPoint *, CGPoint *, uint32_t target, NSUInteger eventType, CGSize, uint32_t edge);
+typedef IndigoMessage *(*HMKeyboardFn)(int32_t keyCode, int32_t direction);
+typedef IndigoMessage *(*HMButtonFn)(int32_t source, int32_t direction, int32_t target);
+
+@protocol HMPrivHIDClient <NSObject>
+- (id)initWithDevice:(id)device error:(NSError **)error;
+- (void)sendWithMessage:(IndigoMessage *)message freeWhenDone:(BOOL)free
+        completionQueue:(dispatch_queue_t)queue completion:(void (^)(NSError *))completion;
+@end
 
 // MARK: Private interfaces (declared so the compiler knows the selectors)
 
@@ -130,6 +154,12 @@ static NSString *DeveloperDir(void) {
   id<HMPrivRenderable> _renderable;
   NSUUID *_callbackID;
   BOOL _stopped;
+  id _device;
+  id _hid;
+  dispatch_queue_t _hidQueue;
+  HMMouseEventFn _mouseFn;
+  HMKeyboardFn _keyboardFn;
+  HMButtonFn _buttonFn;
 }
 
 - (instancetype)initWithQuery:(NSString *)query error:(NSError **)error {
@@ -149,6 +179,7 @@ static NSString *DeveloperDir(void) {
   if (DeviceState(device) != 3) { if (error) *error = HMErr([NSString stringWithFormat:@"'%@' is not booted", device.name]); return nil; }
   _udid = device.UDID.UUIDString;
   _name = device.name;
+  _device = device;
 
   // Find the main display among the device's IO ports.
   id io = [(id)device respondsToSelector:@selector(io)] ? device.io : nil;
@@ -179,6 +210,92 @@ static NSString *DeveloperDir(void) {
     }];
   }
   return self;
+}
+
+// MARK: Input
+
+/// Creates the HID client on first use. Failures are remembered, not retried per event.
+- (BOOL)ensureHID {
+  if (_hid) return YES;
+  if (_inputUnavailableReason) return NO;
+  _mouseFn = (HMMouseEventFn)dlsym(RTLD_DEFAULT, "IndigoHIDMessageForMouseNSEvent");
+  _keyboardFn = (HMKeyboardFn)dlsym(RTLD_DEFAULT, "IndigoHIDMessageForKeyboardArbitrary");
+  _buttonFn = (HMButtonFn)dlsym(RTLD_DEFAULT, "IndigoHIDMessageForButton");
+  Class cls = objc_lookUpClass("SimulatorKit.SimDeviceLegacyHIDClient");
+  if (!_mouseFn || !_keyboardFn || !_buttonFn || !cls) {
+    _inputUnavailableReason = @"SimulatorKit input functions not found (Xcode changed?)";
+    return NO;
+  }
+  NSError *err = nil;
+  @try {
+    _hid = [(id<HMPrivHIDClient>)[cls alloc] initWithDevice:_device error:&err];
+  } @catch (NSException *e) {
+    _inputUnavailableReason = [NSString stringWithFormat:@"HID client threw: %@", e.reason];
+    return NO;
+  }
+  if (!_hid) {
+    _inputUnavailableReason = [NSString stringWithFormat:@"no HID client: %@", err.localizedDescription ?: @"unknown"];
+    return NO;
+  }
+  _hidQueue = dispatch_queue_create("hypermux.simulator.hid", DISPATCH_QUEUE_SERIAL);
+  return YES;
+}
+
+/// Hands a malloc'd message to the client, which frees it.
+- (void)send:(IndigoMessage *)message {
+  if (!message) return;
+  id client = _hid;
+  dispatch_queue_t q = _hidQueue;
+  dispatch_async(q, ^{
+    @try {
+      [(id<HMPrivHIDClient>)client sendWithMessage:message freeWhenDone:YES completionQueue:q completion:^(NSError *e) {
+        if (e) NSLog(@"hypermux: simulator HID send failed: %@", e);
+      }];
+    } @catch (NSException *e) {
+      NSLog(@"hypermux: simulator HID send threw: %@", e.reason);
+    }
+  });
+}
+
+/// A single-touch message, built like idb's SimulatorIndigoHID.touchMessage: SimulatorKit only
+/// builds multi-touch messages, so take its digitizer payload and re-envelope it as single-touch.
+- (void)sendTouchAtRatio:(CGPoint)ratio phase:(HMSimTouchPhase)phase edge:(HMSimEdge)edge {
+  if (_stopped || ![self ensureHID]) return;
+  CGPoint p = CGPointMake(MIN(MAX(ratio.x, 0), 1), MIN(MAX(ratio.y, 0), 1));
+  // Moves are successive "down" contacts at the new point; "up" lifts the finger.
+  NSUInteger direction = phase == HMSimTouchPhaseUp ? ButtonEventTypeUp : ButtonEventTypeDown;
+  IndigoMessage *source = _mouseFn(&p, NULL, ButtonEventTargetDigitizer, direction, CGSizeMake(1, 1), (uint32_t)edge);
+  if (!source) return;
+  source->payload.event.touch.xRatio = p.x;
+  source->payload.event.touch.yRatio = p.y;
+
+  size_t stride = sizeof(IndigoPayload);                      // 0x90
+  size_t size = sizeof(IndigoMessage) + sizeof(IndigoPayload);  // 0x140
+  uint8_t *dst = calloc(1, size);
+  IndigoMessage *msg = (IndigoMessage *)dst;
+  msg->innerSize = (unsigned int)sizeof(IndigoPayload);
+  msg->eventType = IndigoEventTypeTouch;
+  msg->payload.eventKind = 0xB;
+  msg->payload.timestamp = mach_absolute_time();
+  memcpy(dst + 0x30, ((uint8_t *)source) + 0x30, sizeof(IndigoTouch));
+  free(source);
+  // Second payload: a copy of the first, marked as the paired contact.
+  memcpy(dst + 0x20 + stride, dst + 0x20, stride);
+  IndigoPayload *second = (IndigoPayload *)(dst + 0x20 + stride);
+  second->event.touch.field1 = 1;
+  second->event.touch.field2 = 2;
+  [self send:msg];
+}
+
+- (void)sendKeyUsage:(uint32_t)usage down:(BOOL)down {
+  if (_stopped || ![self ensureHID]) return;
+  [self send:_keyboardFn((int32_t)usage, down ? ButtonEventTypeDown : ButtonEventTypeUp)];
+}
+
+- (void)sendButton:(HMSimButton)button down:(BOOL)down {
+  if (_stopped || ![self ensureHID]) return;
+  int32_t source = button == HMSimButtonHome ? ButtonEventSourceHomeButton : ButtonEventSourceLock;
+  [self send:_buttonFn(source, down ? ButtonEventTypeDown : ButtonEventTypeUp, ButtonEventTargetHardware)];
 }
 
 - (IOSurfaceRef)surface {

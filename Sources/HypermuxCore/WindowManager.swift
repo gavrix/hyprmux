@@ -28,6 +28,7 @@ public enum Effect: Equatable, Sendable {
     case spawn(command: String)
     case spawnWeb(url: String)
     case spawnSim(query: String)
+    case simButton(ClientID, String)
     case webNav(ClientID, WebNav)
     case close(ClientID)
     case submap(String)
@@ -173,6 +174,7 @@ public final class WindowManager {
         case .exec(let cmd): perform(.spawn(command: cmd))
         case .web(let url): perform(.spawnWeb(url: url))
         case .sim(let q): perform(.spawnSim(query: q))
+        case .simButton(let b): if let f = focused { perform(.simButton(f, b)) }
         case .webNav(let n): if let f = focused { perform(.webNav(f, n)) }
         case .killActive: if let f = focused { perform(.close(f)) }
         case .moveFocus(let dir): moveFocus(dir)

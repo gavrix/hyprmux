@@ -54,6 +54,8 @@ public enum Dispatcher: Equatable, Sendable {
     case webNav(WebNav)
     /// Show an iOS Simulator's screen in a tile: UDID, device name, or "booted".
     case sim(String)
+    /// Press a simulator hardware button: home, lock.
+    case simButton(String)
     case killActive
     case moveFocus(Direction)
     case moveWindow(Direction)
@@ -96,7 +98,10 @@ public enum Dispatcher: Equatable, Sendable {
         switch name.trimmingCharacters(in: .whitespaces).lowercased() {
         case "exec": return .success(.exec(a))
         case "web", "openurl": return .success(.web(a))
-        case "sim", "simulator": return .success(.sim(a.isEmpty ? "booted" : a))
+        case "sim", "simulator": return .success(.sim(a))
+        case "simbutton":
+            guard ["home", "lock"].contains(a.lowercased()) else { return .failure(.init("simbutton: expected home or lock")) }
+            return .success(.simButton(a.lowercased()))
         case "webnav":
             guard let n = WebNav(rawValue: a.lowercased()) else {
                 return .failure(.init("webnav: expected one of \(WebNav.allCases.map(\.rawValue).joined(separator: ", "))"))

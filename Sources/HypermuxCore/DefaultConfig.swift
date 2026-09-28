@@ -131,8 +131,11 @@ bind = $mod, grave, focuscurrentorlast
 bind = $mod, B, web,
 bind = $mod, O, webnav, focusurl
 
-# iOS Simulator: show the booted simulator's screen in a tile.
-bind = $mod, I, sim, booted
+# iOS Simulator: show a booted simulator in a tile (a menu if several are booted).
+# Click/drag = touch, typing goes to the device. Cmd+Esc = Home, Cmd+Shift+Esc = Lock.
+bind = $mod, I, sim,
+bind = $mod, escape, simbutton, home
+bind = $mod SHIFT, escape, simbutton, lock
 bind = $mod ALT, left, webnav, back
 bind = $mod ALT, right, webnav, forward
 bind = $mod ALT, R, webnav, reload

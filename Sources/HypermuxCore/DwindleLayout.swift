@@ -47,6 +47,21 @@ public final class DwindleLayout {
 
     public func contains(_ id: ClientID) -> Bool { leaf(id) != nil }
 
+    /// Replaces the whole tree (session restore). Parent links are set here.
+    func setRoot(_ node: Node?) {
+        func link(_ n: Node) {
+            for c in n.children {
+                c.parent = n
+                link(c)
+            }
+        }
+        node?.parent = nil
+        if let node { link(node) }
+        root = node
+    }
+
+    static func clamp(_ r: Double) -> Double { min(max(r, 0.1), 1.9) }
+
     // MARK: Mutations
 
     /// Inserts `id` by splitting a target leaf.

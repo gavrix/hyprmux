@@ -139,6 +139,8 @@ public struct HypermuxConfig: Sendable {
 
     /// Hypermux's own UI: notifications (and later menus and pickers).
     public var hud = HUDSettings()
+    /// What a restart brings back.
+    public var session = RestoreSettings()
 
     /// Web surfaces.
     public var webHome = "https://duckduckgo.com"
@@ -300,6 +302,9 @@ public enum ConfigParser {
                 default: error(file, line, "\(key): expected 1, 2 or 4 numbers"); return nil
                 }
             }
+            func list() -> [String] {
+                value.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+            }
             func gradient() -> Gradient? {
                 guard let g = Gradient.parse(value) else { error(file, line, "\(key): bad color '\(value)'"); return nil }
                 return g
@@ -422,6 +427,12 @@ public enum ConfigParser {
             case "hud:notifications:width": if let v = num() { config.hud.notificationWidth = min(max(v, 160), 1200) }
             case "hud:picker:width": if let v = num() { config.hud.pickerWidth = min(max(v, 240), 1600) }
             case "hud:picker:max_rows": if let v = num() { config.hud.pickerMaxRows = min(max(1, Int(v)), 40) }
+            case "session:restore": if let v = bool() { config.session.enabled = v }
+            case "session:programs": config.session.programs = list()
+            case "session:deny": config.session.deny = list()
+            case _ where key.hasPrefix("session:resume:"):
+                let kind = String(key.dropFirst("session:resume:".count))
+                if value.contains("{id}") { config.session.resume[kind] = value } else { error(file, line, "\(key): needs {id} for the session id") }
             case "workspace":
                 // Hyprland workspace rule: "workspace = 3, defaultName:mail, persistent:true".
                 // Only defaultName applies here; other rules are accepted and ignored.

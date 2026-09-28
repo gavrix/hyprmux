@@ -107,10 +107,10 @@ public final class WindowManager {
     public var cursor: CGPoint?
     public var perform: (Effect) -> Void = { _ in }
 
-    public private(set) var activeWorkspace = 1
+    public internal(set) var activeWorkspace = 1
     public private(set) var previousWorkspace: Int?
-    public private(set) var specialVisible: String?
-    public private(set) var focused: ClientID?
+    public internal(set) var specialVisible: String?
+    public internal(set) var focused: ClientID?
 
     var clients: [ClientID: ClientState] = [:]
     var workspaces: [WorkspaceID: Workspace] = [:]
@@ -290,7 +290,7 @@ public final class WindowManager {
     // MARK: Workspace names
 
     /// Runtime names (`renameworkspace`). They win over workspace-rule names.
-    private var renamed: [Int: String] = [:]
+    var renamed: [Int: String] = [:]
 
     /// A workspace's name: the runtime one, else its workspace rule's. Nil when unnamed.
     /// Names outlive the workspace: an emptied, dropped workspace keeps its name for next time.

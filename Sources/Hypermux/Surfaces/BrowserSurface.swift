@@ -82,6 +82,13 @@ class BrowserSurface: FlippedView, Surface, NSTextFieldDelegate {
     var engineName: String { "" }
     var engineFocusView: NSView { content }
     var currentURL: String { "" }
+    /// The last address loaded, for a page that hasn't committed a URL yet.
+    private(set) var requestedURL: String?
+    /// What a saved session keeps: the page's URL, or what it was asked to load.
+    var restorableURL: String? {
+        let u = currentURL
+        return u.isEmpty ? requestedURL : u
+    }
     func engineLoad(_ url: URL) {}
     func engineLoadHTML(_ html: String) {}
     func engineGoBack() {}
@@ -137,6 +144,7 @@ class BrowserSurface: FlippedView, Surface, NSTextFieldDelegate {
         let text = input.isEmpty ? options.home : input
         guard let url = WebAddress.resolve(text, search: options.search) else { return }
         engineLoad(url)
+        requestedURL = url.absoluteString
         address.stringValue = url.absoluteString
     }
 

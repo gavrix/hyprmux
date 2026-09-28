@@ -31,6 +31,8 @@ public enum IPCRequest: Equatable {
     case sendDrag(Modifiers, button: Int, from: CGPoint, to: CGPoint)
     /// One mouse event (down / drag / up), for holds and hand-timed gestures.
     case sendMouse(phase: String, Modifiers, button: Int, at: CGPoint)
+    /// An agent says how to bring its terminal back: `resume {"client":…, "pid":…, "kind":…, "session":…}`.
+    case resume(ResumeReport)
 
     public static func parse(_ line: String) -> Result<IPCRequest, ParseError> {
         let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -51,6 +53,11 @@ public enum IPCRequest: Equatable {
         case "reload": return .success(.reload)
         case "version": return .success(.version)
         case "debug": return .success(.debug)
+        case "resume":
+            guard let r = try? JSONDecoder().decode(ResumeReport.self, from: Data(rest.utf8)) else {
+                return .failure(ParseError("resume: expected JSON with client, pid, kind, session"))
+            }
+            return .success(.resume(r))
         case "hittest":
             let n = rest.split(separator: " ").compactMap { Double($0) }
             guard n.count == 2 else { return .failure(ParseError("hittest: expected 'x y'")) }

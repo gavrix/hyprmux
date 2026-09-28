@@ -43,7 +43,10 @@ let cefCache = ProcessInfo.processInfo.environment["HYPERMUX_CHROMIUM_PROFILE"]
 if wantsChromium, FileManager.default.fileExists(atPath: cefFramework),
    HMChromium.start(withRootCachePath: cefCache, switches: chromiumSwitches(startupConfig)) {
     // Quit closes every browser first; the loop then returns and CEF shuts down.
-    app.terminateHandler = { HMChromium.closeAllAndQuit() }
+    app.terminateHandler = {
+        delegate.saveSessionBeforeQuit()
+        HMChromium.closeAllAndQuit()
+    }
     HMChromium.runMessageLoop()
     HMChromium.shutdown()
     exit(0)

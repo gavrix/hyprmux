@@ -138,6 +138,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 
+    /// Saves the session while the shells still run (their foreground programs are read).
+    /// With Chromium, main.swift's terminate handler calls this instead: CEF's quit path
+    /// skips applicationShouldTerminate.
+    func saveSessionBeforeQuit() {
+        compositor?.saveSession()
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        saveSessionBeforeQuit()
+        return .terminateNow
+    }
+
     private func buildMenu() {
         let main = NSMenu()
         let appItem = NSMenuItem()

@@ -16,9 +16,16 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
     private let specialDim = NSView()
     private let animator: Animator
     /// Hypermux's own UI (notifications), above all tiles.
-    private let hud: HUD
+    let hud: HUD
 
-    private var views: [ClientID: ClientView] = [:]
+    var views: [ClientID: ClientView] = [:]
+    /// Agents' resume reports, by terminal (see `hypermuxctl resume`).
+    var resumeReports: [ClientID: ResumeReport] = [:]
+    /// Pending debounced session save.
+    var sessionSaveWork: DispatchWorkItem?
+    var sessionTimer: Timer?
+    /// Off while a session is being rebuilt, so a half-built layout is never saved.
+    var sessionSavingEnabled = false
     private var closing: [ClientID: ClientView] = [:]
     private var nextID: UInt64 = 1
     private var submap = "reset"
@@ -107,6 +114,9 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
     func start() {
         window.makeKeyAndOrderFront(nil)
         if config.fullscreenStyle == "fill", MonitorWindow.wasFilledAtQuit { setMonitorFullscreen(true) }
+        startSessionSaving()
+        // A restored session replaces the startup programs.
+        if restoreSession() { return }
         let startup = config.execOnce + config.exec
         if startup.isEmpty {
             spawn(command: "", inheritFrom: nil)
@@ -222,27 +232,33 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
     // MARK: Spawning and closing
 
     private func spawn(command: String, inheritFrom parent: TerminalView?) {
-        guard let app = runtime.app else { return }
-        let id = ClientID(nextID)
-        nextID += 1
         var opts = SurfaceOptions.inherited(from: parent ?? focusedTerminal ?? lastTerminal)
         opts.command = command.isEmpty ? nil : command
+        guard let term = makeTerminal(opts) else { return }
+        manage(term)
+    }
+
+    /// A terminal surface with Hypermux's environment, not yet managed.
+    func makeTerminal(_ options: SurfaceOptions) -> TerminalView? {
+        guard let app = runtime.app else { return nil }
+        let id = allocateID()
+        var opts = options
         opts.env["HYPERMUX_CLIENT"] = "\(id.raw)"
         if let ipcPath { opts.env["HYPERMUX_SOCKET"] = ipcPath }
         let term = TerminalView(app: app, id: id, options: opts)
         guard term.surface != nil else {
             log.error("failed to create terminal surface")
-            return
+            return nil
         }
         term.host = self
         term.backdrop = runtime.backgroundColor
-        manage(term)
+        return term
     }
 
     /// Engine for new web tiles. Chromium only if CEF started (see main.swift).
     var webEngine: String { HMChromium.isRunning ? "chromium" : "webkit" }
 
-    private func allocateID() -> ClientID {
+    func allocateID() -> ClientID {
         defer { nextID += 1 }
         return ClientID(nextID)
     }
@@ -250,6 +266,13 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
     /// Opens a web tile. Empty input = new-tab start page with the address bar focused.
     @discardableResult
     private func spawnWeb(_ input: String) -> BrowserSurface {
+        let web = makeWeb(input)
+        manage(web)
+        return web
+    }
+
+    /// A web surface loading `input` (empty: the start page), not yet managed.
+    func makeWeb(_ input: String) -> BrowserSurface {
         let options = BrowserOptions(config)
         let id = allocateID()
         let web: BrowserSurface = webEngine == "chromium"
@@ -262,7 +285,6 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         } else {
             web.open(input)
         }
-        manage(web)
         return web
     }
 
@@ -291,9 +313,13 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
             flash("Simulator: \(error.localizedDescription)")
             return
         }
+        manage(makeSim(display))
+    }
+
+    func makeSim(_ display: HMSimDisplay) -> SimulatorSurface {
         let sim = SimulatorSurface(id: allocateID(), display: display)
         sim.onClose = { [weak self] s in self?.removeClient(s.clientID) }
-        manage(sim)
+        return sim
     }
 
     // MARK: Pickers
@@ -354,17 +380,22 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
     }
 
     /// A short-lived warning, e.g. "no booted simulator".
-    private func flash(_ message: String) {
+    func flash(_ message: String) {
         hud.notifications.post(.warning, message)
     }
 
     private func manage(_ surface: Surface) {
+        adopt(surface)
+        wm.addClient(surface.clientID)
+        apply(animated: true)
+    }
+
+    /// Gives a surface its view, without placing it in the layout (session restore places it).
+    func adopt(_ surface: Surface) {
         let v = ClientView(id: surface.clientID, surface: surface, decoration: Decoration(config))
         v.isHidden = true
         root.addSubview(v, positioned: .below, relativeTo: bar)
         views[surface.clientID] = v
-        wm.addClient(surface.clientID)
-        apply(animated: true)
     }
 
     private var focusedSurface: Surface? { wm.focused.flatMap { views[$0]?.surface } }
@@ -376,6 +407,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
 
     private func removeClient(_ id: ClientID) {
         guard let v = views.removeValue(forKey: id) else { return }
+        resumeReports[id] = nil
         wm.removeClient(id)
         closing[id] = v
         let out = config.animation("windowsOut")
@@ -547,6 +579,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         restack(snap)
         updateChrome(snap)
         updateFocus(snap)
+        scheduleSessionSave()
     }
 
     /// Tab strip for a grouped placement (nil removes it).
@@ -848,6 +881,13 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
                 })
             case .reload:
                 handle(.reload)
+                return "ok"
+            case .resume(let r):
+                let id = ClientID(r.client)
+                guard views[id]?.surface is TerminalView else { return "error: no terminal \(r.client)" }
+                resumeReports[id] = r
+                log.debug("resume report client=\(r.client) kind=\(r.kind, privacy: .public)")
+                scheduleSessionSave()
                 return "ok"
             case .version:
                 return "hypermux 0.1.0"

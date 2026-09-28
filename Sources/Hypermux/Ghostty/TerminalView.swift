@@ -21,6 +21,8 @@ struct SurfaceOptions {
     var workingDirectory: String?
     var command: String?
     var fontSize: Float = 0  // 0 = inherit from config
+    /// Typed into the shell as its first input (a restored program: "nvim .\n").
+    var initialInput: String?
     var env: [String: String] = [:]
 
     /// Takes cwd and font size from an existing surface, like a Ghostty split.
@@ -70,13 +72,15 @@ final class TerminalView: NSView, NSTextInputClient {
 
         let wd = options.workingDirectory.flatMap { strdup($0) }
         let cmd = options.command.flatMap { $0.isEmpty ? nil : strdup($0) }
+        let input = options.initialInput.flatMap { $0.isEmpty ? nil : strdup($0) }
         let envC = options.env.map { (strdup($0.key), strdup($0.value)) }
         defer {
-            free(wd); free(cmd)
+            free(wd); free(cmd); free(input)
             for (k, v) in envC { free(k); free(v) }
         }
         cfg.working_directory = UnsafePointer(wd)
         cfg.command = UnsafePointer(cmd)
+        cfg.initial_input = UnsafePointer(input)
         var envVars = envC.map { ghostty_env_var_s(key: UnsafePointer($0.0), value: UnsafePointer($0.1)) }
         surface = envVars.withUnsafeMutableBufferPointer { buf -> ghostty_surface_t? in
             cfg.env_vars = buf.baseAddress
@@ -94,6 +98,12 @@ final class TerminalView: NSView, NSTextInputClient {
         guard let s = surface else { return }
         surface = nil
         ghostty_surface_free(s)
+    }
+
+    /// Process group in the terminal's foreground (the shell when idle, else what it runs). 0 if unknown.
+    var foregroundPID: pid_t {
+        guard let s = surface else { return 0 }
+        return pid_t(truncatingIfNeeded: ghostty_surface_foreground_pid(s))
     }
 
     func requestClose() {

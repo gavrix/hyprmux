@@ -1,0 +1,450 @@
+import CoreGraphics
+import Foundation
+
+// MARK: Schema
+
+/// Everything needed to bring a Hypermux session back: workspaces, their split trees,
+/// floating windows, groups, focus, and names. Tiles carry what their surface needs
+/// (a directory, a URL, a simulator). JSON; the same schema serves saved sessions and
+/// (later) hand-written layouts, so every field but `kind` is optional.
+public struct SessionState: Codable, Equatable, Sendable {
+    public var version = 1
+    public var activeWorkspace = 1
+    public var specialVisible: String?
+    public var workspaces: [SessionWorkspace] = []
+    /// Names set at runtime (`renameworkspace`), by workspace number.
+    public var names: [String: String] = [:]
+
+    public init() {}
+
+    enum CodingKeys: String, CodingKey { case version, activeWorkspace, specialVisible, workspaces, names }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        version = try c.decodeIfPresent(Int.self, forKey: .version) ?? 1
+        activeWorkspace = try c.decodeIfPresent(Int.self, forKey: .activeWorkspace) ?? 1
+        specialVisible = try c.decodeIfPresent(String.self, forKey: .specialVisible)
+        workspaces = try c.decodeIfPresent([SessionWorkspace].self, forKey: .workspaces) ?? []
+        names = try c.decodeIfPresent([String: String].self, forKey: .names) ?? [:]
+    }
+}
+
+public struct SessionWorkspace: Codable, Equatable, Sendable {
+    /// "3" or "special:magic", as in dispatchers.
+    public var id: String
+    public var tiled: SessionNode?
+    public var floating: [SessionFloating] = []
+    /// Key of the tile that had focus here.
+    public var focused: Int?
+    public var fullscreen: SessionFullscreen?
+
+    public init(id: String, tiled: SessionNode? = nil, floating: [SessionFloating] = [],
+                focused: Int? = nil, fullscreen: SessionFullscreen? = nil) {
+        self.id = id
+        self.tiled = tiled
+        self.floating = floating
+        self.focused = focused
+        self.fullscreen = fullscreen
+    }
+
+    enum CodingKeys: String, CodingKey { case id, tiled, floating, focused, fullscreen }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        tiled = try c.decodeIfPresent(SessionNode.self, forKey: .tiled)
+        floating = try c.decodeIfPresent([SessionFloating].self, forKey: .floating) ?? []
+        focused = try c.decodeIfPresent(Int.self, forKey: .focused)
+        fullscreen = try c.decodeIfPresent(SessionFullscreen.self, forKey: .fullscreen)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encodeIfPresent(tiled, forKey: .tiled)
+        if !floating.isEmpty { try c.encode(floating, forKey: .floating) }
+        try c.encodeIfPresent(focused, forKey: .focused)
+        try c.encodeIfPresent(fullscreen, forKey: .fullscreen)
+    }
+}
+
+public struct SessionFullscreen: Codable, Equatable, Sendable {
+    public var tile: Int
+    /// 0 = fullscreen, 1 = maximize.
+    public var mode: Int
+    public init(tile: Int, mode: Int) { self.tile = tile; self.mode = mode }
+}
+
+/// One window's content.
+public struct SessionTile: Codable, Equatable, Sendable {
+    /// "terminal", "web", or "sim".
+    public var kind: String
+    /// Unique within the file. Focus and fullscreen refer to tiles by key.
+    public var key: Int?
+    public var title: String?
+    /// Terminal: working directory.
+    public var cwd: String?
+    /// Terminal: a program to start in the shell (typed as its first input).
+    public var command: String?
+    /// Terminal: an agent session to resume, turned into a command by `session:resume`.
+    public var agent: SessionAgent?
+    /// Web: the page.
+    public var url: String?
+    /// Simulator: UDID (or a device name).
+    public var sim: String?
+
+    public init(kind: String, key: Int? = nil, title: String? = nil, cwd: String? = nil, command: String? = nil,
+                agent: SessionAgent? = nil, url: String? = nil, sim: String? = nil) {
+        self.kind = kind
+        self.key = key
+        self.title = title
+        self.cwd = cwd
+        self.command = command
+        self.agent = agent
+        self.url = url
+        self.sim = sim
+    }
+}
+
+public struct SessionAgent: Codable, Equatable, Sendable {
+    /// Matches a `session:resume:KIND` template, e.g. "pi".
+    public var kind: String
+    public var session: String
+    public init(kind: String, session: String) { self.kind = kind; self.session = session }
+}
+
+/// A slot: one tile, or a group of tabs.
+public struct SessionSlot: Equatable, Sendable {
+    public var tabs: [SessionTile]
+    /// Index of the shown tab.
+    public var active: Int
+
+    public init(tabs: [SessionTile], active: Int = 0) {
+        self.tabs = tabs
+        self.active = active
+    }
+
+    enum CodingKeys: String, CodingKey { case tabs, active }
+
+    /// A single tile is written flat (`{"kind": "terminal", ...}`), a group as `{"tabs": [...]}`.
+    static func decode(from decoder: Decoder) throws -> SessionSlot {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        if let tabs = try c.decodeIfPresent([SessionTile].self, forKey: .tabs) {
+            return SessionSlot(tabs: tabs, active: try c.decodeIfPresent(Int.self, forKey: .active) ?? 0)
+        }
+        return SessionSlot(tabs: [try SessionTile(from: decoder)])
+    }
+
+    func encode(to encoder: Encoder) throws {
+        if tabs.count == 1 {
+            try tabs[0].encode(to: encoder)
+        } else {
+            var c = encoder.container(keyedBy: CodingKeys.self)
+            try c.encode(tabs, forKey: .tabs)
+            try c.encode(active, forKey: .active)
+        }
+    }
+}
+
+/// The split tree: a split with two children, or a slot.
+public indirect enum SessionNode: Codable, Equatable, Sendable {
+    /// `vertical`: stacked top/bottom ("v"); otherwise side by side ("h").
+    case split(vertical: Bool, ratio: Double, first: SessionNode, second: SessionNode)
+    case slot(SessionSlot)
+
+    enum CodingKeys: String, CodingKey { case split, ratio, children }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        guard let dir = try c.decodeIfPresent(String.self, forKey: .split) else {
+            self = .slot(try SessionSlot.decode(from: decoder))
+            return
+        }
+        let children = try c.decode([SessionNode].self, forKey: .children)
+        guard children.count == 2 else {
+            throw DecodingError.dataCorruptedError(forKey: .children, in: c, debugDescription: "a split has two children")
+        }
+        self = .split(vertical: dir.lowercased().hasPrefix("v"), ratio: try c.decodeIfPresent(Double.self, forKey: .ratio) ?? 1,
+                      first: children[0], second: children[1])
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        switch self {
+        case .slot(let s):
+            try s.encode(to: encoder)
+        case .split(let vertical, let ratio, let a, let b):
+            var c = encoder.container(keyedBy: CodingKeys.self)
+            try c.encode(vertical ? "v" : "h", forKey: .split)
+            try c.encode(ratio, forKey: .ratio)
+            try c.encode([a, b], forKey: .children)
+        }
+    }
+}
+
+/// A floating window (or group): its slot and its rectangle as fractions of the work area.
+public struct SessionFloating: Codable, Equatable, Sendable {
+    public var slot: SessionSlot
+    /// [x, y, width, height], each 0...1 of the work area, so it fits another display.
+    public var rect: [Double]
+
+    public init(slot: SessionSlot, rect: [Double]) {
+        self.slot = slot
+        self.rect = rect
+    }
+
+    enum CodingKeys: String, CodingKey { case rect }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        rect = try c.decodeIfPresent([Double].self, forKey: .rect) ?? [0.2, 0.2, 0.6, 0.6]
+        slot = try SessionSlot.decode(from: decoder)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        try slot.encode(to: encoder)
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(rect, forKey: .rect)
+    }
+}
+
+extension SessionState {
+    public static func decode(_ data: Data) throws -> SessionState {
+        try JSONDecoder().decode(SessionState.self, from: data)
+    }
+
+    public func encoded() throws -> Data {
+        let e = JSONEncoder()
+        e.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        return try e.encode(self)
+    }
+}
+
+// MARK: Export and restore
+
+extension WindowManager {
+    /// The current layout as a session. `tile` describes a client's content; clients it
+    /// returns nil for are left out (their splits collapse).
+    public func exportSession(tile: (ClientID) -> SessionTile?) -> SessionState {
+        var keys: [ClientID: Int] = [:]
+        var nextKey = 1
+        func describe(_ id: ClientID) -> SessionTile? {
+            guard var t = tile(id) else { return nil }
+            t.key = nextKey
+            keys[id] = nextKey
+            nextKey += 1
+            return t
+        }
+        func slot(_ id: ClientID) -> SessionSlot? {
+            let members = group(of: id)?.members ?? [id]
+            var tabs: [SessionTile] = []
+            var active = 0
+            for m in members {
+                guard let t = describe(m) else { continue }
+                if m == id { active = tabs.count }
+                tabs.append(t)
+            }
+            return tabs.isEmpty ? nil : SessionSlot(tabs: tabs, active: active)
+        }
+        func node(_ n: DwindleLayout.Node) -> SessionNode? {
+            if let c = n.client { return slot(c).map { .slot($0) } }
+            guard n.children.count == 2 else { return n.children.first.flatMap(node) }
+            let a = node(n.children[0]), b = node(n.children[1])
+            switch (a, b) {
+            case let (a?, b?): return .split(vertical: n.splitTop, ratio: n.ratio, first: a, second: b)
+            case let (a?, nil): return a
+            case let (nil, b?): return b
+            default: return nil
+            }
+        }
+        let area = workArea
+        var s = SessionState()
+        s.activeWorkspace = activeWorkspace
+        s.specialVisible = specialVisible
+        let ordered = workspaces.values.sorted { a, b in
+            switch (a.id, b.id) {
+            case let (.regular(x), .regular(y)): return x < y
+            case (.regular, .special): return true
+            case (.special, .regular): return false
+            case let (.special(x), .special(y)): return x < y
+            }
+        }
+        for ws in ordered where !ws.isEmpty {
+            var w = SessionWorkspace(id: ws.id.description)
+            w.tiled = ws.tiled.root.flatMap(node)
+            for id in ws.floating {
+                guard let sl = slot(id) else { continue }
+                let r = clients[id]?.floatRect ?? defaultFloatRect()
+                let rect = area.width > 0 && area.height > 0
+                    ? [(r.minX - area.minX) / area.width, (r.minY - area.minY) / area.height, r.width / area.width, r.height / area.height]
+                    : [0.2, 0.2, 0.6, 0.6]
+                w.floating.append(SessionFloating(slot: sl, rect: rect.map { ($0 * 10_000).rounded() / 10_000 }))
+            }
+            w.focused = ws.lastFocused.flatMap { keys[$0] }
+            if let fs = ws.fullscreen, let k = keys[fs.id] { w.fullscreen = SessionFullscreen(tile: k, mode: fs.mode.rawValue) }
+            guard w.tiled != nil || !w.floating.isEmpty else { continue }
+            s.workspaces.append(w)
+        }
+        for (n, name) in renamed { s.names[String(n)] = name }
+        return s
+    }
+
+    /// Rebuilds a saved session into an empty manager. `make` creates each tile's client and
+    /// returns its id, or nil to skip it (a simulator that's gone). Returns the clients made.
+    @discardableResult
+    public func restoreSession(_ s: SessionState, make: (SessionTile) -> ClientID?) -> [ClientID] {
+        precondition(clients.isEmpty, "restore into an empty window manager")
+        var made: [ClientID] = []
+        for w in s.workspaces {
+            guard let target = WorkspaceTarget(hyprland: w.id) else { continue }
+            let id: WorkspaceID
+            switch target {
+            case .id(let n) where n >= 1: id = .regular(n)
+            case .special(let name): id = .special(name)
+            default: continue
+            }
+            made += restoreWorkspace(w, into: id, make: make)
+        }
+        for (k, v) in s.names { if let n = Int(k) { renamed[n] = v } }
+        activeWorkspace = max(1, s.activeWorkspace)
+        ensure(.regular(activeWorkspace))
+        if let sp = s.specialVisible, workspaces[.special(sp)].map({ !$0.isEmpty }) == true {
+            specialVisible = sp
+        }
+        focused = nil
+        let shown = workspaces[specialVisible.map { .special($0) } ?? .regular(activeWorkspace)]
+        if let ws = shown, let f = ws.lastFocused ?? mostRecent(in: ws) ?? ws.clients.first { focus(f) }
+        collectEmptyWorkspaces()
+        return made
+    }
+
+    /// Builds one saved workspace into `id` (which must be empty or new).
+    func restoreWorkspace(_ w: SessionWorkspace, into id: WorkspaceID, make: (SessionTile) -> ClientID?) -> [ClientID] {
+        let ws = ensure(id)
+        var byKey: [Int: ClientID] = [:]
+        var made: [ClientID] = []
+        func slot(_ sl: SessionSlot, floating: Bool) -> ClientID? {
+            var members: [ClientID] = []
+            var active: ClientID?
+            for (i, t) in sl.tabs.enumerated() {
+                guard let c = make(t) else { continue }
+                clients[c] = ClientState(workspace: id, floating: floating)
+                if let k = t.key { byKey[k] = c }
+                members.append(c)
+                made.append(c)
+                if i == sl.active || active == nil { active = c }
+            }
+            guard let shown = active else { return nil }
+            if members.count > 1 {
+                let gid = GroupID(raw: nextGroupID)
+                nextGroupID += 1
+                let g = Group(shown)
+                g.members = members
+                groups[gid] = g
+                for m in members { clients[m]!.group = gid }
+            }
+            return shown
+        }
+        func node(_ n: SessionNode) -> DwindleLayout.Node? {
+            switch n {
+            case .slot(let sl):
+                return slot(sl, floating: false).map { DwindleLayout.Node(client: $0) }
+            case .split(let vertical, let ratio, let a, let b):
+                let na = node(a), nb = node(b)
+                guard let na, let nb else { return na ?? nb }
+                let p = DwindleLayout.Node(client: nil)
+                p.splitTop = vertical
+                p.ratio = DwindleLayout.clamp(ratio)
+                p.children = [na, nb]
+                return p
+            }
+        }
+        ws.tiled.setRoot(w.tiled.flatMap(node))
+        let area = workArea
+        for f in w.floating {
+            guard let c = slot(f.slot, floating: true) else { continue }
+            let r = f.rect.count == 4 ? f.rect : [0.2, 0.2, 0.6, 0.6]
+            clients[c]!.floatRect = CGRect(x: area.minX + r[0] * area.width, y: area.minY + r[1] * area.height,
+                                           width: max(120, r[2] * area.width), height: max(80, r[3] * area.height))
+            ws.floating.append(c)
+        }
+        if let fs = w.fullscreen, let c = byKey[fs.tile], ws.clients.contains(c) {
+            ws.fullscreen = (c, FullscreenMode(rawValue: fs.mode) ?? .fullscreen)
+        }
+        if let k = w.focused, let c = byKey[k] {
+            // A hidden tab that had focus becomes the shown one.
+            if isHiddenMember(c) { activate(c) }
+            ws.lastFocused = c
+        }
+        return made
+    }
+}
+
+// MARK: What comes back
+
+/// The `session { }` config section.
+public struct RestoreSettings: Equatable, Sendable {
+    /// Restore the last session on launch.
+    public var enabled = true
+    /// Programs relaunched (same arguments, same directory) when they were in the
+    /// foreground at save time. "*" allows any program; `deny` then excludes some.
+    public var programs: [String] = ["nvim", "vim", "lazygit", "htop", "btop", "less", "man"]
+    public var deny: [String] = []
+    /// Agent resume commands by kind, with `{id}` for the session id.
+    public var resume: [String: String] = [:]
+
+    public init() {}
+}
+
+/// An agent's report that its terminal can be brought back with a session id
+/// (`hypermuxctl resume {json}`).
+public struct ResumeReport: Codable, Equatable, Sendable {
+    /// HYPERMUX_CLIENT of the reporting terminal.
+    public var client: UInt64
+    /// The agent's process. The report counts only while it runs in the terminal's foreground.
+    public var pid: Int32
+    public var kind: String
+    public var session: String
+    public var cwd: String?
+    /// The session file. When given, it must exist at save time (a session with no
+    /// messages yet has none, and can't be resumed).
+    public var file: String?
+
+    public init(client: UInt64, pid: Int32, kind: String, session: String, cwd: String? = nil, file: String? = nil) {
+        self.client = client
+        self.pid = pid
+        self.kind = kind
+        self.session = session
+        self.cwd = cwd
+        self.file = file
+    }
+}
+
+public enum RestorePolicy {
+    /// A foreground shell means nothing else is running.
+    static let shells: Set<String> = ["zsh", "bash", "fish", "sh", "dash", "tcsh", "csh", "ksh", "nu", "xonsh", "login"]
+
+    /// The command to relaunch a foreground program with, or nil when it isn't allowed
+    /// (or is just the shell).
+    public static func programCommand(argv: [String], settings: RestoreSettings) -> String? {
+        guard let first = argv.first, !first.isEmpty else { return nil }
+        var name = (first as NSString).lastPathComponent
+        if name.hasPrefix("-") { name.removeFirst() }  // login shells: "-zsh"
+        guard !shells.contains(name) else { return nil }
+        let allowed = settings.programs.contains("*") || settings.programs.contains(name)
+        guard allowed, !settings.deny.contains(name) else { return nil }
+        return ([name] + argv.dropFirst()).map(shellQuote).joined(separator: " ")
+    }
+
+    /// The command that resumes an agent session, from its `session:resume` template.
+    public static func resumeCommand(_ a: SessionAgent, settings: RestoreSettings) -> String? {
+        guard let t = settings.resume[a.kind], !t.isEmpty, !a.session.isEmpty else { return nil }
+        return t.replacingOccurrences(of: "{id}", with: shellQuote(a.session))
+    }
+
+    /// Quotes a word for sh/zsh when it needs it.
+    public static func shellQuote(_ s: String) -> String {
+        let safe = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@%+=:,./_-~")
+        if !s.isEmpty, s.unicodeScalars.allSatisfy({ safe.contains($0) }), !s.hasPrefix("~") { return s }
+        return "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+}

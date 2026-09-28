@@ -60,6 +60,13 @@ animations {
     animation = fade, 1, 3.03, quick
     animation = workspaces, 1, 3.5, easeOutQuint, slide
     animation = specialWorkspace, 1, 3, easeOutQuint, slidevert
+    # Hypermux's own UI (notifications). Without a style, notifications slide in
+    # from the nearest edge; set one (slide, popin 90%, fade) to override.
+    animation = layers, 1, 3.81, easeOutQuint
+    animation = layersIn, 1, 4, easeOutQuint
+    animation = layersOut, 1, 1.5, linear
+    animation = fadeLayersIn, 1, 1.79, almostLinear
+    animation = fadeLayersOut, 1, 1.39, almostLinear
 }
 
 input {
@@ -113,6 +120,21 @@ group {
     }
 }
 
+# Hypermux's own UI. It takes its font and colors from your Ghostty config and
+# its borders, rounding, shadow, and blur from the decoration settings above.
+hud {
+    # font_family = JetBrains Mono   # default: Ghostty's font-family
+    # font_size = 13                 # default: Ghostty's font-size
+    notifications {
+        # top_right, top_left, bottom_right, bottom_left, top, bottom, center
+        position = top_right
+        # Milliseconds on screen. 0 = until clicked.
+        timeout = 5000
+        max_visible = 5
+        width = 380
+    }
+}
+
 # Web surfaces (WebKit for now).
 web {
     # webkit: light, native, but no passkeys (Apple only allows them in approved browsers).
@@ -144,7 +166,6 @@ bind = $mod SHIFT, F, fullscreen, 0
 bind = $mod CTRL, F, monitorfullscreen
 bind = $mod, E, togglesplit
 bind = $mod SHIFT, E, swapsplit
-bind = $mod, C, centerwindow
 bind = $mod, grave, focuscurrentorlast
 
 # Groups: SUPER+G makes a group (or dissolves it), CTRL+Tab cycles tabs,

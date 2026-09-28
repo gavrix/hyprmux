@@ -31,6 +31,8 @@ configured in `hyprland.conf` syntax that reloads when you save it.
 - **Notifications:** Hypermux's own notices, styled like your terminal and
   your window borders. Config errors, warnings, and terminal notifications
   (OSC 9 and OSC 777) show up there.
+- **Pickers:** fzf-style lists in the same style, for choosing among several
+  things (booted simulators for now). Type to filter, Return to choose.
 - **Scripting:** `hypermuxctl`, a `hyprctl`-like CLI over a Unix socket.
 
 ## Requirements
@@ -74,7 +76,7 @@ other Macs needs a Developer ID signature and notarization.
 |---|---|
 | ⌘↩ | new terminal |
 | ⌘B | new web tile (⌘O focuses the address bar) |
-| ⌘I | show a booted iOS Simulator (a menu if several are booted) |
+| ⌘I | show a booted iOS Simulator (a picker if several are booted) |
 | ⌘W | close |
 | ⌘H/J/K/L, ⌘ arrows | move focus |
 | ⇧⌘H/J/K/L | move the window |

@@ -23,7 +23,7 @@ Hypermux owns, positions, and animates itself.
 │                                            ├ WebKitSurface (WKWebView)
 │                                            ├ ChromiumSurface (CEF)  │
 │                                            └ SimulatorSurface       │
-│    HUD: overlay layer, theme, NotificationStack                     │
+│    HUD: overlay layer, theme, NotificationStack, PickerPresenter    │
 │    IPCServer (Unix socket) ◄── hypermuxctl                          │
 │                                                                     │
 │  ChromiumBridge (Obj-C++)  ── CEF framework + 4 helper apps          │
@@ -171,7 +171,7 @@ handles occlusion, close, and destroy.
 
 ### HUD: Hypermux's own UI
 
-Notifications, and later menus and pickers, live in the HUD. It works like a
+Notifications and pickers live in the HUD. It works like a
 Hyprland overlay layer: elements sit above every tile and never tile.
 
 - **Model in the core:**
@@ -192,8 +192,19 @@ Hyprland overlay layer: elements sit above every tile and never tile.
 - **Panels are `DecoratedView`s,** the same base class as `ClientView`, so
   borders, squircle corners, shadow, and blur match tiles exactly. Their blur
   uses `.withinWindow` to blur the tiles below; tiles use `.behindWindow`.
-- **`NotificationStack`:** the first component. It diffs the queue against its
-  views: new ones animate in, gone ones out, the rest reflow.
+- **`NotificationStack`:** diffs the queue against its views: new ones animate
+  in, gone ones out, the rest reflow.
+- **`PickerPresenter`:** one picker at a time, with a keyboard grab like a
+  Hyprland layer's exclusive focus:
+  - The model is `Picker` in the core: the query, rows ranked by `FuzzyMatch`
+    (fzf-style, scored by dynamic programming), the selection, and scrolling.
+  - While a picker is open, `handleKey` skips binds. The picker takes its own
+    keys (Return, Escape, arrows, fzf's ⌃ keys) and every other key goes to the
+    query field. `updateFocus` keeps the field as first responder, and focus
+    goes back to the tile on close.
+  - A `PickerScrim` under the panel catches clicks outside it and cancels.
+  - `PickerView` keeps its content at full size, centered in the clip, so a
+    popin reveals it from the middle.
 - **Font family:** `ghostty_config_get` can't return repeatable strings, so
   `GhosttyConfigScan` reads `font-family` from Ghostty's config files.
 

@@ -104,7 +104,7 @@ global
 - **border:** border color changes.
 - **workspaces:** switching workspaces.
 - **specialWorkspace:** the scratchpad.
-- **layersIn / layersOut:** Hypermux's own UI (notifications) appearing and
+- **layersIn / layersOut:** Hypermux's own UI (notifications, pickers) appearing and
   going away. **fadeLayersIn / fadeLayersOut** fade it at the same time.
 - **layers:** a notification stack moving up or down when one comes or goes.
 
@@ -114,7 +114,7 @@ global
 - **workspaces:** `slide`, `slidevert`, or `fade`.
 - **layers:** `slide [top|bottom|left|right]`, `popin N%`, or `fade`. A plain
   `slide` uses the nearest edge. With no style set, notifications slide in
-  from the side they sit on.
+  from the side they sit on, and pickers pop in (`popin 90%`).
 
 ### `input`
 
@@ -186,7 +186,7 @@ ghostty {
 
 ### `hud`
 
-Hypermux's own UI: notifications for now. It takes its font, text colors, and
+Hypermux's own UI: notifications and pickers. It takes its font, text colors, and
 palette from your Ghostty config, and its border, rounding, shadow, and blur
 from `general` and `decoration`, so a notification looks like a focused tile.
 
@@ -208,6 +208,8 @@ hud {
 | `notifications:timeout` | 5000 | Milliseconds on screen. 0 keeps them until clicked. Hovering keeps one open. |
 | `notifications:max_visible` | 5 | More than this drops the oldest. |
 | `notifications:width` | 380 | Width in points. |
+| `picker:width` | 600 | Width of pickers in points. They open centered in the window. |
+| `picker:max_rows` | 10 | Rows shown at once. Longer lists scroll. |
 
 **What shows up:**
 
@@ -220,6 +222,20 @@ hud {
 
 Clicking any notification closes it. The same message posted again counts up
 (`×3`) instead of stacking.
+
+**Pickers** list things to choose from, such as booted simulators. Typing filters
+the list, fzf-style: letters match in order, and words separated by spaces match
+anywhere. While a picker is open, binds are off and the keyboard belongs to it:
+
+| Keys | Action |
+|---|---|
+| typing, ⌘V, ⌥⌫ | edit the filter |
+| ↑ ↓, ⌃P ⌃N, ⇧Tab Tab | move the selection |
+| Page Up, Page Down | move a page |
+| Return | choose |
+| Escape, ⌃C, ⌃G, click outside | cancel |
+
+The mouse works too: hover selects a row, a click chooses it, and the wheel scrolls.
 
 ### `hypermux`
 
@@ -275,7 +291,7 @@ These names work in `bind` lines and with `hypermuxctl dispatch`.
 | `exec` | [command] | New terminal, optionally running a command. |
 | `web` / `openurl` | [url or search] | New web tile. Empty: a start page with the address bar focused. |
 | `webnav` | `back` `forward` `reload` `stop` `home` `focusurl` `inspect` | Navigation in the focused web tile. |
-| `sim` / `simulator` | [udid, name, or `booted`] | Show an iOS Simulator in a tile. Empty: the only booted one, or a menu to pick one. |
+| `sim` / `simulator` | [udid, name, or `booted`] | Show an iOS Simulator in a tile. Empty: the only booted one, or a picker when several are booted. |
 | `simbutton` | `home` `lock` | Press a simulator hardware button. |
 | `killactive` | | Close the focused window. |
 | `movefocus` | `l` `r` `u` `d` | Focus the neighbor in that direction. |

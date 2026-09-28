@@ -434,7 +434,7 @@ public final class WindowManager {
         }
     }
 
-    private func switchTo(_ n: Int, focusAfter: Bool) {
+    func switchTo(_ n: Int, focusAfter: Bool) {
         guard n != activeWorkspace else { return }
         previousWorkspace = activeWorkspace
         activeWorkspace = n

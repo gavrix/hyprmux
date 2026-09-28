@@ -180,3 +180,72 @@ final class RestorePolicyTests: XCTestCase {
         if case .success = IPCRequest.parse("resume nope") { XCTFail("bad JSON must fail") }
     }
 }
+
+final class LayoutTemplateTests: XCTestCase {
+    func makeWM(names: [Int: String] = [:]) -> WindowManager {
+        var s = WMSettings()
+        s.gapsIn = .zero
+        s.gapsOut = .zero
+        s.workspaceNames = names
+        return WindowManager(monitor: CGRect(x: 0, y: 0, width: 1600, height: 1000), settings: s)
+    }
+
+    let layout = try! SessionState.decode(Data("""
+    {"workspaces": [{"tiled": {"split": "h", "children": [
+        {"kind": "terminal", "cwd": "~/src", "agent": {"kind": "pi"}},
+        {"kind": "web", "url": "http://localhost:3000"}]}}]}
+    """.utf8))
+
+    func testLoadBuildsNamesAndShows() {
+        let wm = makeWM()
+        wm.addClient(ClientID(1))                       // workspace 1 is busy
+        var n: UInt64 = 10
+        let touched = wm.loadLayout(layout, defaultName: "dev") { _ in n += 1; return ClientID(n) }
+        XCTAssertEqual(touched, [2])
+        XCTAssertEqual(wm.name(of: 2), "dev")
+        XCTAssertEqual(wm.activeWorkspace, 2)
+        XCTAssertEqual(wm.snapshot().placements.filter(\.visible).count, 2)
+        XCTAssertNotNil(wm.focused)
+        XCTAssertEqual(wm.workspace(of: wm.focused!), .regular(2))
+    }
+
+    func testLoadingAgainOnlyGoesThere() {
+        let wm = makeWM()
+        var n: UInt64 = 0
+        let make: (SessionTile) -> ClientID? = { _ in n += 1; return ClientID(n) }
+        wm.loadLayout(layout, defaultName: "dev", make: make)
+        wm.dispatch(.workspace(.id(5)))
+        let before = n
+        XCTAssertEqual(wm.loadLayout(layout, defaultName: "dev", make: make), [1])
+        XCTAssertEqual(n, before, "no new windows")
+        XCTAssertEqual(wm.activeWorkspace, 1)
+    }
+
+    func testFillsAnEmptyNamedWorkspace() {
+        let wm = makeWM(names: [4: "dev"])
+        wm.addClient(ClientID(1))
+        var n: UInt64 = 10
+        XCTAssertEqual(wm.loadLayout(layout, defaultName: "dev") { _ in n += 1; return ClientID(n) }, [4])
+        XCTAssertEqual(wm.activeWorkspace, 4)
+    }
+
+    func testExportWorkspaceAndStartTemplates() throws {
+        let wm = makeWM()
+        wm.addClient(ClientID(1))
+        wm.addClient(ClientID(2))
+        var w = try XCTUnwrap(wm.exportWorkspace(.regular(1)) { SessionTile(kind: "terminal", cwd: "/c\($0.raw)") })
+        w.id = ""
+        w.name = "pair"
+        var file = SessionState()
+        file.workspaces = [w]
+        let decoded = try SessionState.decode(try file.encoded())
+        XCTAssertEqual(decoded.workspaces[0].name, "pair")
+        XCTAssertEqual(decoded.workspaces[0].id, "")
+
+        var s = RestoreSettings()
+        s.start["pi"] = "mywrapper pi"
+        XCTAssertEqual(RestorePolicy.resumeCommand(SessionAgent(kind: "pi"), settings: s), "mywrapper pi")
+        XCTAssertNil(RestorePolicy.resumeCommand(SessionAgent(kind: "codex"), settings: s))
+        XCTAssertEqual(ConfigParser.parse("session:start:pi = mywrapper pi").session.start, ["pi": "mywrapper pi"])
+    }
+}

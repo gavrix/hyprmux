@@ -73,11 +73,12 @@ extension Compositor {
         guard sessionSavingEnabled else { return }
         sessionSaveWork?.cancel()
         sessionSaveWork = nil
-        SessionStore.save(wm.exportSession { [weak self] id in self?.sessionTile(id) })
+        SessionStore.save(wm.exportSession { [weak self] id in self?.sessionTile(id, forLayout: false) })
     }
 
-    /// What a client's surface needs to come back.
-    private func sessionTile(_ id: ClientID) -> SessionTile? {
+    /// What a client's surface needs to come back. For a layout, an agent is kept as its
+    /// kind only, so loading the layout starts a new session instead of reopening this one.
+    func sessionTile(_ id: ClientID, forLayout: Bool) -> SessionTile? {
         guard let surface = views[id]?.surface else { return nil }
         let title = surface.title.isEmpty ? nil : surface.title
         switch surface {
@@ -88,7 +89,7 @@ extension Compositor {
             if let r = resumeReports[id], ProcessInspector.isRunning(r.pid, inGroup: fg),
                r.file.map({ FileManager.default.fileExists(atPath: $0) }) ?? true {
                 // An agent still running in this terminal's foreground.
-                tile.agent = SessionAgent(kind: r.kind, session: r.session)
+                tile.agent = SessionAgent(kind: r.kind, session: forLayout ? nil : r.session)
                 if let c = r.cwd { tile.cwd = c }
             } else if let argv = ProcessInspector.argv(fg),
                       let cmd = RestorePolicy.programCommand(argv: argv, settings: config.session) {
@@ -131,7 +132,7 @@ extension Compositor {
     }
 
     /// Creates a tile's surface and view. Nil skips it (a simulator that's gone).
-    private func restoreTile(_ t: SessionTile, missingSims: inout [String]) -> ClientID? {
+    func restoreTile(_ t: SessionTile, missingSims: inout [String]) -> ClientID? {
         switch t.kind {
         case "web":
             let web = makeWeb(t.url ?? "")

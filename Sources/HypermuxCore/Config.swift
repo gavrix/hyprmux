@@ -433,6 +433,8 @@ public enum ConfigParser {
             case _ where key.hasPrefix("session:resume:"):
                 let kind = String(key.dropFirst("session:resume:".count))
                 if value.contains("{id}") { config.session.resume[kind] = value } else { error(file, line, "\(key): needs {id} for the session id") }
+            case _ where key.hasPrefix("session:start:"):
+                config.session.start[String(key.dropFirst("session:start:".count))] = value
             case "workspace":
                 // Hyprland workspace rule: "workspace = 3, defaultName:mail, persistent:true".
                 // Only defaultName applies here; other rules are accepted and ignored.

@@ -30,8 +30,10 @@ public struct SessionState: Codable, Equatable, Sendable {
 }
 
 public struct SessionWorkspace: Codable, Equatable, Sendable {
-    /// "3" or "special:magic", as in dispatchers.
+    /// "3" or "special:magic", as in dispatchers. Layouts leave it out and use `name`.
     public var id: String
+    /// Layouts: the workspace's name. Loading finds the workspace with it, or makes one.
+    public var name: String?
     public var tiled: SessionNode?
     public var floating: [SessionFloating] = []
     /// Key of the tile that had focus here.
@@ -47,11 +49,12 @@ public struct SessionWorkspace: Codable, Equatable, Sendable {
         self.fullscreen = fullscreen
     }
 
-    enum CodingKeys: String, CodingKey { case id, tiled, floating, focused, fullscreen }
+    enum CodingKeys: String, CodingKey { case id, name, tiled, floating, focused, fullscreen }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        id = try c.decode(String.self, forKey: .id)
+        id = try c.decodeIfPresent(String.self, forKey: .id) ?? ""
+        name = try c.decodeIfPresent(String.self, forKey: .name)
         tiled = try c.decodeIfPresent(SessionNode.self, forKey: .tiled)
         floating = try c.decodeIfPresent([SessionFloating].self, forKey: .floating) ?? []
         focused = try c.decodeIfPresent(Int.self, forKey: .focused)
@@ -60,7 +63,8 @@ public struct SessionWorkspace: Codable, Equatable, Sendable {
 
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
-        try c.encode(id, forKey: .id)
+        if !id.isEmpty { try c.encode(id, forKey: .id) }
+        try c.encodeIfPresent(name, forKey: .name)
         try c.encodeIfPresent(tiled, forKey: .tiled)
         if !floating.isEmpty { try c.encode(floating, forKey: .floating) }
         try c.encodeIfPresent(focused, forKey: .focused)
@@ -109,8 +113,9 @@ public struct SessionTile: Codable, Equatable, Sendable {
 public struct SessionAgent: Codable, Equatable, Sendable {
     /// Matches a `session:resume:KIND` template, e.g. "pi".
     public var kind: String
-    public var session: String
-    public init(kind: String, session: String) { self.kind = kind; self.session = session }
+    /// Nil starts a new session with `session:start:KIND` (layouts do this).
+    public var session: String?
+    public init(kind: String, session: String? = nil) { self.kind = kind; self.session = session }
 }
 
 /// A slot: one tile, or a group of tabs.
@@ -225,13 +230,42 @@ extension WindowManager {
     /// The current layout as a session. `tile` describes a client's content; clients it
     /// returns nil for are left out (their splits collapse).
     public func exportSession(tile: (ClientID) -> SessionTile?) -> SessionState {
-        var keys: [ClientID: Int] = [:]
+        var s = SessionState()
+        s.activeWorkspace = activeWorkspace
+        s.specialVisible = specialVisible
+        let ordered = workspaces.values.sorted { a, b in
+            switch (a.id, b.id) {
+            case let (.regular(x), .regular(y)): return x < y
+            case (.regular, .special): return true
+            case (.special, .regular): return false
+            case let (.special(x), .special(y)): return x < y
+            }
+        }
         var nextKey = 1
+        for ws in ordered {
+            if let w = export(ws, tile: tile, nextKey: &nextKey) { s.workspaces.append(w) }
+        }
+        for (n, name) in renamed { s.names[String(n)] = name }
+        return s
+    }
+
+    /// One workspace, for a layout file. Nil when it has no windows.
+    public func exportWorkspace(_ id: WorkspaceID, tile: (ClientID) -> SessionTile?) -> SessionWorkspace? {
+        guard let ws = workspaces[id] else { return nil }
+        var nextKey = 1
+        return export(ws, tile: tile, nextKey: &nextKey)
+    }
+
+    private func export(_ ws: Workspace, tile: (ClientID) -> SessionTile?, nextKey: inout Int) -> SessionWorkspace? {
+        guard !ws.isEmpty else { return nil }
+        var keys: [ClientID: Int] = [:]
+        var counter = nextKey
+        defer { nextKey = counter }
         func describe(_ id: ClientID) -> SessionTile? {
             guard var t = tile(id) else { return nil }
-            t.key = nextKey
-            keys[id] = nextKey
-            nextKey += 1
+            t.key = counter
+            keys[id] = counter
+            counter += 1
             return t
         }
         func slot(_ id: ClientID) -> SessionSlot? {
@@ -257,35 +291,20 @@ extension WindowManager {
             }
         }
         let area = workArea
-        var s = SessionState()
-        s.activeWorkspace = activeWorkspace
-        s.specialVisible = specialVisible
-        let ordered = workspaces.values.sorted { a, b in
-            switch (a.id, b.id) {
-            case let (.regular(x), .regular(y)): return x < y
-            case (.regular, .special): return true
-            case (.special, .regular): return false
-            case let (.special(x), .special(y)): return x < y
-            }
+        var w = SessionWorkspace(id: ws.id.description)
+        w.tiled = ws.tiled.root.flatMap(node)
+        for id in ws.floating {
+            guard let sl = slot(id) else { continue }
+            let r = clients[id]?.floatRect ?? defaultFloatRect()
+            let rect = area.width > 0 && area.height > 0
+                ? [(r.minX - area.minX) / area.width, (r.minY - area.minY) / area.height, r.width / area.width, r.height / area.height]
+                : [0.2, 0.2, 0.6, 0.6]
+            w.floating.append(SessionFloating(slot: sl, rect: rect.map { ($0 * 10_000).rounded() / 10_000 }))
         }
-        for ws in ordered where !ws.isEmpty {
-            var w = SessionWorkspace(id: ws.id.description)
-            w.tiled = ws.tiled.root.flatMap(node)
-            for id in ws.floating {
-                guard let sl = slot(id) else { continue }
-                let r = clients[id]?.floatRect ?? defaultFloatRect()
-                let rect = area.width > 0 && area.height > 0
-                    ? [(r.minX - area.minX) / area.width, (r.minY - area.minY) / area.height, r.width / area.width, r.height / area.height]
-                    : [0.2, 0.2, 0.6, 0.6]
-                w.floating.append(SessionFloating(slot: sl, rect: rect.map { ($0 * 10_000).rounded() / 10_000 }))
-            }
-            w.focused = ws.lastFocused.flatMap { keys[$0] }
-            if let fs = ws.fullscreen, let k = keys[fs.id] { w.fullscreen = SessionFullscreen(tile: k, mode: fs.mode.rawValue) }
-            guard w.tiled != nil || !w.floating.isEmpty else { continue }
-            s.workspaces.append(w)
-        }
-        for (n, name) in renamed { s.names[String(n)] = name }
-        return s
+        w.focused = ws.lastFocused.flatMap { keys[$0] }
+        if let fs = ws.fullscreen, let k = keys[fs.id] { w.fullscreen = SessionFullscreen(tile: k, mode: fs.mode.rawValue) }
+        guard w.tiled != nil || !w.floating.isEmpty else { return nil }
+        return w
     }
 
     /// Rebuilds a saved session into an empty manager. `make` creates each tile's client and
@@ -315,6 +334,46 @@ extension WindowManager {
         if let ws = shown, let f = ws.lastFocused ?? mostRecent(in: ws) ?? ws.clients.first { focus(f) }
         collectEmptyWorkspaces()
         return made
+    }
+
+    /// Opens a layout (a template). Each of its workspaces is found by name and left alone
+    /// when it already has windows, so loading twice doesn't duplicate anything. Otherwise
+    /// it's built on the first free number (or the empty workspace with that name) and named.
+    /// A single-workspace layout without a name takes `defaultName` (the file's name).
+    /// Shows the first of them and returns their numbers.
+    @discardableResult
+    public func loadLayout(_ layout: SessionState, defaultName: String?, make: (SessionTile) -> ClientID?) -> [Int] {
+        var touched: [Int] = []
+        let single = layout.workspaces.count == 1
+        for w in layout.workspaces {
+            let own = w.name?.trimmingCharacters(in: .whitespaces)
+            let name = own?.isEmpty == false ? own : (single ? defaultName : nil)
+            if let name, let n = workspace(named: name), !(workspaces[.regular(n)]?.isEmpty ?? true) {
+                touched.append(n)
+                continue
+            }
+            let n = name.flatMap { workspace(named: $0) } ?? freeWorkspaceNumber()
+            guard !restoreWorkspace(w, into: .regular(n), make: make).isEmpty else { continue }
+            if let name, self.name(of: n) != name { renamed[n] = name }
+            touched.append(n)
+        }
+        if let first = touched.first {
+            specialVisible = nil
+            if first != activeWorkspace { switchTo(first, focusAfter: true) }
+            if let ws = workspaces[.regular(first)], focused.flatMap({ clients[$0]?.workspace }) != .regular(first) {
+                focused = nil
+                if let f = ws.lastFocused ?? mostRecent(in: ws) ?? ws.clients.first { focus(f) }
+            }
+        }
+        collectEmptyWorkspaces()
+        return touched
+    }
+
+    /// The first workspace number with no windows and no name.
+    func freeWorkspaceNumber() -> Int {
+        var n = 1
+        while !(workspaces[.regular(n)]?.isEmpty ?? true) || name(of: n) != nil { n += 1 }
+        return n
     }
 
     /// Builds one saved workspace into `id` (which must be empty or new).
@@ -391,6 +450,8 @@ public struct RestoreSettings: Equatable, Sendable {
     public var deny: [String] = []
     /// Agent resume commands by kind, with `{id}` for the session id.
     public var resume: [String: String] = [:]
+    /// Commands that start a new agent session, by kind (layouts use them).
+    public var start: [String: String] = [:]
 
     public init() {}
 }
@@ -435,10 +496,14 @@ public enum RestorePolicy {
         return ([name] + argv.dropFirst()).map(shellQuote).joined(separator: " ")
     }
 
-    /// The command that resumes an agent session, from its `session:resume` template.
+    /// The command that resumes an agent session (`session:resume:KIND`), or starts a new
+    /// one when there's no session id (`session:start:KIND`).
     public static func resumeCommand(_ a: SessionAgent, settings: RestoreSettings) -> String? {
-        guard let t = settings.resume[a.kind], !t.isEmpty, !a.session.isEmpty else { return nil }
-        return t.replacingOccurrences(of: "{id}", with: shellQuote(a.session))
+        guard let id = a.session, !id.isEmpty else {
+            return settings.start[a.kind].flatMap { $0.isEmpty ? nil : $0 }
+        }
+        guard let t = settings.resume[a.kind], !t.isEmpty else { return nil }
+        return t.replacingOccurrences(of: "{id}", with: shellQuote(id))
     }
 
     /// Quotes a word for sh/zsh when it needs it.

@@ -54,6 +54,10 @@ public enum PickerKind: String, Equatable, Sendable, CaseIterable {
     case moveToWorkspaceSilent = "movetoworkspacesilent"
     /// Name the active workspace.
     case renameWorkspace = "renameworkspace"
+    /// Open a layout (a workspace template) from the layouts folder.
+    case layout
+    /// Save the active workspace as a layout.
+    case saveLayout = "savelayout"
 }
 
 public enum FullscreenMode: Int, Equatable, Sendable {

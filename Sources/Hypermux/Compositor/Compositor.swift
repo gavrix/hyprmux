@@ -341,6 +341,10 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
                 guard let self, let r, let t = WorkspacePicker.target(for: r) else { return }
                 self.dispatch(moving ? .moveToWorkspace(t, silent: kind == .moveToWorkspaceSilent) : .workspace(t))
             }
+        case .layout:
+            presentLayoutPicker()
+        case .saveLayout:
+            presentSaveLayoutPrompt()
         case .renameWorkspace:
             let n = wm.activeWorkspace
             var picker = Picker(title: "name \(n)", mode: .prompt, query: wm.name(of: n) ?? "")

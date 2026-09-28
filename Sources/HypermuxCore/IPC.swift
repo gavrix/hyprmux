@@ -21,6 +21,8 @@ public enum IPCRequest: Equatable {
     case activeWindow
     case reload
     case version
+    /// Focus internals: app active, key window, first responder.
+    case debug
     case sendText(String)
     case sendKey(Modifiers, UInt16)
     /// Mouse drag in monitor coordinates (top-left origin). Button: 272 left, 273 right.
@@ -44,16 +46,19 @@ public enum IPCRequest: Equatable {
         case "activewindow": return .success(.activeWindow)
         case "reload": return .success(.reload)
         case "version": return .success(.version)
+        case "debug": return .success(.debug)
         case "sendtext": return .success(.sendText(rest.replacingOccurrences(of: "\\n", with: "\n")))
         case "sendkey":
-            let parts = rest.split(separator: ",", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
+            // Keep empty pieces: ", g" means no modifiers.
+            let parts = rest.split(separator: ",", maxSplits: 1, omittingEmptySubsequences: false)
+                .map { $0.trimmingCharacters(in: .whitespaces) }
             guard parts.count == 2 else { return .failure(ParseError("sendkey: expected 'MODS, key'")) }
             guard case .success(let m) = Modifiers.parse(parts[0]) else { return .failure(ParseError("sendkey: bad mods")) }
             guard case .key(let k)? = KeyCodes.parse(parts[1]) else { return .failure(ParseError("sendkey: bad key")) }
             return .success(.sendKey(m, k))
         case "senddrag":
             // senddrag MODS, 273, x1 y1, x2 y2
-            let p = rest.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+            let p = rest.split(separator: ",", omittingEmptySubsequences: false).map { $0.trimmingCharacters(in: .whitespaces) }
             func pt(_ s: String) -> CGPoint? {
                 let n = s.split(separator: " ").compactMap { Double($0) }
                 return n.count == 2 ? CGPoint(x: n[0], y: n[1]) : nil

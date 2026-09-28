@@ -26,6 +26,8 @@ public struct WMSettings: Equatable, Sendable {
 /// Side effects the host must perform. The model never touches AppKit.
 public enum Effect: Equatable, Sendable {
     case spawn(command: String)
+    case spawnWeb(url: String)
+    case webNav(ClientID, WebNav)
     case close(ClientID)
     case submap(String)
     case reload
@@ -165,6 +167,8 @@ public final class WindowManager {
     public func dispatch(_ d: Dispatcher) {
         switch d {
         case .exec(let cmd): perform(.spawn(command: cmd))
+        case .web(let url): perform(.spawnWeb(url: url))
+        case .webNav(let n): if let f = focused { perform(.webNav(f, n)) }
         case .killActive: if let f = focused { perform(.close(f)) }
         case .moveFocus(let dir): moveFocus(dir)
         case .moveWindow(let dir): moveWindow(dir)

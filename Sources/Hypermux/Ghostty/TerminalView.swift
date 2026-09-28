@@ -11,6 +11,8 @@ protocol TerminalViewHost: AnyObject {
     func terminalDidRequestSpawn(_ view: TerminalView)
     func terminal(_ view: TerminalView, perform dispatcher: Dispatcher)
     func terminalDidToggleWindowFullscreen(_ view: TerminalView)
+    /// A link was opened (cmd+click). Return true if handled, else it goes to macOS.
+    func terminal(_ view: TerminalView, openURL url: URL) -> Bool
 }
 
 struct SurfaceOptions {
@@ -43,6 +45,8 @@ final class TerminalView: NSView, NSTextInputClient {
     private(set) var pwd: String?
     private(set) var cellSize: CGSize = .zero
     private(set) var focused = false
+    /// Terminal background, set by the compositor (see Surface.backdropColor).
+    var backdrop: NSColor = .black
 
     private var markedText = NSMutableAttributedString()
     private var keyTextAccumulator: [String]?
@@ -101,7 +105,7 @@ final class TerminalView: NSView, NSTextInputClient {
         text.withCString { ghostty_surface_text_input(s, $0, UInt(text.utf8.count)) }
     }
 
-    func setOccluded(_ occluded: Bool) {
+    func setTerminalOccluded(_ occluded: Bool) {
         guard let s = surface else { return }
         ghostty_surface_set_occlusion(s, !occluded)
     }

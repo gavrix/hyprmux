@@ -45,6 +45,9 @@ installed Ghostty.app or cmux.app.
 | ⌘ + drag | move window (tiled: drop into place; floating: move) |
 | ⌘ + right-drag | resize window |
 | ⇧⌘R / ⇧⌘M | reload config / exit |
+| ⌘B | new web tile (start page, cursor in the address bar) |
+| ⌘O | focus the address bar (Enter goes, Esc returns to the page) |
+| ⌥⌘← / ⌥⌘→ / ⌥⌘R / ⌥⌘I | back / forward / reload / Web Inspector |
 
 Keys that no bind claims go to the terminal, so ⌘C, ⌘V, and your Ghostty binds still work.
 
@@ -70,6 +73,14 @@ frosted-glass blur behind each window. Shadows are drawn only outside windows,
 so they don't show through. Native fullscreen puts the window on its own Space,
 with only black behind it, so use a zoomed window for transparency.
 
+Web tiles: `web { home, search, open_terminal_links, address_bar }`. The
+address bar takes URLs, hosts (`github.com/x`, `localhost:3000`), paths, or
+search terms. Pages that open windows get their own tile. ⌘-click in a
+terminal opens http(s) links in a web tile (set `open_terminal_links = false`
+to use your default browser). Web tiles run on WebKit today. The `Surface`
+protocol keeps the engine behind one class, so a Chromium (CEF) backend can be
+added next to it.
+
 A `ghostty { ... }` block passes settings to libghostty. Your normal
 `~/.config/ghostty/config` loads first.
 
@@ -83,6 +94,7 @@ hypermuxctl dispatch workspace 2
 hypermuxctl dispatch exec htop
 hypermuxctl clients            # JSON
 hypermuxctl workspaces
+hypermuxctl dispatch web github.com
 hypermuxctl sendkey SUPER, Return
 hypermuxctl sendtext 'ls\n'
 ```
@@ -96,6 +108,8 @@ hypermuxctl sendtext 'ls\n'
     close) go out as `Effect`s.
   - `Config` — hyprlang-style parser. `Dispatcher`, `Keys`, `Bezier`, `IPC`.
 - `Sources/Hypermux` — the AppKit shell.
+  - `Surfaces/` — the `Surface` protocol (terminal, web) and `WebSurface`
+    (WKWebView plus an address bar).
   - `Ghostty/` — libghostty runtime callbacks and `TerminalView` (keyboard, IME,
     mouse, clipboard). Ported from Ghostty's macOS app.
   - `Compositor/` — applies snapshots to views, runs animations on a display link,

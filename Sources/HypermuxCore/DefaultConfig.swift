@@ -90,6 +90,16 @@ ghostty {
     window-padding-y = 6
 }
 
+# Web surfaces (WebKit for now).
+web {
+    home = https://duckduckgo.com
+    # %s is replaced by the search terms typed in the address bar.
+    search = https://duckduckgo.com/?q=%s
+    # Cmd+click on a link in a terminal opens it in a web tile instead of your browser.
+    open_terminal_links = true
+    address_bar = true
+}
+
 # Programs to run in new terminals at startup.
 # exec-once = htop
 
@@ -108,6 +118,14 @@ bind = $mod, E, togglesplit
 bind = $mod SHIFT, E, swapsplit
 bind = $mod, C, centerwindow
 bind = $mod, grave, focuscurrentorlast
+
+# Web: new browser tile, address bar, back/forward/reload, Web Inspector.
+bind = $mod, B, web,
+bind = $mod, O, webnav, focusurl
+bind = $mod ALT, left, webnav, back
+bind = $mod ALT, right, webnav, forward
+bind = $mod ALT, R, webnav, reload
+bind = $mod ALT, I, webnav, inspect
 
 bind = $mod, H, movefocus, l
 bind = $mod, J, movefocus, d

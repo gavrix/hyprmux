@@ -1,8 +1,9 @@
 import AppKit
 import HypermuxCore
+import WebKit
 
 /// Glue between the model (WindowManager), the monitor window, and terminal surfaces.
-final class Compositor: NSObject, TerminalViewHost, NSWindowDelegate {
+final class Compositor: NSObject, TerminalViewHost, WebSurfaceHost, NSWindowDelegate {
     let runtime: GhosttyRuntime
     private(set) var config: HypermuxConfig
     let wm: WindowManager
@@ -120,7 +121,10 @@ final class Compositor: NSObject, TerminalViewHost, NSWindowDelegate {
         if let c = config.activeBorder.colors.first {
             bar.accent = NSColor(cgColor: HypermuxCore.Color(r: c.r, g: c.g, b: c.b, a: 1).cg) ?? bar.accent
         }
-        for v in views.values { v.setBackground(runtime.backgroundColor) }
+        for v in views.values {
+            (v.surface as? TerminalView)?.backdrop = runtime.backgroundColor
+            v.refreshBackdrop()
+        }
         hint.stringValue = hintText()
     }
 
@@ -176,7 +180,7 @@ final class Compositor: NSObject, TerminalViewHost, NSWindowDelegate {
         guard let app = runtime.app else { return }
         let id = ClientID(nextID)
         nextID += 1
-        var opts = SurfaceOptions.inherited(from: parent ?? focusedTerminal)
+        var opts = SurfaceOptions.inherited(from: parent ?? focusedTerminal ?? lastTerminal)
         opts.command = command.isEmpty ? nil : command
         opts.env["HYPERMUX_CLIENT"] = "\(id.raw)"
         if let ipcPath { opts.env["HYPERMUX_SOCKET"] = ipcPath }
@@ -186,15 +190,46 @@ final class Compositor: NSObject, TerminalViewHost, NSWindowDelegate {
             return
         }
         term.host = self
-        let v = ClientView(id: id, terminal: term, decoration: Decoration(config), background: runtime.backgroundColor)
+        term.backdrop = runtime.backgroundColor
+        manage(term)
+    }
+
+    /// Opens a web surface. `configuration` is set for pages opened by other pages.
+    @discardableResult
+    private func spawnWeb(_ input: String, configuration: WKWebViewConfiguration? = nil) -> WebSurface {
+        let id = ClientID(nextID)
+        nextID += 1
+        let web = WebSurface(id: id, configuration: configuration, home: config.webHome,
+                             search: config.webSearch, showAddressBar: config.webShowAddressBar)
+        web.host = self
+        manage(web)
+        if configuration == nil {
+            if input.isEmpty {
+                // Like a new tab: start page, cursor in the address bar. Deferred so the
+                // focus pass in apply() doesn't move it back to the page.
+                DispatchQueue.main.async { web.openStartPage() }
+            } else {
+                web.open(input)
+            }
+        }
+        return web
+    }
+
+    private func manage(_ surface: Surface) {
+        let v = ClientView(id: surface.clientID, surface: surface, decoration: Decoration(config))
         v.isHidden = true
         root.addSubview(v, positioned: .below, relativeTo: bar)
-        views[id] = v
-        wm.addClient(id)
+        views[surface.clientID] = v
+        wm.addClient(surface.clientID)
         apply(animated: true)
     }
 
-    private var focusedTerminal: TerminalView? { wm.focused.flatMap { views[$0]?.terminal } }
+    private var focusedSurface: Surface? { wm.focused.flatMap { views[$0]?.surface } }
+    private var focusedTerminal: TerminalView? { focusedSurface as? TerminalView }
+    /// The most recently focused terminal, for inheriting cwd when spawning from a web surface.
+    private weak var lastTerminal: TerminalView?
+    /// Focused client as of the last updateFocus, to tell focus changes from re-applies.
+    private var lastFocusApplied: ClientID?
 
     private func removeClient(_ id: ClientID) {
         guard let v = views.removeValue(forKey: id) else { return }
@@ -205,7 +240,7 @@ final class Compositor: NSObject, TerminalViewHost, NSWindowDelegate {
         let finish = { [weak self, weak v] in
             guard let self, let v else { return }
             v.removeFromSuperview()
-            v.terminal.destroy()
+            v.surface.destroy()
             self.closing[id] = nil
         }
         if v.shown, out.enabled {
@@ -221,6 +256,7 @@ final class Compositor: NSObject, TerminalViewHost, NSWindowDelegate {
     // MARK: Dispatch
 
     func dispatch(_ d: Dispatcher) {
+        log.debug("dispatch \(String(describing: d), privacy: .public)")
         wm.dispatch(d)
         apply(animated: true)
     }
@@ -232,7 +268,11 @@ final class Compositor: NSObject, TerminalViewHost, NSWindowDelegate {
             DispatchQueue.main.async { [weak self] in self?.spawn(command: cmd, inheritFrom: nil) }
         case .close(let id):
             log.debug("killactive client=\(id.raw)")
-            views[id]?.terminal.requestClose()
+            views[id]?.surface.requestClose()
+        case .spawnWeb(let url):
+            DispatchQueue.main.async { [weak self] in self?.spawnWeb(url) }
+        case .webNav(let id, let nav):
+            (views[id]?.surface as? WebSurface)?.perform(nav)
         case .submap(let name):
             submap = name
             bar.submap = name
@@ -275,7 +315,7 @@ final class Compositor: NSObject, TerminalViewHost, NSWindowDelegate {
                 if !v.shown {
                     v.shown = true
                     v.isHidden = false
-                    v.terminal.setOccluded(false)
+                    v.surface.setOccluded(false)
                     if before == nil {
                         // New window.
                         let from = Self.popin(p.frame, style: winIn.style)
@@ -301,7 +341,7 @@ final class Compositor: NSObject, TerminalViewHost, NSWindowDelegate {
                 let hide = { [weak v] in
                     guard let v, !v.shown else { return }
                     v.isHidden = true
-                    v.terminal.setOccluded(true)
+                    v.surface.setOccluded(true)
                 }
                 let anim: ResolvedAnimation
                 let to: CGRect
@@ -400,7 +440,7 @@ final class Compositor: NSObject, TerminalViewHost, NSWindowDelegate {
         bar.workspaces = snap.workspaces
         bar.active = snap.activeWorkspace
         bar.special = snap.specialVisible
-        bar.title = focusedTerminal?.title ?? ""
+        bar.title = focusedSurface?.title ?? ""
         window.title = "Hypermux — \(snap.activeWorkspace)"
 
         let area = wm.workArea
@@ -420,8 +460,18 @@ final class Compositor: NSObject, TerminalViewHost, NSWindowDelegate {
     }
 
     private func updateFocus(_ snap: Snapshot) {
-        let target: NSResponder = snap.focused.flatMap { views[$0]?.terminal } ?? root
-        if window.firstResponder !== target { window.makeFirstResponder(target) }
+        let changed = snap.focused != lastFocusApplied
+        if changed { log.debug("focus \(self.lastFocusApplied?.raw ?? 0) -> \(snap.focused?.raw ?? 0)") }
+        lastFocusApplied = snap.focused
+        guard let id = snap.focused, let s = views[id]?.surface else {
+            if window.firstResponder !== root { window.makeFirstResponder(root) }
+            return
+        }
+        if let t = s as? TerminalView { lastTerminal = t }
+        // Leave focus alone if it is already somewhere inside the surface (e.g. a web
+        // page's address bar), unless the focused window just changed.
+        if !changed && s.ownsFirstResponder(in: window) { return }
+        if window.firstResponder !== s.focusTarget { window.makeFirstResponder(s.focusTarget) }
     }
 
     // MARK: Input
@@ -476,6 +526,7 @@ final class Compositor: NSObject, TerminalViewHost, NSWindowDelegate {
         let p = point(e)
         wm.cursor = p
         guard config.followMouse == 1, let id = wm.client(at: p), id != wm.focused else { return }
+        log.debug("focus reason=mouse client=\(id.raw)")
         wm.focus(id)
         apply(animated: true)
     }
@@ -489,7 +540,15 @@ final class Compositor: NSObject, TerminalViewHost, NSWindowDelegate {
             let mods = modifiers(e.modifierFlags)
             guard let bind = config.binds.first(where: {
                 $0.flags.contains("m") && $0.mods == mods && $0.trigger == .mouse(button)
-            }), let id = wm.client(at: p), let v = views[id] else { return e }
+            }), let id = wm.client(at: p), let v = views[id] else {
+                // Plain click: focus the window under the pointer (web views don't report clicks to us).
+                if let id = wm.client(at: p), id != wm.focused {
+                    log.debug("focus reason=click client=\(id.raw)")
+                    wm.focus(id)
+                    apply(animated: true)
+                }
+                return e
+            }
             let resize: Bool
             if case .resizeActive = bind.dispatcher { resize = true } else { resize = false }
             wm.focus(id)
@@ -581,6 +640,12 @@ final class Compositor: NSObject, TerminalViewHost, NSWindowDelegate {
                 return "ok"
             case .version:
                 return "hypermux 0.1.0"
+            case .debug:
+                let fr = window.firstResponder
+                var frDesc = fr.map { String(describing: type(of: $0)) } ?? "nil"
+                if let tv = fr as? NSTextView, tv.isFieldEditor, let d = tv.delegate { frDesc += " (editing \(type(of: d)))" }
+                return json(["appActive": NSApp.isActive, "isKeyWindow": window.isKeyWindow,
+                             "firstResponder": frDesc, "focused": wm.focused?.raw as Any? ?? NSNull()])
             case .sendText(let t):
                 guard let term = focusedTerminal else { return "error: no focused terminal" }
                 term.sendText(t)
@@ -596,14 +661,16 @@ final class Compositor: NSObject, TerminalViewHost, NSWindowDelegate {
     }
 
     private func clientInfo(_ p: Placement) -> [String: Any] {
-        let t = views[p.id]?.terminal
-        return [
+        let s = views[p.id]?.surface
+        var info: [String: Any] = [
             "id": p.id.raw, "workspace": p.workspace.description, "floating": p.floating,
             "fullscreen": p.fullscreen.map { $0.rawValue } as Any? ?? NSNull(),
             "focused": p.focused, "visible": p.visible,
             "at": [p.frame.minX, p.frame.minY], "size": [p.frame.width, p.frame.height],
-            "title": t?.title ?? "", "pwd": t?.pwd ?? "",
+            "title": s?.title ?? "", "kind": s?.kind ?? "",
         ]
+        for (k, v) in s?.info ?? [:] { info[k] = v }
+        return info
     }
 
     private func json(_ v: Any) -> String {
@@ -658,11 +725,17 @@ final class Compositor: NSObject, TerminalViewHost, NSWindowDelegate {
         default: chars = mods.contains(.shift) ? name.uppercased() : name
         }
         for type in [NSEvent.EventType.keyDown, .keyUp] {
-            if let e = NSEvent.keyEvent(
+            guard let e = NSEvent.keyEvent(
                 with: type, location: .zero, modifierFlags: flags, timestamp: ProcessInfo.processInfo.systemUptime,
                 windowNumber: window.windowNumber, context: nil, characters: chars,
-                charactersIgnoringModifiers: name.isEmpty ? chars : name, isARepeat: false, keyCode: code) {
+                charactersIgnoringModifiers: name.isEmpty ? chars : name, isARepeat: false, keyCode: code) else { continue }
+            if NSApp.isActive {
                 NSApp.postEvent(e, atStart: false)
+            } else {
+                // Background app: AppKit drops key events for a window that isn't key,
+                // so run the bind check ourselves and hand the rest to the first responder.
+                guard let pass = handleKey(e), let r = window.firstResponder else { continue }
+                if pass.type == .keyDown { r.keyDown(with: pass) } else { r.keyUp(with: pass) }
             }
         }
     }
@@ -671,6 +744,7 @@ final class Compositor: NSObject, TerminalViewHost, NSWindowDelegate {
 
     func terminalDidRequestFocus(_ view: TerminalView) {
         guard wm.focused != view.clientID else { return }
+        log.debug("focus reason=terminal client=\(view.clientID.raw)")
         wm.focus(view.clientID)
         apply(animated: true)
     }
@@ -695,6 +769,35 @@ final class Compositor: NSObject, TerminalViewHost, NSWindowDelegate {
 
     func terminalDidToggleWindowFullscreen(_ view: TerminalView) {
         window.toggleFullScreen(nil)
+    }
+
+    func terminal(_ view: TerminalView, openURL url: URL) -> Bool {
+        guard config.webOpenTerminalLinks, let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else {
+            return false
+        }
+        spawnWeb(url.absoluteString)
+        return true
+    }
+
+    // MARK: WebSurfaceHost
+
+    func webSurfaceDidRequestFocus(_ s: WebSurface) {
+        guard wm.focused != s.clientID else { return }
+        log.debug("focus reason=web client=\(s.clientID.raw)")
+        wm.focus(s.clientID)
+        apply(animated: true)
+    }
+
+    func webSurfaceTitleDidChange(_ s: WebSurface) {
+        if s.clientID == wm.focused { bar.title = s.title }
+    }
+
+    func webSurfaceDidClose(_ s: WebSurface) {
+        removeClient(s.clientID)
+    }
+
+    func webSurface(_ s: WebSurface, createWith configuration: WKWebViewConfiguration, for action: WKNavigationAction) -> WKWebView? {
+        spawnWeb("", configuration: configuration).webView
     }
 
     // MARK: NSWindowDelegate

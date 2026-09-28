@@ -45,7 +45,7 @@ extension HypermuxCore.Color {
 /// clip animates around it. That avoids sending a resize to the shell every frame.
 final class ClientView: NSView, Animatable {
     let id: ClientID
-    let terminal: TerminalView
+    let surface: Surface
     private let clip = FlippedView()
     private let dimView = NSView()
     private let borderLayer = CAGradientLayer()
@@ -67,9 +67,9 @@ final class ClientView: NSView, Animatable {
     /// Whether the compositor currently shows this client (its workspace is visible).
     var shown = false
 
-    init(id: ClientID, terminal: TerminalView, decoration: Decoration, background: NSColor) {
+    init(id: ClientID, surface: Surface, decoration: Decoration) {
         self.id = id
-        self.terminal = terminal
+        self.surface = surface
         self.decoration = decoration
         super.init(frame: .zero)
         wantsLayer = true
@@ -83,11 +83,11 @@ final class ClientView: NSView, Animatable {
 
         clip.wantsLayer = true
         clip.layer?.masksToBounds = true
-        clip.layer?.backgroundColor = background.cgColor
+        clip.layer?.backgroundColor = surface.backdropColor.cgColor
         // Opacity applies to the terminal and its backdrop as one image.
         clip.layer?.allowsGroupOpacity = true
         addSubview(clip)
-        clip.addSubview(terminal)
+        clip.addSubview(surface.view)
 
         dimView.wantsLayer = true
         dimView.layer?.backgroundColor = NSColor.black.cgColor
@@ -110,7 +110,7 @@ final class ClientView: NSView, Animatable {
     // Clicks inside go to the terminal; the view itself never takes focus.
     override var acceptsFirstResponder: Bool { false }
 
-    func setBackground(_ c: NSColor) { clip.layer?.backgroundColor = c.cgColor }
+    func refreshBackdrop() { clip.layer?.backgroundColor = surface.backdropColor.cgColor }
 
     // MARK: Decoration
 
@@ -222,11 +222,11 @@ final class ClientView: NSView, Animatable {
     /// Moves to `target`, animating from `from` (or the current frame) when a duration is given.
     func move(to target: CGRect, from: CGRect? = nil, duration: Double, curve: Bezier, animator: Animator, completion: (() -> Void)? = nil) {
         targetFrame = target
-        // Resize the terminal once, to its final size.
+        // Resize the content once, to its final size.
         let b = decoration.borderSize
         let content = CGSize(width: max(1, target.width - 2 * b), height: max(1, target.height - 2 * b))
-        if terminal.frame.size != content {
-            terminal.frame = CGRect(origin: .zero, size: content)
+        if surface.view.frame.size != content {
+            surface.view.frame = CGRect(origin: .zero, size: content)
         }
         let start = from ?? frame
         if duration <= 0 || start == target {

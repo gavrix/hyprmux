@@ -30,6 +30,15 @@ public enum WorkspaceTarget: Equatable, Sendable {
     }
 }
 
+/// Navigation actions for web surfaces (`webnav, back`).
+public enum WebNav: String, Equatable, Sendable, CaseIterable {
+    case back, forward, reload, stop, home
+    /// Put the cursor in the address bar.
+    case focusurl
+    /// Open Web Inspector.
+    case inspect
+}
+
 public enum FullscreenMode: Int, Equatable, Sendable {
     /// Cover the whole monitor, no gaps or borders.
     case fullscreen = 0
@@ -40,6 +49,9 @@ public enum FullscreenMode: Int, Equatable, Sendable {
 /// Hyprland-style dispatchers. The same names work in `bind =` lines and IPC.
 public enum Dispatcher: Equatable, Sendable {
     case exec(String)
+    /// Open a web surface (empty = home page, address bar focused).
+    case web(String)
+    case webNav(WebNav)
     case killActive
     case moveFocus(Direction)
     case moveWindow(Direction)
@@ -79,6 +91,12 @@ public enum Dispatcher: Equatable, Sendable {
 
         switch name.trimmingCharacters(in: .whitespaces).lowercased() {
         case "exec": return .success(.exec(a))
+        case "web", "openurl": return .success(.web(a))
+        case "webnav":
+            guard let n = WebNav(rawValue: a.lowercased()) else {
+                return .failure(.init("webnav: expected one of \(WebNav.allCases.map(\.rawValue).joined(separator: ", "))"))
+            }
+            return .success(.webNav(n))
         case "killactive", "kill": return .success(.killActive)
         case "movefocus": return needDirection { .moveFocus($0) }
         case "movewindow": return needDirection { .moveWindow($0) }

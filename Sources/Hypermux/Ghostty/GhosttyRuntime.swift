@@ -172,6 +172,7 @@ final class GhosttyRuntime {
             let data = Data(bytes: ptr, count: Int(u.len))
             guard let str = String(data: data, encoding: .utf8) else { return false }
             let url = URL(string: str) ?? URL(fileURLWithPath: (str as NSString).expandingTildeInPath)
+            if let v, v.host?.terminal(v, openURL: url) == true { return true }
             NSWorkspace.shared.open(url)
         case GHOSTTY_ACTION_RING_BELL:
             NSSound.beep()

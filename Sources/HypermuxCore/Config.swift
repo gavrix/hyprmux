@@ -120,6 +120,14 @@ public struct HypermuxConfig: Sendable {
     public var errors: [String] = []
     public var sourcePath: String?
 
+    /// Web surfaces.
+    public var webHome = "https://duckduckgo.com"
+    /// Search URL for address-bar input that isn't a URL. `%s` = query.
+    public var webSearch = "https://duckduckgo.com/?q=%s"
+    /// Open http(s) links clicked in terminals (cmd+click) in a web surface.
+    public var webOpenTerminalLinks = true
+    public var webShowAddressBar = true
+
     public init() {}
 
     static let animationParents: [String: String] = [
@@ -340,6 +348,11 @@ public enum ConfigParser {
             case "binds:workspace_back_and_forth": if let v = bool() { config.wm.workspaceBackAndForth = v }
             case "misc:background_color":
                 if let c = Color.parse(value) { config.backgroundColor = c } else { error(file, line, "\(key): bad color") }
+            case "web:home": config.webHome = value
+            case "web:search":
+                if value.contains("%s") { config.webSearch = value } else { error(file, line, "web:search: needs %s for the query") }
+            case "web:open_terminal_links": if let v = bool() { config.webOpenTerminalLinks = v }
+            case "web:address_bar": if let v = bool() { config.webShowAddressBar = v }
             case "hypermux:float_size": if let v = num() { config.wm.floatSizeFraction = min(max(v, 0.1), 1) }
             default:
                 // Unknown keys are reported but never fatal, so Hyprland configs mostly load.

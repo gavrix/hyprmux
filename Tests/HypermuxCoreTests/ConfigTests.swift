@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import XCTest
 @testable import HypermuxCore
@@ -88,6 +89,34 @@ final class ConfigTests: XCTestCase {
         XCTAssertEqual(c.inactiveOpacity, 0.7)
         XCTAssertTrue(c.blurEnabled)
         XCTAssertEqual(c.backgroundColor.a, 0)
+    }
+
+    func testWebAddress() {
+        let search = "https://duckduckgo.com/?q=%s"
+        XCTAssertEqual(WebAddress.resolve("https://example.com/a?b=1", search: search)?.absoluteString, "https://example.com/a?b=1")
+        XCTAssertEqual(WebAddress.resolve("github.com/gavrix", search: search)?.absoluteString, "https://github.com/gavrix")
+        XCTAssertEqual(WebAddress.resolve("localhost:3000/x", search: search)?.absoluteString, "http://localhost:3000/x")
+        XCTAssertEqual(WebAddress.resolve("swift concurrency", search: search)?.absoluteString,
+                       "https://duckduckgo.com/?q=swift%20concurrency")
+        XCTAssertEqual(WebAddress.resolve("c++ & rust", search: search)?.absoluteString,
+                       "https://duckduckgo.com/?q=c%2B%2B%20%26%20rust")
+        XCTAssertEqual(WebAddress.resolve("hello", search: search)?.host, "duckduckgo.com")
+        XCTAssertEqual(WebAddress.resolve("/tmp/a.html", search: search)?.isFileURL, true)
+        XCTAssertNil(WebAddress.resolve("  ", search: search))
+    }
+
+    func testWebDispatchers() {
+        XCTAssertEqual(try? Dispatcher.parse("web", "github.com").get(), .web("github.com"))
+        XCTAssertEqual(try? Dispatcher.parse("webnav", "back").get(), .webNav(.back))
+        XCTAssertNil(try? Dispatcher.parse("webnav", "sideways").get())
+    }
+
+    func testIPCParsing() {
+        XCTAssertEqual(try? IPCRequest.parse("sendkey , g").get(), .sendKey([], 0x05))
+        XCTAssertEqual(try? IPCRequest.parse("sendkey SUPER SHIFT, Return").get(), .sendKey([.super, .shift], 0x24))
+        XCTAssertEqual(try? IPCRequest.parse("dispatch workspace 3").get(), .dispatch(.workspace(.id(3))))
+        XCTAssertEqual(try? IPCRequest.parse("senddrag , 272, 1 2, 3 4").get(),
+                       .sendDrag([], button: 272, from: CGPoint(x: 1, y: 2), to: CGPoint(x: 3, y: 4)))
     }
 
     func testColors() {

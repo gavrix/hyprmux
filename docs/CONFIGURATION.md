@@ -450,8 +450,9 @@ These names work in `bind` lines and with `hypermuxctl dispatch`.
 
 ## IPC: `hypermuxctl`
 
-Shells inside Hypermux get `HYPERMUX_SOCKET` and `HYPERMUX_CLIENT` in their
-environment. `hypermuxctl` talks to that socket (default
+Shells inside Hypermux get `HYPERMUX_SOCKET`, `HYPERMUX_CLIENT`, and
+`HYPERMUX_PID` in their environment. The client identifies the terminal, and
+the PID identifies its Hypermux app instance. `hypermuxctl` talks to that socket (default
 `/tmp/hypermux-<uid>/hypermux.sock`). Build it with
 `swift build --product hypermuxctl`.
 

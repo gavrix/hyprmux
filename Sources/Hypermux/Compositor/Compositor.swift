@@ -244,6 +244,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         let id = allocateID()
         var opts = options
         opts.env["HYPERMUX_CLIENT"] = "\(id.raw)"
+        opts.env["HYPERMUX_PID"] = "\(getpid())"
         if let ipcPath { opts.env["HYPERMUX_SOCKET"] = ipcPath }
         let term = TerminalView(app: app, id: id, options: opts)
         guard term.surface != nil else {

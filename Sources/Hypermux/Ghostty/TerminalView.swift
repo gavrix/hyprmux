@@ -60,6 +60,7 @@ final class TerminalView: NSView, NSTextInputClient {
     init(app: ghostty_app_t, id: ClientID, options: SurfaceOptions) {
         self.clientID = id
         super.init(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
+        setAccessibilityIdentifier("hypermux-terminal-\(id.raw)")
 
         var cfg = ghostty_surface_config_new()
         cfg.userdata = Unmanaged.passUnretained(self).toOpaque()
@@ -514,6 +515,27 @@ final class TerminalView: NSView, NSTextInputClient {
     @objc func copy(_ sender: Any?) { performBindingAction("copy_to_clipboard") }
     @objc func paste(_ sender: Any?) { performBindingAction("paste_from_clipboard") }
     @objc override func selectAll(_ sender: Any?) { performBindingAction("select_all") }
+
+    // MARK: Accessibility
+
+    override func isAccessibilityElement() -> Bool { true }
+
+    override func accessibilityRole() -> NSAccessibility.Role? { .textArea }
+
+    override func accessibilityHelp() -> String? { "Terminal content area" }
+
+    override func accessibilityValue() -> Any? { accessibilitySelectedText() ?? "" }
+
+    override func accessibilitySelectedTextRange() -> NSRange { selectedRange() }
+
+    override func accessibilitySelectedText() -> String? {
+        guard let s = surface else { return nil }
+        var text = ghostty_text_s()
+        guard ghostty_surface_read_selection(s, &text) else { return nil }
+        defer { ghostty_surface_free_text(s, &text) }
+        guard let ptr = text.text, text.text_len > 0 else { return nil }
+        return String(decoding: Data(bytes: ptr, count: Int(text.text_len)), as: UTF8.self)
+    }
 
     // MARK: NSTextInputClient
 

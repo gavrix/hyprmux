@@ -122,8 +122,9 @@ hypermuxctl dispatch sim booted
 hypermuxctl clients            # JSON for every window
 ```
 
-Shells inside Hypermux get `HYPERMUX_SOCKET` and `HYPERMUX_CLIENT`, so
-`hypermuxctl` run there talks to the right instance.
+Shells inside Hypermux get `HYPERMUX_SOCKET`, `HYPERMUX_CLIENT`, and
+`HYPERMUX_PID`, so tools can identify their app instance and terminal while
+`hypermuxctl` talks to the right control socket.
 
 ## Documentation
 

@@ -120,6 +120,11 @@ final class ConfigTests: XCTestCase {
         XCTAssertEqual(try? Dispatcher.parse("monitorfullscreen", "").get(), .monitorFullscreen)
     }
 
+    func testSimDispatcher() {
+        XCTAssertEqual(try? Dispatcher.parse("sim", "").get(), .sim("booted"))
+        XCTAssertEqual(try? Dispatcher.parse("sim", "iPhone 17 Pro").get(), .sim("iPhone 17 Pro"))
+    }
+
     func testWebDispatchers() {
         XCTAssertEqual(try? Dispatcher.parse("web", "github.com").get(), .web("github.com"))
         XCTAssertEqual(try? Dispatcher.parse("webnav", "back").get(), .webNav(.back))

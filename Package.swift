@@ -22,7 +22,7 @@ let package = Package(
         // AppKit shell: window, compositor views, animations, libghostty surfaces.
         .executableTarget(
             name: "Hypermux",
-            dependencies: ["HypermuxCore", "GhosttyKit", "ChromiumBridge"],
+            dependencies: ["HypermuxCore", "GhosttyKit", "ChromiumBridge", "SimulatorBridge"],
             swiftSettings: [.swiftLanguageMode(.v5)],
             linkerSettings: [
                 .linkedLibrary("c++"),
@@ -60,6 +60,12 @@ let package = Package(
                 .unsafeFlags(["-fobjc-arc", "-Wno-deprecated-declarations"]),
             ],
             linkerSettings: [.linkedFramework("AppKit")]
+        ),
+        // iOS Simulator displays via Xcode's private CoreSimulator/SimulatorKit.
+        .target(
+            name: "SimulatorBridge",
+            cSettings: [.unsafeFlags(["-fobjc-arc"])],
+            linkerSettings: [.linkedFramework("IOSurface")]
         ),
         .executableTarget(
             name: "HypermuxHelper",

@@ -1,0 +1,208 @@
+// Compiled with ARC. All private API use is dynamic (NSClassFromString,
+// respondsToSelector:), so a changed Xcode fails with an error, not a crash.
+#import "SimulatorBridge.h"
+
+#import <dlfcn.h>
+
+// MARK: Private interfaces (declared so the compiler knows the selectors)
+
+@protocol HMPrivSimServiceContext <NSObject>
++ (id)sharedServiceContextForDeveloperDir:(NSString *)dir error:(NSError **)error;
+- (id)defaultDeviceSetWithError:(NSError **)error;
+@end
+
+@protocol HMPrivSimDevice <NSObject>
+@property (readonly) NSUUID *UDID;
+@property (readonly) NSString *name;
+@property (readonly) NSString *runtimeIdentifier;
+@property (readonly) id io;
+@end
+
+@protocol HMPrivIOClient <NSObject>
+@property (readonly) NSArray *ioPorts;
+@end
+
+@protocol HMPrivPort <NSObject>
+- (id)descriptor;
+@end
+
+@protocol HMPrivRenderable <NSObject>
+@property (readonly) id framebufferSurface;
+- (id)state;
+- (void)registerCallbackWithUUID:(NSUUID *)uuid ioSurfacesChangeCallback:(void (^)(id, id))cb;
+- (void)registerCallbackWithUUID:(NSUUID *)uuid damageRectanglesCallback:(void (^)(NSArray *))cb;
+- (void)unregisterIOSurfacesChangeCallbackWithUUID:(NSUUID *)uuid;
+- (void)unregisterDamageRectanglesCallbackWithUUID:(NSUUID *)uuid;
+@end
+
+@protocol HMPrivDisplayState <NSObject>
+@property (readonly) unsigned short displayClass;  // 0 = main display
+@end
+
+/// SimDevice.state: 3 = booted. Read via KVC; the display port also has a -state.
+static unsigned long long DeviceState(id d) {
+  return [[d valueForKey:@"state"] unsignedLongLongValue];
+}
+
+static NSError *HMErr(NSString *msg) {
+  return [NSError errorWithDomain:@"hypermux.simulator" code:1 userInfo:@{NSLocalizedDescriptionKey: msg}];
+}
+
+// MARK: - HMSimDeviceInfo
+
+@implementation HMSimDeviceInfo
+- (instancetype)initWithDevice:(id<HMPrivSimDevice>)d {
+  if ((self = [super init])) {
+    _udid = d.UDID.UUIDString;
+    _name = d.name ?: @"";
+    _runtime = [d respondsToSelector:@selector(runtimeIdentifier)] ? d.runtimeIdentifier : @"";
+    _booted = DeviceState(d) == 3;
+  }
+  return self;
+}
+@end
+
+// MARK: - HMSimulator
+
+@implementation HMSimulator
+
+static NSString *DeveloperDir(void) {
+  NSString *env = NSProcessInfo.processInfo.environment[@"DEVELOPER_DIR"];
+  if (env.length) return env;
+  NSTask *t = [NSTask new];
+  t.launchPath = @"/usr/bin/xcode-select";
+  t.arguments = @[ @"-p" ];
+  NSPipe *p = [NSPipe pipe];
+  t.standardOutput = p;
+  t.standardError = [NSFileHandle fileHandleWithNullDevice];
+  @try { [t launch]; [t waitUntilExit]; } @catch (NSException *e) { return nil; }
+  NSString *out = [[NSString alloc] initWithData:[p.fileHandleForReading readDataToEndOfFile] encoding:NSUTF8StringEncoding];
+  return [out stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+}
+
++ (BOOL)loadFrameworksWithError:(NSError **)error {
+  static BOOL loaded = NO;
+  static NSString *failure = nil;
+  static dispatch_once_t once;
+  dispatch_once(&once, ^{
+    NSString *dev = DeveloperDir();
+    if (!dev.length) { failure = @"no Xcode selected (xcode-select -p)"; return; }
+    NSArray *paths = @[
+      @"/Library/Developer/PrivateFrameworks/CoreSimulator.framework/CoreSimulator",
+      [dev stringByAppendingPathComponent:@"Library/PrivateFrameworks/SimulatorKit.framework/SimulatorKit"],
+    ];
+    for (NSString *path in paths) {
+      if (!dlopen(path.fileSystemRepresentation, RTLD_NOW | RTLD_GLOBAL)) {
+        failure = [NSString stringWithFormat:@"cannot load %@: %s", path.lastPathComponent, dlerror()];
+        return;
+      }
+    }
+    loaded = NSClassFromString(@"SimServiceContext") != nil;
+    if (!loaded) failure = @"CoreSimulator has no SimServiceContext";
+  });
+  if (!loaded && error) *error = HMErr(failure ?: @"cannot load simulator frameworks");
+  return loaded;
+}
+
++ (NSArray *)rawDevicesWithError:(NSError **)error {
+  if (![self loadFrameworksWithError:error]) return nil;
+  Class ctxClass = NSClassFromString(@"SimServiceContext");
+  id ctx = [(id<HMPrivSimServiceContext>)ctxClass sharedServiceContextForDeveloperDir:DeveloperDir() error:error];
+  if (!ctx) return nil;
+  id set = [ctx defaultDeviceSetWithError:error];
+  if (!set) return nil;
+  return [set respondsToSelector:@selector(devices)] ? [set valueForKey:@"devices"] : @[];
+}
+
++ (NSArray<HMSimDeviceInfo *> *)devicesWithError:(NSError **)error {
+  NSArray *raw = [self rawDevicesWithError:error];
+  if (!raw) return nil;
+  NSMutableArray *out = [NSMutableArray array];
+  for (id d in raw) [out addObject:[[HMSimDeviceInfo alloc] initWithDevice:d]];
+  return out;
+}
+
+@end
+
+// MARK: - HMSimDisplay
+
+@implementation HMSimDisplay {
+  id<HMPrivRenderable> _renderable;
+  NSUUID *_callbackID;
+  BOOL _stopped;
+}
+
+- (instancetype)initWithQuery:(NSString *)query error:(NSError **)error {
+  if (!(self = [super init])) return nil;
+  NSArray *devices = [HMSimulator rawDevicesWithError:error];
+  if (!devices) return nil;
+
+  id<HMPrivSimDevice> device = nil;
+  NSString *q = query.length ? query : @"booted";
+  for (id<HMPrivSimDevice> d in devices) {
+    BOOL match = [q isEqualToString:@"booted"] ? DeviceState(d) == 3
+               : ([d.UDID.UUIDString caseInsensitiveCompare:q] == NSOrderedSame || [d.name isEqualToString:q]);
+    // Prefer a booted match when several devices share a name.
+    if (match && (!device || (DeviceState(d) == 3 && DeviceState(device) != 3))) device = d;
+  }
+  if (!device) { if (error) *error = HMErr([NSString stringWithFormat:@"no simulator matches '%@'", q]); return nil; }
+  if (DeviceState(device) != 3) { if (error) *error = HMErr([NSString stringWithFormat:@"'%@' is not booted", device.name]); return nil; }
+  _udid = device.UDID.UUIDString;
+  _name = device.name;
+
+  // Find the main display among the device's IO ports.
+  id io = [(id)device respondsToSelector:@selector(io)] ? device.io : nil;
+  NSArray *ports = [io respondsToSelector:@selector(ioPorts)] ? [(id<HMPrivIOClient>)io ioPorts] : nil;
+  for (id port in ports) {
+    if (![port respondsToSelector:@selector(descriptor)]) continue;
+    id desc = [(id<HMPrivPort>)port descriptor];
+    if (![desc respondsToSelector:@selector(framebufferSurface)]) continue;
+    if ([desc respondsToSelector:@selector(state)]) {
+      id st = [(id<HMPrivRenderable>)desc state];
+      if ([st respondsToSelector:@selector(displayClass)] && [(id<HMPrivDisplayState>)st displayClass] != 0) continue;
+    }
+    _renderable = desc;
+    break;
+  }
+  if (!_renderable) { if (error) *error = HMErr(@"simulator has no main display port (Xcode changed?)"); return nil; }
+
+  _callbackID = [NSUUID UUID];
+  __weak HMSimDisplay *weakSelf = self;
+  if ([(id)_renderable respondsToSelector:@selector(registerCallbackWithUUID:ioSurfacesChangeCallback:)]) {
+    [_renderable registerCallbackWithUUID:_callbackID ioSurfacesChangeCallback:^(id a, id b) {
+      dispatch_async(dispatch_get_main_queue(), ^{ [weakSelf frameChanged]; });
+    }];
+  }
+  if ([(id)_renderable respondsToSelector:@selector(registerCallbackWithUUID:damageRectanglesCallback:)]) {
+    [_renderable registerCallbackWithUUID:_callbackID damageRectanglesCallback:^(NSArray *rects) {
+      dispatch_async(dispatch_get_main_queue(), ^{ [weakSelf frameChanged]; });
+    }];
+  }
+  return self;
+}
+
+- (IOSurfaceRef)surface {
+  if (_stopped) return NULL;
+  id s = _renderable.framebufferSurface;
+  return (__bridge IOSurfaceRef)s;
+}
+
+- (void)frameChanged {
+  if (_stopped) return;
+  if (self.onFrame) self.onFrame();
+}
+
+- (void)stop {
+  if (_stopped) return;
+  _stopped = YES;
+  if ([(id)_renderable respondsToSelector:@selector(unregisterIOSurfacesChangeCallbackWithUUID:)])
+    [_renderable unregisterIOSurfacesChangeCallbackWithUUID:_callbackID];
+  if ([(id)_renderable respondsToSelector:@selector(unregisterDamageRectanglesCallbackWithUUID:)])
+    [_renderable unregisterDamageRectanglesCallbackWithUUID:_callbackID];
+  _renderable = nil;
+  self.onFrame = nil;
+}
+
+- (void)dealloc { [self stop]; }
+
+@end

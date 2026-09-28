@@ -130,6 +130,9 @@ bind = $mod, grave, focuscurrentorlast
 # Web: new browser tile, address bar, back/forward/reload, Web Inspector.
 bind = $mod, B, web,
 bind = $mod, O, webnav, focusurl
+
+# iOS Simulator: show the booted simulator's screen in a tile.
+bind = $mod, I, sim, booted
 bind = $mod ALT, left, webnav, back
 bind = $mod ALT, right, webnav, forward
 bind = $mod ALT, R, webnav, reload

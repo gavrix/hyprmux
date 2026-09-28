@@ -45,6 +45,7 @@ installed Ghostty.app or cmux.app.
 | ⌘R | resize submap (h/j/k/l, Esc to leave) |
 | ⌘ + drag | move window (tiled: drop into place; floating: move) |
 | ⌘ + right-drag | resize window |
+| ⌘I | show the booted iOS Simulator in a tile (`sim [udid|name|booted]`) |
 | ⌃⌘F (or the green button) | fill the screen / back to a window |
 | ⇧⌘R / ⇧⌘M | reload config / exit |
 | ⌘B | new web tile (start page, cursor in the address bar) |
@@ -135,6 +136,9 @@ hypermuxctl sendtext 'ls\n'
 - `Sources/ChromiumBridge` — Objective-C++ bridge to CEF: an NSApplication
   subclass, lifecycle, and browsers as child NSViews. CEF runs in "Alloy" style
   (required for embedding), which still shows Chrome's passkey dialog.
+- `Sources/SimulatorBridge` — iOS Simulator displays through Xcode's private
+  CoreSimulator/SimulatorKit (the route idb and Radon IDE use): the device's
+  framebuffer IOSurface goes straight into a tile's layer. Display only so far.
 - `Sources/HypermuxHelper` — Chromium's helper process; the bundle script
   copies it into the four `Hypermux Helper*.app` bundles.
 - `vendor/cef` (fetched) — CEF headers, C++ wrapper sources (built by SwiftPM),

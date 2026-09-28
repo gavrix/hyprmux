@@ -1,6 +1,7 @@
 import AppKit
 import HypermuxCore
 import ChromiumBridge
+import SimulatorBridge
 
 /// Glue between the model (WindowManager), the monitor window, and terminal surfaces.
 final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindowDelegate {
@@ -232,6 +233,31 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         return web
     }
 
+    /// Shows a booted simulator's screen in a tile. The simulator keeps running when the tile closes.
+    private func spawnSim(_ query: String) {
+        let display: HMSimDisplay
+        do {
+            display = try HMSimDisplay(query: query)
+        } catch {
+            flash("Simulator: \(error.localizedDescription)")
+            return
+        }
+        let sim = SimulatorSurface(id: allocateID(), display: display)
+        sim.onClose = { [weak self] s in self?.removeClient(s.clientID) }
+        manage(sim)
+    }
+
+    /// Shows a message in the banner for a few seconds.
+    private func flash(_ message: String) {
+        transientNotes = [message]
+        if let last { updateChrome(last) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
+            guard let self, self.transientNotes == [message] else { return }
+            self.transientNotes = []
+            if let last = self.last { self.updateChrome(last) }
+        }
+    }
+
     private func manage(_ surface: Surface) {
         let v = ClientView(id: surface.clientID, surface: surface, decoration: Decoration(config))
         v.isHidden = true
@@ -247,6 +273,8 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
     private weak var lastTerminal: TerminalView?
     /// Focused client as of the last updateFocus, to tell focus changes from re-applies.
     private var lastFocusApplied: ClientID?
+    /// Short-lived messages shown in the banner (e.g. "no booted simulator").
+    private var transientNotes: [String] = []
 
     private func removeClient(_ id: ClientID) {
         guard let v = views.removeValue(forKey: id) else { return }
@@ -286,6 +314,8 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         case .close(let id):
             log.debug("killactive client=\(id.raw)")
             views[id]?.surface.requestClose()
+        case .spawnSim(let q):
+            DispatchQueue.main.async { [weak self] in self?.spawnSim(q) }
         case .spawnWeb(let url):
             DispatchQueue.main.async { [weak self] in self?.spawnWeb(url) }
         case .webNav(let id, let nav):
@@ -468,12 +498,13 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         hint.sizeToFit()
         hint.frame = CGRect(x: area.midX - 250, y: area.midY - hint.frame.height / 2, width: 500, height: hint.frame.height)
 
-        if config.errors.isEmpty {
+        let notes = config.errors + transientNotes
+        if notes.isEmpty {
             banner.isHidden = true
         } else {
             banner.isHidden = false
             let w = min(900, area.width - 40)
-            let h = banner.show(config.errors, width: w)
+            let h = banner.show(notes, width: w)
             banner.frame = CGRect(x: area.midX - w / 2, y: area.minY + 10, width: w, height: h)
         }
     }

@@ -116,7 +116,7 @@ final class BannerView: NSView {
 
     func show(_ errors: [String], width: CGFloat) -> CGFloat {
         let shown = errors.prefix(5) + (errors.count > 5 ? ["…and \(errors.count - 5) more"] : [])
-        label.stringValue = "Config errors:\n" + shown.joined(separator: "\n")
+        label.stringValue = shown.joined(separator: "\n")
         let size = label.sizeThatFits(CGSize(width: width - 24, height: 1000))
         label.frame = CGRect(x: 12, y: 8, width: width - 24, height: size.height)
         return size.height + 16

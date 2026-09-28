@@ -71,6 +71,7 @@ open -g -n \
   --env HYPERMUX_SOCKET=/tmp/hm-test/hypermux.sock \
   --env HYPERMUX_CONFIG=/tmp/hmcfg/hypermux.conf \
   --env HYPERMUX_CHROMIUM_PROFILE=/tmp/hm-chromium \
+  --env HYPERMUX_SESSION=/tmp/hm-test/session.json \
   /tmp/HypermuxTest.app
 export HYPERMUX_SOCKET=/tmp/hm-test/hypermux.sock
 hypermuxctl dispatch exec
@@ -84,6 +85,8 @@ Why each setting:
   from the person using the machine.
 - **Separate socket, config, and Chromium profile:** Chromium allows one
   process per profile, and the IPC socket would clash.
+- **Separate session file:** without it, the test instance restores the
+  user's session on launch and overwrites it on quit.
 - **`follow_mouse = 0`:** the real pointer moving over the test window would
   move focus mid-test.
 

@@ -265,6 +265,63 @@ workspace = 2, defaultName:mail
 A name you set with ⌘N wins over the rule's until you clear it. Names stay when a
 workspace empties. Other workspace-rule keys are accepted and ignored.
 
+### Session restore
+
+When Hypermux quits, it saves the session, and the next launch brings it back:
+workspaces and their names, the split layout, floating windows, groups, focus,
+and what each tile showed. It also saves every 30 seconds and shortly after any
+layout change, so a crash loses little. The file is
+`~/Library/Application Support/Hypermux/session.json` (the environment variable
+`HYPERMUX_SESSION` moves it). The session from the launch before is kept next to
+it as `session-previous.json`.
+
+What comes back:
+
+- **Terminals:** a new shell in the same directory. If a program on the
+  `programs` list was running in the foreground, it starts again with the same
+  arguments, typed into the shell, so the shell stays when it exits.
+- **Agent sessions:** an agent that reported its session (below) resumes with the
+  command from `resume`.
+- **Web tiles:** the page they were on.
+- **Simulators:** the same device, if it's still booted. If not, the tile is
+  skipped and a warning says so.
+
+Anything else comes back as an empty terminal or a start page. A restored launch
+skips `exec-once` and `exec`, so startup terminals don't appear twice.
+
+```ini
+session {
+    restore = true
+    programs = nvim, vim, lazygit, htop, btop, less, man
+    # programs = *          # any program…
+    # deny = ssh, make      # …except these
+    resume {
+        pi = mywrapper pi --session {id}
+        codex = codex resume {id}
+    }
+}
+```
+
+| Option | Default | Meaning |
+|---|---|---|
+| `restore` | true | Restore the last session on launch. |
+| `programs` | `nvim, vim, lazygit, htop, btop, less, man` | Foreground programs that start again. `*` allows any. Only these re-run: a restart must not repeat a deploy. |
+| `deny` | — | Programs never re-run, even with `programs = *`. |
+| `resume:KIND` | `pi`, `codex` | The command that resumes an agent session of that kind. `{id}` is the session id. |
+
+**Agent sessions.** An agent tells Hypermux which session its terminal holds with
+one line on the control socket (`hypermuxctl resume '{…}'` works too):
+
+```json
+resume {"client": 12, "pid": 4711, "kind": "pi", "session": "01a0…", "cwd": "/src/app", "file": "/…/session.jsonl"}
+```
+
+`client` is the terminal's `HYPERMUX_CLIENT`, and `pid` is the agent's process.
+The report counts only while that process runs in the terminal's foreground, and,
+when `file` is given, while that file exists. So an agent you exited comes back as
+a plain shell. For pi, `~/.pi/agent/extensions/hypermux-session.ts` sends the
+report on every session start (launch, `/new`, `/resume`, fork).
+
 ### Startup programs
 
 ```ini
@@ -362,5 +419,6 @@ environment. `hypermuxctl` talks to that socket (default
 | `senddrag <MODS>, <button>, <x1 y1>, <x2 y2>` | Injects a paced drag (about 16 ms per step). |
 | `hittest <x y>` | Which views a click at that point reaches. |
 | `debug` | Focus internals: app active, key window, first responder, and which window holds the keyboard. |
+| `resume {json}` | An agent reports how to bring its terminal back. See [Session restore](#session-restore). |
 
 Coordinates are in the Hypermux window's space, from the top-left.

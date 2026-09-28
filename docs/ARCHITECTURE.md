@@ -222,6 +222,26 @@ Hyprland overlay layer: elements sit above every tile and never tile.
 - **Chrome:** `BarView` shows workspaces, the focused title, the scratchpad,
   and the submap. Config errors and short messages are HUD notifications.
 
+### Session restore
+
+- **Schema and model in the core:** `SessionState` (JSON) holds workspaces,
+  split trees, floating rects as fractions of the work area, groups, focus, and
+  names. `WindowManager.exportSession` and `restoreSession` take closures: the
+  app describes each client as a `SessionTile`, and creates a client from one.
+  A tile the app skips collapses its split. `RestorePolicy` decides which
+  foreground programs re-run and turns agent reports into resume commands.
+- **Describing a terminal** (`Compositor+Session.swift`): the directory comes
+  from OSC 7, else the foreground process. libghostty reports the foreground
+  process group (`ghostty_surface_foreground_pid`); `ProcessInspector` reads its
+  argv (`KERN_PROCARGS2`) and directory (`proc_pidinfo`). An agent's
+  `ResumeReport` wins while its PID is in that group.
+- **Restoring:** surfaces are created and adopted (views only), then the model
+  places them. A restored command is the shell's `initial_input`, so the shell
+  survives the program.
+- **When it saves:** 2 s after `apply`, every 30 s, and on quit, before the
+  shells close. CEF's quit path skips `applicationShouldTerminate`, so
+  `main.swift`'s terminate handler saves too.
+
 ### Config
 
 - **Parsing:** `ConfigParser` turns hyprlang-style text into `HypermuxConfig`

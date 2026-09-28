@@ -115,6 +115,9 @@ public struct HypermuxConfig: Sendable {
     public var execOnce: [String] = []
     public var exec: [String] = []
     public var backgroundColor = Color(r: 0.07, g: 0.07, b: 0.1)
+    /// "fill": cover the display on the normal desktop (wallpaper stays visible behind
+    /// a transparent window). "native": macOS full screen on its own Space.
+    public var fullscreenStyle = "fill"
     /// Extra lines handed to libghostty's config (from a `ghostty { ... }` block).
     public var ghostty: [String] = []
     public var errors: [String] = []
@@ -358,6 +361,9 @@ public enum ConfigParser {
             case "web:engine":
                 let v = value.lowercased()
                 if v == "webkit" || v == "chromium" { config.webEngine = v } else { error(file, line, "web:engine: expected webkit or chromium") }
+            case "misc:fullscreen_style":
+                let v = value.lowercased()
+                if v == "fill" || v == "native" { config.fullscreenStyle = v } else { error(file, line, "misc:fullscreen_style: expected fill or native") }
             case "hypermux:float_size": if let v = num() { config.wm.floatSizeFraction = min(max(v, 0.1), 1) }
             default:
                 // Unknown keys are reported but never fatal, so Hyprland configs mostly load.

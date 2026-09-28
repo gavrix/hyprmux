@@ -115,6 +115,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    @objc func toggleMonitorFullscreen() { compositor.toggleMonitorFullscreen() }
+
     @objc func reloadConfig() {
         var c = Self.loadConfig()
         c.errors += startupNotes
@@ -161,7 +163,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         main.addItem(winItem)
         let win = NSMenu(title: "Window")
         win.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
-        win.addItem(withTitle: "Toggle Full Screen", action: #selector(NSWindow.toggleFullScreen(_:)), keyEquivalent: "")
+        win.addItem(withTitle: "Toggle Full Screen", action: #selector(toggleMonitorFullscreen), keyEquivalent: "")
         winItem.submenu = win
         NSApp.windowsMenu = win
         NSApp.mainMenu = main

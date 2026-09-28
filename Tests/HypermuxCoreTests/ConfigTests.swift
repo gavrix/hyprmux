@@ -113,6 +113,12 @@ final class ConfigTests: XCTestCase {
         XCTAssertEqual(ConfigParser.parse("web:engine = gecko").errors.count, 1)
     }
 
+    func testFullscreenStyle() {
+        XCTAssertEqual(ConfigParser.parse("").fullscreenStyle, "fill")
+        XCTAssertEqual(ConfigParser.parse("misc {\n    fullscreen_style = native\n}").fullscreenStyle, "native")
+        XCTAssertEqual(try? Dispatcher.parse("monitorfullscreen", "").get(), .monitorFullscreen)
+    }
+
     func testWebDispatchers() {
         XCTAssertEqual(try? Dispatcher.parse("web", "github.com").get(), .web("github.com"))
         XCTAssertEqual(try? Dispatcher.parse("webnav", "back").get(), .webNav(.back))

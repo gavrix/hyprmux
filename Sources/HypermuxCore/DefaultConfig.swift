@@ -76,6 +76,9 @@ binds {
 }
 
 misc {
+    # fill: full screen on the normal desktop, so a transparent background still
+    # shows the wallpaper. native: macOS full screen on its own Space (black behind).
+    fullscreen_style = fill
     # Behind the windows. An alpha below 1 makes hypermux see-through:
     # rgba(00000000) shows the desktop in the gaps. (Native fullscreen puts the
     # window on its own Space, where there is only black behind it.)
@@ -118,6 +121,7 @@ bind = $mod SHIFT, R, reload
 bind = $mod SHIFT, Space, togglefloating
 bind = $mod, F, fullscreen, 1
 bind = $mod SHIFT, F, fullscreen, 0
+bind = $mod CTRL, F, monitorfullscreen
 bind = $mod, E, togglesplit
 bind = $mod SHIFT, E, swapsplit
 bind = $mod, C, centerwindow

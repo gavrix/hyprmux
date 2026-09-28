@@ -70,6 +70,8 @@ public enum Dispatcher: Equatable, Sendable {
     case focusCurrentOrLast
     case centerWindow
     case submap(String)
+    /// Toggle the monitor window between windowed and full screen (see misc:fullscreen_style).
+    case monitorFullscreen
     case reload
     case exit
 
@@ -127,6 +129,7 @@ public enum Dispatcher: Equatable, Sendable {
         case "focuscurrentorlast": return .success(.focusCurrentOrLast)
         case "centerwindow": return .success(.centerWindow)
         case "submap": return .success(.submap(a.isEmpty ? "reset" : a))
+        case "monitorfullscreen": return .success(.monitorFullscreen)
         case "reload", "forcerendererreload": return .success(.reload)
         case "exit": return .success(.exit)
         default: return .failure(.init("unknown dispatcher '\(name)'"))

@@ -8,7 +8,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
     private(set) var config: HypermuxConfig
     let wm: WindowManager
 
-    let window: NSWindow
+    let window: MonitorWindow
     let root: CompositorView
     private let bar = BarView()
     private let banner = BannerView()
@@ -47,9 +47,9 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         self.config = config
         let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
         let frame = screen.insetBy(dx: screen.width * 0.04, dy: screen.height * 0.04)
-        window = NSWindow(
+        window = MonitorWindow(
             contentRect: frame,
-            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+            styleMask: MonitorWindow.windowedStyle,
             backing: .buffered, defer: false)
         root = CompositorView(frame: NSRect(origin: .zero, size: frame.size))
         animator = Animator(hostView: root)
@@ -61,7 +61,8 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         window.titlebarAppearsTransparent = true
         window.isMovableByWindowBackground = false
         window.acceptsMouseMovedEvents = true
-        window.collectionBehavior = [.fullScreenPrimary]
+        // Fill style: the green button zooms (we turn that into fill); native: real full screen.
+        window.collectionBehavior = config.fullscreenStyle == "native" ? [.fullScreenPrimary] : [.fullScreenNone]
         window.contentView = root
         window.delegate = self
         window.isReleasedWhenClosed = false
@@ -82,10 +83,18 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         applyConfigVisuals()
         monitorChanged(animated: false)
         installEventMonitors()
+        let nc = NotificationCenter.default
+        nc.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.window.refit()
+        }
+        nc.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.window.applyPresentation()
+        }
     }
 
     func start() {
         window.makeKeyAndOrderFront(nil)
+        if config.fullscreenStyle == "fill", MonitorWindow.wasFilledAtQuit { setMonitorFullscreen(true) }
         let startup = config.execOnce + config.exec
         if startup.isEmpty {
             spawn(command: "", inheritFrom: nil)
@@ -100,6 +109,8 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         let ghosttyChanged = newConfig.ghostty != config.ghostty
         config = newConfig
         wm.settings = newConfig.wm
+        window.collectionBehavior = newConfig.fullscreenStyle == "native" ? [.fullScreenPrimary] : [.fullScreenNone]
+        if newConfig.fullscreenStyle == "native", window.isFilled { window.exitFill() }
         if ghosttyChanged { runtime.reload(extraConfig: newConfig.ghostty) }
         if submap != "reset" && !newConfig.binds.contains(where: { $0.submap == submap }) { submap = "reset" }
         applyConfigVisuals()
@@ -284,6 +295,8 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
             bar.submap = name
         case .reload:
             NotificationCenter.default.post(name: .hypermuxReloadConfig, object: nil)
+        case .monitorFullscreen:
+            toggleMonitorFullscreen()
         case .exit:
             NSApp.terminate(nil)
         }
@@ -783,7 +796,32 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
     }
 
     func terminalDidToggleWindowFullscreen(_ view: TerminalView) {
-        window.toggleFullScreen(nil)
+        toggleMonitorFullscreen()
+    }
+
+    // MARK: Monitor full screen
+
+    @objc func toggleMonitorFullscreen() {
+        if config.fullscreenStyle == "native" {
+            window.toggleFullScreen(nil)
+        } else {
+            setMonitorFullscreen(!window.isFilled)
+        }
+    }
+
+    private func setMonitorFullscreen(_ on: Bool) {
+        if on { window.enterFill() } else { window.exitFill() }
+        // Style-mask changes can reset these.
+        applyConfigVisuals()
+        monitorChanged(animated: true)
+        if let last { updateFocus(last) }
+    }
+
+    /// Green button in fill style: fill instead of zooming.
+    func windowShouldZoom(_ window: NSWindow, toFrame newFrame: NSRect) -> Bool {
+        guard config.fullscreenStyle == "fill" else { return true }
+        setMonitorFullscreen(true)
+        return false
     }
 
     func terminal(_ view: TerminalView, openURL url: URL) -> Bool {

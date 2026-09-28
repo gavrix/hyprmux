@@ -45,6 +45,7 @@ installed Ghostty.app or cmux.app.
 | ⌘R | resize submap (h/j/k/l, Esc to leave) |
 | ⌘ + drag | move window (tiled: drop into place; floating: move) |
 | ⌘ + right-drag | resize window |
+| ⌃⌘F (or the green button) | fill the screen / back to a window |
 | ⇧⌘R / ⇧⌘M | reload config / exit |
 | ⌘B | new web tile (start page, cursor in the address bar) |
 | ⌘O | focus the address bar (Enter goes, Esc returns to the page) |
@@ -72,7 +73,9 @@ see-through. `decoration:inactive_opacity` / `active_opacity` fade window
 content (animated with `fadeSwitch`). `decoration:blur:enabled` adds a macOS
 frosted-glass blur behind each window. Shadows are drawn only outside windows,
 so they don't show through. Native fullscreen puts the window on its own Space,
-with only black behind it, so use a zoomed window for transparency.
+with only black behind it. The default `misc:fullscreen_style = fill` avoids
+that: full screen makes the window borderless and screen-sized on the normal
+desktop, and auto-hides the menu bar and Dock while Hypermux is in front.
 
 Web tiles: `web { home, search, open_terminal_links, address_bar }`. The
 address bar takes URLs, hosts (`github.com/x`, `localhost:3000`), paths, or

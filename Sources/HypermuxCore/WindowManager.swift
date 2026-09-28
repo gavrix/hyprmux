@@ -30,6 +30,7 @@ public enum Effect: Equatable, Sendable {
     case webNav(ClientID, WebNav)
     case close(ClientID)
     case submap(String)
+    case monitorFullscreen
     case reload
     case exit
 }
@@ -187,6 +188,7 @@ public final class WindowManager {
         case .focusCurrentOrLast: focusCurrentOrLast()
         case .centerWindow: centerWindow()
         case .submap(let name): perform(.submap(name))
+        case .monitorFullscreen: perform(.monitorFullscreen)
         case .reload: perform(.reload)
         case .exit: perform(.exit)
         }

@@ -243,6 +243,28 @@ The mouse works too: hover selects a row, a click chooses it, and the wheel scro
 |---|---|---|
 | `float_size` | 0.6 | Size of a window floated for the first time, as a fraction of the screen. |
 
+### Workspaces
+
+Workspaces are numbered, and ⌘1…9 always reach them by number. A workspace can
+also have a name, shown after its number in the bar (`2 mail`).
+
+- **Name the current one:** ⌘N (`picker, renameworkspace`) opens a prompt with
+  the current name. An empty name clears it.
+- **Go to one:** ⌘P (`picker, workspace`) lists workspaces with windows, a name,
+  or focus. Type to filter by number or name. A number or name that isn't listed
+  goes there; a new name makes a workspace with that name on the first free number.
+- **Move the window to one:** ⇧⌘P (`picker, movetoworkspace`) works the same and
+  also lists the scratchpads your binds use. `movetoworkspacesilent` stays behind.
+- **Names in the config:** Hyprland workspace rules set default names:
+
+```ini
+workspace = 1, defaultName:main
+workspace = 2, defaultName:mail
+```
+
+A name you set with ⌘N wins over the rule's until you clear it. Names stay when a
+workspace empties. Other workspace-rule keys are accepted and ignored.
+
 ### Startup programs
 
 ```ini
@@ -299,8 +321,10 @@ These names work in `bind` lines and with `hypermuxctl dispatch`.
 | `swapwindow` | `l` `r` `u` `d` | Swap with the neighbor. |
 | `resizeactive` | `dx dy` | Grow or shrink the focused window. |
 | `moveactive` | `dx dy` | Move a floating window. |
-| `workspace` | `N`, `+1`/`-1`, `e+1`/`e-1`, `previous`, `empty`, `special[:name]` | Switch workspace. `e±1` skips empty workspaces. |
+| `workspace` | `N`, `+1`/`-1`, `e+1`/`e-1`, `previous`, `empty`, `special[:name]`, `name:NAME` | Switch workspace. `e±1` skips empty workspaces. `name:` finds the workspace with that name, or names the first free number. |
 | `movetoworkspace` / `movetoworkspacesilent` | same | Move the focused window there (and follow it, or stay). |
+| `renameworkspace` | `N [name]` | Name workspace N. No name clears it. |
+| `picker` | `workspace`, `movetoworkspace`, `movetoworkspacesilent`, `renameworkspace` | Hypermux's own pickers: go to a workspace, move the window to one, or name the current one. See [Workspaces](#workspaces). |
 | `togglespecialworkspace` | [name] | Show or hide a scratchpad. |
 | `togglefloating` | | Float or re-tile. A first float centers the window; re-tiling returns it to its old slot. |
 | `fullscreen` | `0` or `1` | 0 = cover the screen, 1 = maximize within gaps. |

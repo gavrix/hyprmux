@@ -53,7 +53,8 @@ positions a tile on its own authority.
 - **Clients** are `ClientID`s. The model doesn't know whether a client is a
   terminal or a browser.
 - **Workspaces** are `.regular(n)` or `.special(name)`, created on demand and
-  dropped when empty. One regular workspace is shown, plus optionally one
+  dropped when empty. Regular ones can have names, kept in the manager rather
+  than the workspace, so a name outlives an emptied workspace. One regular workspace is shown, plus optionally one
   special workspace (the scratchpad) on top.
 - **Tiling** is a `DwindleLayout` per workspace, a binary tree modeled on
   Hyprland's dwindle layout:

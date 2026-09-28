@@ -12,7 +12,7 @@ configured in `hyprland.conf` syntax that reloads when you save it.
   and mouse resizing, floating windows (the first float centers, re-tiling returns
   to the old spot), and fullscreen or maximize.
 - **Workspaces:** numbered workspaces that slide like Hyprland's, plus a scratchpad
-  (special workspace).
+  (special workspace). Workspaces can have names, shown next to the number.
 - **Groups:** several windows as tabs in one tile, with a tab strip. Groups float,
   move, and fullscreen as a whole.
 - **Terminals:** a full Ghostty terminal in each tile, with your Ghostty config,
@@ -32,7 +32,7 @@ configured in `hyprland.conf` syntax that reloads when you save it.
   your window borders. Config errors, warnings, and terminal notifications
   (OSC 9 and OSC 777) show up there.
 - **Pickers:** fzf-style lists in the same style, for choosing among several
-  things (booted simulators for now). Type to filter, Return to choose.
+  things: workspaces, booted simulators. Type to filter, Return to choose.
 - **Scripting:** `hypermuxctl`, a `hyprctl`-like CLI over a Unix socket.
 
 ## Requirements
@@ -82,6 +82,8 @@ other Macs needs a Developer ID signature and notarization.
 | ⇧⌘H/J/K/L | move the window |
 | ⌃⌘H/J/K/L, or ⌘R then H/J/K/L | resize |
 | ⌘1…9 / ⇧⌘1…9 | switch workspace / move the window there |
+| ⌘P / ⇧⌘P | pick a workspace to go to / to move the window to |
+| ⌘N | name the current workspace |
 | ⌘S | scratchpad |
 | ⇧⌘Space | float / re-tile |
 | ⌘F / ⇧⌘F | maximize / fullscreen the window |

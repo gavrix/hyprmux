@@ -24,8 +24,8 @@ final class NotificationStack {
     /// A `key` updates an existing notice in place instead of adding one.
     @discardableResult
     func post(_ level: NoticeLevel, title: String = "", _ body: String,
-              sticky: Bool = false, key: String? = nil, source: ClientID? = nil) -> Notice.ID {
-        let t = settings.notificationTimeout
+              sticky: Bool = false, timeout: Double? = nil, key: String? = nil, source: ClientID? = nil) -> Notice.ID {
+        let t = timeout ?? settings.notificationTimeout
         let n = Notice(level: level, title: title, body: body,
                        timeout: sticky || t <= 0 ? nil : t, key: key, source: source)
         let id = queue.post(n, now: now)

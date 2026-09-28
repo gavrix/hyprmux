@@ -162,6 +162,11 @@ session {
     }
 }
 
+hypermux {
+    # ⌘Q quits only when pressed twice within two seconds.
+    confirm_quit = true
+}
+
 # Web surfaces (WebKit for now).
 web {
     # webkit: light, native, but no passkeys (Apple only allows them in approved browsers).

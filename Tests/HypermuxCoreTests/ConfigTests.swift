@@ -14,6 +14,12 @@ final class ConfigTests: XCTestCase {
         XCTAssertTrue(c.ghostty.contains("window-padding-x = 8"))
     }
 
+    func testConfirmQuit() {
+        XCTAssertTrue(ConfigParser.parse(defaultConfig).confirmQuit)
+        XCTAssertTrue(HypermuxConfig().confirmQuit)
+        XCTAssertFalse(ConfigParser.parse("hypermux:confirm_quit = false").confirmQuit)
+    }
+
     func testEmbeddedDefaultMatchesRepoFile() throws {
         let file = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()

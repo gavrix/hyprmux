@@ -163,7 +163,9 @@ final class GhosttyRuntime {
         let v = view(target)
         switch action.tag {
         case GHOSTTY_ACTION_QUIT:
-            NSApp.terminate(nil)
+            // Ghostty's own ⌘Q binding. The focused terminal sees ⌘Q before the menu does,
+            // so this is the usual path; it goes through the same press-twice check.
+            (NSApp.delegate as? AppDelegate)?.quitPressed(nil)
         case GHOSTTY_ACTION_NEW_WINDOW, GHOSTTY_ACTION_NEW_TAB, GHOSTTY_ACTION_NEW_SPLIT:
             guard let v else { return false }
             v.host?.terminalDidRequestSpawn(v)

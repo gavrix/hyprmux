@@ -117,6 +117,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func toggleMonitorFullscreen() { compositor.toggleMonitorFullscreen() }
 
+    /// Until when a second ⌘Q quits.
+    private var quitArmedUntil: Date?
+    private static let quitWindow: TimeInterval = 2
+
+    /// ⌘Q: the first press shows "Press ⌘Q again to quit"; a second one within two seconds
+    /// quits. An accidental ⌘Q would otherwise close every shell at once.
+    @objc func quitPressed(_ sender: Any?) {
+        guard let compositor, compositor.config.confirmQuit else {
+            NSApp.terminate(sender)
+            return
+        }
+        if let t = quitArmedUntil, Date() < t {
+            quitArmedUntil = nil
+            NSApp.terminate(sender)
+            return
+        }
+        quitArmedUntil = Date().addingTimeInterval(Self.quitWindow)
+        compositor.hud.notifications.post(.info, "Press ⌘Q again to quit", timeout: Self.quitWindow, key: "quit")
+    }
+
     @objc func reloadConfig() {
         var c = Self.loadConfig()
         c.errors += startupNotes
@@ -160,7 +180,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         app.addItem(withTitle: "Open Config…", action: #selector(openConfig), keyEquivalent: ",")
         app.addItem(withTitle: "Reload Config", action: #selector(reloadConfig), keyEquivalent: "")
         app.addItem(.separator())
-        app.addItem(withTitle: "Quit Hypermux", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        // ⌘Q goes through quitPressed (press twice); the Dock's Quit, logout, and `exit` don't.
+        app.addItem(withTitle: "Quit Hypermux", action: #selector(quitPressed(_:)), keyEquivalent: "q")
         appItem.submenu = app
 
         let editItem = NSMenuItem()

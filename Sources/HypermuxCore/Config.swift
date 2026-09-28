@@ -420,6 +420,8 @@ public enum ConfigParser {
             case "hud:notifications:timeout": if let v = num() { config.hud.notificationTimeout = max(0, v) / 1000 }
             case "hud:notifications:max_visible": if let v = num() { config.hud.maxNotifications = max(1, Int(v)) }
             case "hud:notifications:width": if let v = num() { config.hud.notificationWidth = min(max(v, 160), 1200) }
+            case "hud:picker:width": if let v = num() { config.hud.pickerWidth = min(max(v, 240), 1600) }
+            case "hud:picker:max_rows": if let v = num() { config.hud.pickerMaxRows = min(max(1, Int(v)), 40) }
             case "hypermux:float_size": if let v = num() { config.wm.floatSizeFraction = min(max(v, 0.1), 1) }
             default:
                 // Unknown keys are reported but never fatal, so Hyprland configs mostly load.

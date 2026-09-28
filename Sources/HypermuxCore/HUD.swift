@@ -60,6 +60,9 @@ public struct HUDSettings: Equatable, Sendable {
     public var notificationTimeout: Double = 5
     public var maxNotifications = 5
     public var notificationWidth: Double = 380
+    /// Pickers (menus, selection lists) open centered in the window.
+    public var pickerWidth: Double = 600
+    public var pickerMaxRows = 10
 
     public init() {}
 }

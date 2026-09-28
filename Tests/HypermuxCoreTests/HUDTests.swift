@@ -90,6 +90,10 @@ final class HUDLayoutTests: XCTestCase {
                 max_visible = 3
                 width = 420
             }
+            picker {
+                width = 700
+                max_rows = 8
+            }
         }
         """)
         XCTAssertEqual(c.errors, [])
@@ -99,6 +103,8 @@ final class HUDLayoutTests: XCTestCase {
         XCTAssertEqual(c.hud.notificationTimeout, 2.5)
         XCTAssertEqual(c.hud.maxNotifications, 3)
         XCTAssertEqual(c.hud.notificationWidth, 420)
+        XCTAssertEqual(c.hud.pickerWidth, 700)
+        XCTAssertEqual(c.hud.pickerMaxRows, 8)
         XCTAssertEqual(ConfigParser.parse("hud:notifications:position = nowhere").errors.count, 1)
         let defaults = ConfigParser.parse(defaultConfig).hud
         XCTAssertNil(defaults.fontFamily)

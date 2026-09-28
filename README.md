@@ -134,6 +134,15 @@ Shells inside Hyprmux get `HYPRMUX_SOCKET`, `HYPRMUX_CLIENT`, and
 - [Development](docs/DEVELOPMENT.md): building, testing in a separate instance,
   the test tools, and pitfalls.
 
+## Security
+
+The control socket lives in `/tmp/hyprmux-<uid>/`, a directory only your user
+can open. Any program running as you can use it, though: it can type into your
+terminals (`sendtext`, `sendkey`), run dispatchers, and register the command a
+terminal comes back with after a restart (`resume`). That's the same trust
+model as tmux's socket. Session restore re-runs only the programs you list in
+`session:programs`.
+
 ## Limitations
 
 - **One monitor:** one Hyprmux window acts as the monitor; there's no

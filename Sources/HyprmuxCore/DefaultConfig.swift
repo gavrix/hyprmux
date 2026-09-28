@@ -167,7 +167,7 @@ hyprmux {
     confirm_quit = true
 }
 
-# Web surfaces (WebKit for now).
+# Web surfaces.
 web {
     # webkit: light, native, but no passkeys (Apple only allows them in approved browsers).
     # chromium: bundled Chromium (CEF). Passkeys from your phone or a security key work,

@@ -900,7 +900,8 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
                 scheduleSessionSave()
                 return "ok"
             case .version:
-                return "hyprmux 0.1.0"
+                let v = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+                return "hyprmux \(v ?? "dev")"
             case .debug:
                 let fr = window.firstResponder
                 var frDesc = fr.map { String(describing: type(of: $0)) } ?? "nil"

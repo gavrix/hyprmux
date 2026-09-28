@@ -124,6 +124,8 @@ public struct HypermuxConfig: Sendable {
     // Groups (tabbed windows).
     public var groupActiveBorder = Gradient([Color(r: 1, g: 0.67, b: 0.2, a: 0.93), Color(r: 1, g: 0.37, b: 0.37, a: 0.93)], angle: 45)
     public var groupInactiveBorder = Gradient([Color(r: 0.47, g: 0.33, b: 0.2, a: 0.67)])
+    /// Border width for grouped windows; nil = general:border_size.
+    public var groupBorderSize: Double?
     public var groupbarEnabled = true
     public var groupbarHeight: Double = 20
     public var groupbarFontSize: Double = 11
@@ -387,6 +389,7 @@ public enum ConfigParser {
             case "misc:fullscreen_style":
                 let v = value.lowercased()
                 if v == "fill" || v == "native" { config.fullscreenStyle = v } else { error(file, line, "misc:fullscreen_style: expected fill or native") }
+            case "group:border_size": if let v = num() { config.groupBorderSize = max(0, v) }
             case "group:auto_group": if let v = bool() { config.wm.autoGroup = v }
             case "group:col.border_active": if let g = gradient() { config.groupActiveBorder = g }
             case "group:col.border_inactive": if let g = gradient() { config.groupInactiveBorder = g }

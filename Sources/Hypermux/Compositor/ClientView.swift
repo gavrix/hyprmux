@@ -183,11 +183,14 @@ final class ClientView: NSView, Animatable {
     /// `opacityAnimation` is Hyprland's fadeSwitch: the active/inactive opacity change.
     func setDecoration(_ d: Decoration, active: Bool, borderDuration: Double, opacityAnimation: (Double, Bezier)? = nil) {
         let changed = d != decoration || active != isActive
+        let borderChanged = d.borderSize != decoration.borderSize
         decoration = d
         isActive = active
         guard changed else { return }
         applyDecoration(animated: borderDuration > 0, duration: borderDuration)
         applyOpacity(animation: opacityAnimation)
+        // The content sits inside the border, so a new width resizes it.
+        if borderChanged { layoutContent() }
     }
 
     private var contentOpacity: CGFloat { isActive ? decoration.activeOpacity : decoration.inactiveOpacity }

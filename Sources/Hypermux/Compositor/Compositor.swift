@@ -412,6 +412,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
             if p.group != nil {
                 d.activeBorder = config.groupActiveBorder
                 d.inactiveBorder = config.groupInactiveBorder
+                if let w = config.groupBorderSize { d.borderSize = w }
             }
             // Hidden tabs look "active" too, so a tab switch doesn't flash dimmed content.
             let isActive = p.focused || (p.group.map { $0.members.contains(snap.focused ?? ClientID(0)) } ?? false)

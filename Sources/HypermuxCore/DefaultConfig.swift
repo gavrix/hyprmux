@@ -99,6 +99,8 @@ ghostty {
 group {
     # New windows opened while a group is focused join it as a tab.
     auto_group = true
+    # Border width for groups (default: general:border_size).
+    # border_size = 3
     col.border_active = rgba(ffaa33ee) rgba(ff5f5fee) 45deg
     col.border_inactive = rgba(775533aa)
     groupbar {

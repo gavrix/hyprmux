@@ -114,6 +114,13 @@ final class ConfigTests: XCTestCase {
         XCTAssertEqual(ConfigParser.parse("web:engine = gecko").errors.count, 1)
     }
 
+    func testGroupBorderSize() {
+        XCTAssertNil(ConfigParser.parse("").groupBorderSize)
+        let c = ConfigParser.parse("group {\n    border_size = 4\n}")
+        XCTAssertEqual(c.errors, [])
+        XCTAssertEqual(c.groupBorderSize, 4)
+    }
+
     func testFullscreenStyle() {
         XCTAssertEqual(ConfigParser.parse("").fullscreenStyle, "fill")
         XCTAssertEqual(ConfigParser.parse("misc {\n    fullscreen_style = native\n}").fullscreenStyle, "native")

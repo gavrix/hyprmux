@@ -71,7 +71,7 @@ public enum IPCRequest: Equatable {
             let p = rest[rest.index(after: sp)...].split(separator: ",", omittingEmptySubsequences: false)
                 .map { $0.trimmingCharacters(in: .whitespaces) }
             let xy = p.count == 3 ? p[2].split(separator: " ").compactMap { Double($0) } : []
-            guard ["down", "drag", "up"].contains(phase), p.count == 3, case .success(let m) = Modifiers.parse(p[0]),
+            guard ["down", "drag", "up", "move"].contains(phase), p.count == 3, case .success(let m) = Modifiers.parse(p[0]),
                   let b = Int(p[1]), xy.count == 2 else {
                 return .failure(ParseError("sendmouse: expected 'down|drag|up MODS, button, x y'"))
             }

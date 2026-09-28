@@ -627,6 +627,9 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         guard e.window === window, drag == nil else { return }
         let p = point(e)
         wm.cursor = p
+        // Views track the mouse even while Hypermux is in the background. Without this,
+        // passing the pointer over the window from another app silently moved focus.
+        guard NSApp.isActive, window.isKeyWindow else { return }
         guard config.followMouse == 1, let id = wm.client(at: p), id != wm.focused else { return }
         log.debug("focus reason=mouse client=\(id.raw)")
         wm.focus(id)
@@ -746,8 +749,16 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
                 let fr = window.firstResponder
                 var frDesc = fr.map { String(describing: type(of: $0)) } ?? "nil"
                 if let tv = fr as? NSTextView, tv.isFieldEditor, let d = tv.delegate { frDesc += " (editing \(type(of: d)))" }
+                // Which client's surface holds the keyboard (walk up from the first responder).
+                var owner: Any = NSNull()
+                if let v = fr as? NSView {
+                    var cur: NSView? = v
+                    while let c = cur, !(c is ClientView) { cur = c.superview }
+                    if let cv = cur as? ClientView { owner = cv.id.raw }
+                }
                 return json(["appActive": NSApp.isActive, "isKeyWindow": window.isKeyWindow,
-                             "firstResponder": frDesc, "focused": wm.focused?.raw as Any? ?? NSNull()])
+                             "firstResponder": frDesc, "keyboardClient": owner,
+                             "focused": wm.focused?.raw as Any? ?? NSNull()])
             case .sendText(let t):
                 guard let term = focusedTerminal else { return "error: no focused terminal" }
                 term.sendText(t)
@@ -772,6 +783,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
                 let type: NSEvent.EventType = switch phase {
                 case "down": right ? .rightMouseDown : .leftMouseDown
                 case "drag": right ? .rightMouseDragged : .leftMouseDragged
+                case "move": .mouseMoved
                 default: right ? .rightMouseUp : .leftMouseUp
                 }
                 if let e = NSEvent.mouseEvent(

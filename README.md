@@ -53,9 +53,6 @@ https://github.com/user-attachments/assets/e8d17d9a-0c64-484d-a049-5247830f8e8d
 - macOS 14 or later on Apple silicon.
 - Xcode 16 or later (Swift 6 toolchain). Simulator tiles use the private
   frameworks of the selected Xcode (`xcode-select -p`).
-- An installed [Ghostty](https://ghostty.org) or cmux app. The bundle script
-  copies Ghostty's terminfo and shell integration from it; without one,
-  terminals fall back to `TERM=xterm-256color`.
 - About 1.5 GB of disk: the libghostty and Chromium SDK downloads, the build,
   and the app bundle (Chromium is always bundled; the engine is chosen at runtime).
 

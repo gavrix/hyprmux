@@ -20,9 +20,8 @@ open build/Hyprmux.app
 
 - regenerates the embedded default config;
 - builds the app and the Chromium helper;
-- assembles the bundle: Info.plist, Ghostty's terminfo and shell integration
-  (copied from an installed Ghostty.app or cmux.app), and the CEF framework
-  plus helper apps when `vendor/cef` exists;
+- assembles the bundle: Info.plist, the checked-in Ghostty runtime resources,
+  and the CEF framework plus helper apps when `vendor/cef` exists;
 - signs it ad hoc.
 
 The framework copy is an APFS clone, so bundling takes a few seconds.

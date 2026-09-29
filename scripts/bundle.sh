@@ -44,22 +44,22 @@ cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
 # App icon, rendered from Resources/AppIcon/*.svg by scripts/make-icon.sh.
 cp "$ROOT/Resources/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 
-# libghostty resources: terminfo + shell integration + themes. Ghostty finds
-# them via Contents/Resources/terminfo/78/xterm-ghostty. Take them from an
-# installed Ghostty (or cmux) unless Resources/ already has a copy.
-RES_SRC=""
-for cand in "$ROOT/Resources" "/Applications/Ghostty.app/Contents/Resources" "/Applications/cmux.app/Contents/Resources"; do
-  if [[ -f "$cand/terminfo/78/xterm-ghostty" && -d "$cand/ghostty" ]]; then RES_SRC="$cand"; break; fi
+# libghostty resources are checked in so building Hyprmux does not require an
+# installed Ghostty or cmux app. Keep these paths aligned with what libghostty
+# expects below GHOSTTY_RESOURCES_DIR (set in Sources/Hyprmux/main.swift).
+for required in \
+  "$ROOT/Resources/terminfo/78/xterm-ghostty" \
+  "$ROOT/Resources/ghostty/shell-integration" \
+  "$ROOT/Resources/ghostty/themes"; do
+  if [[ ! -e "$required" ]]; then
+    echo "error: missing bundled Ghostty resource: $required" >&2
+    exit 1
+  fi
 done
-if [[ -n "$RES_SRC" ]]; then
-  cp -R "$RES_SRC/terminfo" "$APP/Contents/Resources/terminfo"
-  mkdir -p "$APP/Contents/Resources/ghostty"
-  for d in shell-integration themes; do
-    [[ -d "$RES_SRC/ghostty/$d" ]] && cp -R "$RES_SRC/ghostty/$d" "$APP/Contents/Resources/ghostty/$d"
-  done
-else
-  echo "warning: no Ghostty resources found; TERM falls back to xterm-256color" >&2
-fi
+cp -R "$ROOT/Resources/terminfo" "$APP/Contents/Resources/terminfo"
+cp -R "$ROOT/Resources/ghostty" "$APP/Contents/Resources/ghostty"
+cp -R "$ROOT/Resources/ThirdPartyLicenses" "$APP/Contents/Resources/ThirdPartyLicenses"
+cp "$ROOT/THIRD_PARTY_NOTICES.md" "$APP/Contents/Resources/ThirdPartyLicenses/"
 
 # Chromium (CEF): framework + helper apps, when the SDK is present (scripts/fetch-cef.sh).
 CEF_FW="$ROOT/vendor/cef/Release/Chromium Embedded Framework.framework"

@@ -1,13 +1,15 @@
 # Third-party notices
 
-Hyprmux builds on the following projects. None of their binaries are checked
-into this repository; the fetch scripts download pinned versions.
+Hyprmux builds on the following projects. Fetch scripts download the large,
+pinned SDK binaries; small runtime resources are checked into this repository.
 
 | Component | Used as | License |
 |---|---|---|
 | [Ghostty](https://github.com/ghostty-org/ghostty) / libghostty | Terminal emulation and rendering. Prebuilt `GhosttyKit.xcframework` from the [manaflow-ai/ghostty](https://github.com/manaflow-ai/ghostty) fork (the build cmux ships), fetched by `scripts/fetch-ghosttykit.sh`. | MIT |
 | Ghostty macOS sources | `TerminalView` and `GhosttyInput` port parts of Ghostty's `SurfaceView_AppKit.swift`, `Ghostty.Input.swift`, and `NSEvent+Extension.swift`. | MIT |
-| Ghostty resources | terminfo, shell integration, and themes, copied into the bundle from an installed Ghostty.app or cmux.app by `scripts/bundle.sh`. | MIT |
+| Ghostty terminfo | Compiled `ghostty` and `xterm-ghostty` entries bundled under `Resources/terminfo`. | MIT |
+| Ghostty shell integration | Bash, Zsh, Fish, Elvish, and Nushell integration bundled under `Resources/ghostty/shell-integration`. Individual files retain their license headers; the Bash and Zsh integrations include GPL-3.0 code derived from Kitty. | GPL-3.0 and MIT |
+| [iTerm2-Color-Schemes](https://github.com/mbadolato/iTerm2-Color-Schemes) | Ghostty-compatible themes bundled under `Resources/ghostty/themes`. | MIT |
 | [Chromium Embedded Framework](https://github.com/chromiumembedded/cef) | Optional Chromium web engine, fetched by `scripts/fetch-cef.sh`. Chromium itself carries many component licenses; see the `CREDITS.html` in CEF distributions. | BSD-3-Clause (CEF), various (Chromium) |
 | [idb](https://github.com/facebook/idb) | `Sources/SimulatorBridge/idb/Indigo.h` and `Mach.h` (simulator HID wire format), and the design of the single-touch message builder. | MIT |
 

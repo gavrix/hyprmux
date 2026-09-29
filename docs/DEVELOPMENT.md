@@ -35,7 +35,13 @@ styling change:
 ```sh
 scripts/demo/record.sh              # -> docs/media/demo.mp4 and demo.gif
 scripts/demo/record.sh --rehearse   # play it without recording; the instance stays open
+scripts/demo/publish.sh             # put the new video in the README
 ```
+
+GitHub plays a README video inline only when it's hosted as an attachment, not
+as a file in the repo. `publish.sh` posts `demo.mp4` to the repo's "README media"
+issue (`gh issue comment --attach`) and points the README at the new attachment.
+Commit the README, the MP4, and the GIF afterwards.
 
 - **`scenario.sh`** is the demo: dispatchers, keys, and text typed into
   terminals, with pauses. Edit it to show something new.

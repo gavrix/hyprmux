@@ -133,26 +133,34 @@ hyprmuxctl dispatch workspace 2
 hyprmuxctl dispatch web github.com
 hyprmuxctl dispatch sim booted
 hyprmuxctl dispatch android Pixel_8_API_36
-hyprmuxctl clients            # JSON for every window
+hyprmuxctl skill install                    # install the bundled agent skill globally
+hyprmuxctl surfaces                         # JSON for every surface and its capabilities
+hyprmuxctl read-screen --surface surface:2 --lines 100
+hyprmuxctl send --surface surface:3 'npm test\n'
+hyprmuxctl send-key --surface surface:3 ctrl+c
 ```
 
-Shells inside Hyprmux get `HYPRMUX_SOCKET`, `HYPRMUX_CLIENT`, and
-`HYPRMUX_PID`, so tools can identify their app instance and terminal while
-`hyprmuxctl` talks to the right control socket.
+Shells inside Hyprmux get `HYPRMUX_SOCKET`, `HYPRMUX_SURFACE_ID`,
+`HYPRMUX_CLIENT`, and `HYPRMUX_PID`. Tools can identify their app instance and
+terminal, discover peers, and address another terminal without changing focus.
+The application ships `hyprmuxctl`, adds it to terminal `PATH`, and exposes the bundled
+skill as `HYPRMUX_SKILL_PATH`. Right-click a surface and choose **Copy Surface ID**
+to copy its `surface:N` reference.
 
 ## Documentation
 
 - [Architecture](docs/ARCHITECTURE.md): the model, the compositor, surfaces, and
   the Chromium and Simulator bridges.
 - [Configuration](docs/CONFIGURATION.md): options, binds, dispatchers, IPC.
+- [Terminal automation](docs/AUTOMATION.md): surface discovery, targeting, agent workflows, and the bundled skill.
 - [Development](docs/DEVELOPMENT.md): building, testing in a separate instance,
   the test tools, and pitfalls.
 
 ## Security
 
 The control socket lives in `/tmp/hyprmux-<uid>/`, a directory only your user
-can open. Any program running as you can use it, though: it can type into your
-terminals (`sendtext`, `sendkey`), run dispatchers, and register the command a
+can open. Any program running as you can use it, though: it can read terminal
+contents, type into any terminal, run dispatchers, and register the command a
 terminal comes back with after a restart (`resume`). That's the same trust
 model as tmux's socket. Session restore re-runs only the programs you list in
 `session:programs`.
@@ -163,6 +171,8 @@ model as tmux's socket. Session restore re-runs only the programs you list in
   multi-display support yet.
 - **Native macOS Spaces:** Hyprmux can't move windows between them. macOS
   offers no API for it with SIP on.
+- **Surface automation:** terminal surfaces support targeted text reads and input.
+  Browser and device surfaces advertise no automation capabilities yet.
 - **Passkeys:** the WebKit engine has none. The Chromium engine supports phone
   (QR) and security-key passkeys. Mac passkeys (Touch ID, iCloud Keychain)
   need Apple's browser entitlement.

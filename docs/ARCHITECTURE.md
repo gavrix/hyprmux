@@ -46,7 +46,7 @@ Hyprmux owns, positions, and animates itself.
 | `SimulatorBridge` | Obj-C | Simulator display and input through Xcode's private frameworks. |
 | `AndroidEmulatorBridge` | Swift 5 | Running-AVD discovery and the Android Emulator's authenticated gRPC screenshot, touch, and key calls. Generated protobuf code stays inside this target. |
 | `GhosttyKit` | binary | Prebuilt libghostty xcframework (terminal emulation and rendering). |
-| `hyprmuxctl` | Swift | The IPC client. |
+| `hyprmuxctl` | Swift | The bundled IPC client and local agent-skill installer. |
 
 ## The model: `WindowManager`
 
@@ -268,11 +268,13 @@ Hyprland overlay layer: elements sit above every tile and never tile.
 ### IPC
 
 `IPCServer` serves a Unix socket: one line in, one reply out, handled on the
-main thread. `IPCRequest` parsing lives in the core. Beyond Hyprland-style
-`dispatch`, `clients`, and `workspaces`, there are test commands that inject
-input through the real event path (`sendkey`, `sendmouse`, `senddrag`,
-`sendtext`) and ones that report what's under a point or holds the keyboard
-(`hittest`, `debug`). See [DEVELOPMENT.md](DEVELOPMENT.md).
+main thread. `IPCRequest` parsing lives in the core. App-global `surface:N`
+references let terminal processes discover peers, read another terminal's
+rendered viewport or scrollback, and send text or keys without changing focus.
+Each surface advertises capabilities; browsers and devices currently advertise
+none. Legacy test commands still inject input through the focused event path
+(`sendkey`, `sendmouse`, `senddrag`, `sendtext`). `hittest` and `debug` report
+input routing internals. See [DEVELOPMENT.md](DEVELOPMENT.md).
 
 ## Chromium (CEF)
 

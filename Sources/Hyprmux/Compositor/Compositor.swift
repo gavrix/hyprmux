@@ -275,8 +275,25 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         let id = allocateID()
         var opts = options
         opts.env["HYPRMUX_CLIENT"] = "\(id.raw)"
+        opts.env["HYPRMUX_SURFACE_ID"] = "\(id.raw)"
         opts.env["HYPRMUX_PID"] = "\(getpid())"
         if let ipcPath { opts.env["HYPRMUX_SOCKET"] = ipcPath }
+        if let executable = Bundle.main.executableURL {
+            let directory = executable.deletingLastPathComponent()
+            let control = directory.appendingPathComponent("hyprmuxctl")
+            if FileManager.default.isExecutableFile(atPath: control.path) {
+                opts.env["HYPRMUXCTL_PATH"] = control.path
+                let inherited = ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"
+                let entries = inherited.split(separator: ":").map(String.init)
+                opts.env["PATH"] = entries.contains(directory.path) ? inherited : "\(directory.path):\(inherited)"
+            }
+        }
+        if let resources = Bundle.main.resourceURL {
+            let skill = resources.appendingPathComponent("skills/hyprmuxctl/SKILL.md")
+            if FileManager.default.fileExists(atPath: skill.path) {
+                opts.env["HYPRMUX_SKILL_PATH"] = skill.path
+            }
+        }
         let term = TerminalView(app: app, id: id, options: opts)
         guard term.surface != nil else {
             log.error("failed to create terminal surface")
@@ -989,8 +1006,13 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
             case .dispatch(let d):
                 dispatch(d)
                 return "ok"
-            case .clients:
+            case .clients, .surfaces:
                 return json(wm.snapshot().placements.map(clientInfo))
+            case .identify(let reference):
+                guard let (id, _) = automationTarget(reference), let placement = wm.snapshot().placement(id) else {
+                    return "error: surface not found"
+                }
+                return json(clientInfo(placement))
             case .activeWindow:
                 guard let f = wm.focused, let p = wm.snapshot().placement(f) else { return "{}" }
                 return json(clientInfo(p))
@@ -1044,6 +1066,31 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
             case .sendKey(let mods, let code):
                 injectKey(mods, code)
                 return "ok"
+            case .readScreen(let reference, let scrollback, let lines, let wantsJSON):
+                guard let (id, surface) = automationTarget(reference) else { return "error: surface not found" }
+                guard let term = surface as? TerminalView else { return "error: surface \(id.raw) is not a terminal" }
+                guard let text = term.readTerminalText(includeScrollback: scrollback, lines: lines) else {
+                    return "error: failed to read terminal \(id.raw)"
+                }
+                let maximumBytes = 16 * 1024 * 1024
+                guard text.utf8.count <= maximumBytes else {
+                    return "error: terminal content exceeds \(maximumBytes) bytes; use --lines"
+                }
+                if wantsJSON {
+                    return json(["id": id.raw, "ref": SurfaceReference(id.raw).description, "text": text,
+                                 "scrollback": scrollback, "lines": lines as Any? ?? NSNull()])
+                }
+                return text
+            case .sendSurfaceText(let reference, let text):
+                guard let (id, surface) = automationTarget(reference) else { return "error: surface not found" }
+                guard let term = surface as? TerminalView else { return "error: surface \(id.raw) is not a terminal" }
+                term.sendText(text)
+                return "ok"
+            case .sendSurfaceKey(let reference, let key):
+                guard let (id, surface) = automationTarget(reference) else { return "error: surface not found" }
+                guard let term = surface as? TerminalView else { return "error: surface \(id.raw) is not a terminal" }
+                guard term.sendTerminalKey(key) else { return "error: failed to send key to terminal \(id.raw)" }
+                return "ok"
             case .hitTest(let p):
                 // Walk up from the hit view so the reply shows the whole chain.
                 // hitTest takes the point in the receiver's superview coordinates.
@@ -1083,17 +1130,25 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
     private func clientInfo(_ p: Placement) -> [String: Any] {
         let s = views[p.id]?.surface
         var info: [String: Any] = [
-            "id": p.id.raw, "workspace": p.workspace.description, "floating": p.floating,
+            "id": p.id.raw, "ref": SurfaceReference(p.id.raw).description,
+            "workspace": p.workspace.description, "floating": p.floating,
             "fullscreen": p.fullscreen.map { $0.rawValue } as Any? ?? NSNull(),
             "focused": p.focused, "visible": p.visible,
             "at": [p.frame.minX, p.frame.minY], "size": [p.frame.width, p.frame.height],
             "title": s?.title ?? "", "kind": s?.kind ?? "",
+            "capabilities": s?.automationCapabilities ?? [],
         ]
         for (k, v) in s?.info ?? [:] { info[k] = v }
         if let g = p.group {
             info["group"] = ["id": g.id.raw, "members": g.members.map(\.raw), "active": g.active.raw]
         }
         return info
+    }
+
+    private func automationTarget(_ reference: SurfaceReference?) -> (ClientID, Surface)? {
+        guard let id = reference.map({ ClientID($0.raw) }) ?? wm.focused,
+              let surface = views[id]?.surface else { return nil }
+        return (id, surface)
     }
 
     private func json(_ v: Any) -> String {

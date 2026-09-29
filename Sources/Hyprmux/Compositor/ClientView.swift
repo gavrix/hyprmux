@@ -10,6 +10,18 @@ final class ClientView: DecoratedView {
     let id: ClientID
     let surface: Surface
     private let dimView = PassthroughView()
+    private lazy var surfaceMenu: NSMenu = {
+        let reference = SurfaceReference(id.raw).description
+        let menu = NSMenu(title: "Surface")
+        let copy = NSMenuItem(
+            title: "Copy Surface ID (\(reference))",
+            action: #selector(copySurfaceID),
+            keyEquivalent: ""
+        )
+        copy.target = self
+        menu.addItem(copy)
+        return menu
+    }()
 
     /// Whether the compositor currently shows this client (its workspace is visible).
     var shown = false
@@ -71,6 +83,9 @@ final class ClientView: DecoratedView {
         super.init(decoration: decoration)
         clip.layer?.backgroundColor = surface.backdropColor.cgColor
         clip.addSubview(surface.view)
+        menu = surfaceMenu
+        clip.menu = surfaceMenu
+        if surface.view.menu == nil { surface.view.menu = surfaceMenu }
 
         dimView.wantsLayer = true
         dimView.layer?.backgroundColor = NSColor.black.cgColor
@@ -80,6 +95,12 @@ final class ClientView: DecoratedView {
     }
 
     required init?(coder: NSCoder) { fatalError("not supported") }
+
+    @objc private func copySurfaceID() {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(SurfaceReference(id.raw).description, forType: .string)
+    }
 
     // Clicks inside go to the terminal; the view itself never takes focus.
     override var acceptsFirstResponder: Bool { false }

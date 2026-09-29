@@ -93,8 +93,8 @@ because its shells inherit Hyprmux's identity: `screencapture` stopped working
 this way. Sign with a stable identity and a permission granted once stays
 granted.
 
-`scripts/bundle.sh` signs the app, the Chromium framework, and the helper apps
-with the first of:
+`scripts/bundle.sh` signs the app, bundled `hyprmuxctl`, Chromium framework,
+and helper apps with the first of:
 
 1. `HYPRMUX_SIGN_IDENTITY`;
 2. the first line of `.sign-identity` in the repo (untracked), for example
@@ -113,7 +113,8 @@ name, so permissions survive renewals.
 The first build that uses it asks for your login password; choose Always Allow.
 
 The build prints which identity it used. After switching identities, grant the
-permissions once more.
+permissions once more. The bundle also copies the agent skill from
+`.agents/skills/hyprmuxctl` into `Contents/Resources/skills`.
 
 ## Where code goes
 
@@ -165,7 +166,7 @@ open -g -n \
   /tmp/HyprmuxTest.app
 export HYPRMUX_SOCKET=/tmp/hm-test/hyprmux.sock
 hyprmuxctl dispatch exec
-hyprmuxctl clients
+hyprmuxctl surfaces
 hyprmuxctl dispatch exit        # quit it (Chromium processes exit cleanly)
 ```
 
@@ -202,17 +203,19 @@ Rules that came out of real mistakes:
 
 | Tool | Use |
 |---|---|
-| `hyprmuxctl sendkey MODS, key` | Presses a key through the real path (binds, then the surface). Works in the background for binds and terminals. |
+| `hyprmuxctl read-screen --surface ID` | Reads a terminal's rendered viewport; add `--scrollback` or `--lines N` for history. |
+| `hyprmuxctl send --surface ID` / `send-key --surface ID` | Sends terminal input directly without focusing the target or running Hyprmux binds. |
+| `hyprmuxctl sendkey MODS, key` | Presses a key through the focused real path (binds, then the surface). Works in the background. |
 | `hyprmuxctl senddrag` / `sendmouse` | Mouse input, paced like a hand. `sendmouse down` … `up` for holds. |
 | `hyprmuxctl hittest x y` | Which views a click reaches. This found the dim overlay that swallowed every click. |
 | `hyprmuxctl debug` | App active, key window, first responder, `keyboardClient`, the frames of HUD panels on screen, and the open picker (query, rows, selection). Use it for any "wrong window" bug, and to find where to click a notification. |
-| `hyprmuxctl clients` | Frames, focus, groups, URLs. |
+| `hyprmuxctl surfaces` | References, capabilities, workspaces, frames, focus, groups, URLs, and terminal directories. |
 | `screencapture -x -o -l <windowid>` | Captures one window even when covered. Find the window ID with `CGWindowListCopyWindowInfo` for the test app's pid. |
 | Chromium `remote-debugging-port` | Set `web:chromium_flags = remote-debugging-port=9333` in a test config, then query targets and evaluate JavaScript over the DevTools protocol. |
 
 **Coordinate caution:** the test window opens on whichever display it last
 used, so its size changes between runs. Compute click positions from
-`hyprmuxctl clients` (tile frames, the simulator's `pixels`), never hard-code
+`hyprmuxctl surfaces` (tile frames, the simulator's `pixels`), never hard-code
 them. Several "bugs" during development were clicks landing outside the
 window.
 

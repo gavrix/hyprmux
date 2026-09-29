@@ -135,6 +135,101 @@ final class TerminalView: NSView, NSTextInputClient {
         text.withCString { ghostty_surface_text_input(s, $0, UInt(text.utf8.count)) }
     }
 
+    /// Reads rendered terminal text without changing selection or viewport state.
+    func readTerminalText(includeScrollback: Bool, lines: Int?) -> String? {
+        let output: String?
+        if includeScrollback {
+            var candidates: [String] = []
+            if let screen = readText(region: GHOSTTY_POINT_SCREEN) { candidates.append(screen) }
+
+            var history = readText(region: GHOSTTY_POINT_SURFACE) ?? ""
+            if let active = readText(region: GHOSTTY_POINT_ACTIVE), !active.isEmpty {
+                if !history.isEmpty, !history.hasSuffix("\n") { history.append("\n") }
+                history.append(active)
+            }
+            if !history.isEmpty { candidates.append(history) }
+            output = candidates.max { left, right in
+                let l = Self.textScore(left), r = Self.textScore(right)
+                return l.lines == r.lines ? l.bytes < r.bytes : l.lines < r.lines
+            }
+        } else {
+            output = readText(region: GHOSTTY_POINT_VIEWPORT)
+        }
+        guard let output else { return nil }
+        return lines.map { IPCText.tailLines(output, count: $0) } ?? output
+    }
+
+    /// Sends a key directly to this terminal. It bypasses compositor bindings and focus.
+    @discardableResult
+    func sendTerminalKey(_ key: TerminalKey) -> Bool {
+        guard surface != nil else { return false }
+        let flags = Self.eventFlags(key.modifiers)
+        let text = Self.keyText(code: key.keyCode, modifiers: key.modifiers)
+        guard let down = NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: flags,
+            timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window?.windowNumber ?? 0,
+            context: nil, characters: text, charactersIgnoringModifiers: Self.keyText(code: key.keyCode, modifiers: []),
+            isARepeat: false, keyCode: key.keyCode),
+              let up = NSEvent.keyEvent(
+                with: .keyUp, location: .zero, modifierFlags: flags,
+                timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window?.windowNumber ?? 0,
+                context: nil, characters: text, charactersIgnoringModifiers: Self.keyText(code: key.keyCode, modifiers: []),
+                isARepeat: false, keyCode: key.keyCode) else { return false }
+        _ = keyAction(GHOSTTY_ACTION_PRESS, event: down, text: down.ghosttyCharacters)
+        _ = keyAction(GHOSTTY_ACTION_RELEASE, event: up)
+        return true
+    }
+
+    private func readText(region: ghostty_point_tag_e) -> String? {
+        guard let s = surface else { return nil }
+        let selection = ghostty_selection_s(
+            top_left: ghostty_point_s(tag: region, coord: GHOSTTY_POINT_COORD_TOP_LEFT, x: 0, y: 0),
+            bottom_right: ghostty_point_s(tag: region, coord: GHOSTTY_POINT_COORD_BOTTOM_RIGHT, x: 0, y: 0),
+            rectangle: false)
+        var text = ghostty_text_s()
+        guard ghostty_surface_read_text(s, selection, &text) else { return nil }
+        defer { ghostty_surface_free_text(s, &text) }
+        guard let pointer = text.text, text.text_len > 0 else { return "" }
+        return String(decoding: Data(bytes: pointer, count: Int(text.text_len)), as: UTF8.self)
+    }
+
+    private static func textScore(_ text: String) -> (lines: Int, bytes: Int) {
+        var newlines = 0
+        var bytes = 0
+        for byte in text.utf8 {
+            bytes += 1
+            if byte == 0x0A { newlines += 1 }
+        }
+        return (text.isEmpty ? 0 : newlines + 1, bytes)
+    }
+
+    private static func eventFlags(_ modifiers: Modifiers) -> NSEvent.ModifierFlags {
+        var flags: NSEvent.ModifierFlags = []
+        if modifiers.contains(.shift) { flags.insert(.shift) }
+        if modifiers.contains(.ctrl) { flags.insert(.control) }
+        if modifiers.contains(.alt) { flags.insert(.option) }
+        if modifiers.contains(.super) { flags.insert(.command) }
+        return flags
+    }
+
+    private static func keyText(code: UInt16, modifiers: Modifiers) -> String {
+        switch code {
+        case 0x24: return "\r"
+        case 0x30: return "\t"
+        case 0x31: return " "
+        case 0x33: return "\u{7f}"
+        case 0x35: return "\u{1b}"
+        default: break
+        }
+        guard let name = KeyCodes.table.first(where: { $0.value == code && $0.key.count == 1 })?.key else { return "" }
+        guard modifiers.contains(.shift) else { return name }
+        let shifted: [String: String] = [
+            "1": "!", "2": "@", "3": "#", "4": "$", "5": "%", "6": "^", "7": "&", "8": "*", "9": "(", "0": ")",
+            "-": "_", "=": "+", "[": "{", "]": "}", "\\": "|", ";": ":", "'": "\"", ",": "<", ".": ">", "/": "?", "`": "~",
+        ]
+        return shifted[name] ?? name.uppercased()
+    }
+
     func setTerminalOccluded(_ occluded: Bool) {
         guard let s = surface else { return }
         ghostty_surface_set_occlusion(s, !occluded)

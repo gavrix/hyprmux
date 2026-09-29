@@ -28,6 +28,11 @@ final class IPCServer {
             close(fd)
             return nil
         }
+        guard chmod(path, 0o600) == 0 else {
+            close(fd)
+            unlink(path)
+            return nil
+        }
         let t = Thread { [weak self] in self?.acceptLoop() }
         t.name = "hyprmux-ipc"
         t.start()
@@ -45,19 +50,46 @@ final class IPCServer {
                 if errno == EINTR { continue }
                 return
             }
+            var noSigPipe: Int32 = 1
+            setsockopt(c, SOL_SOCKET, SO_NOSIGPIPE, &noSigPipe, socklen_t(MemoryLayout.size(ofValue: noSigPipe)))
             var data = Data()
             var buf = [UInt8](repeating: 0, count: 4096)
+            let maximumRequestBytes = 1024 * 1024
+            var tooLarge = false
             while !data.contains(0x0A) {
                 let n = read(c, &buf, buf.count)
+                if n < 0, errno == EINTR { continue }
                 if n <= 0 { break }
+                if data.count + n > maximumRequestBytes {
+                    tooLarge = true
+                    break
+                }
                 data.append(buf, count: n)
             }
-            let line = String(data: data, encoding: .utf8) ?? ""
-            var reply = ""
-            DispatchQueue.main.sync { reply = self.handler(line) }
+            var reply: String
+            if tooLarge {
+                reply = "error: request exceeds \(maximumRequestBytes) bytes"
+            } else {
+                let line = String(data: data, encoding: .utf8) ?? ""
+                reply = ""
+                DispatchQueue.main.sync { reply = self.handler(line) }
+            }
             reply += "\n"
-            _ = reply.withCString { write(c, $0, strlen($0)) }
+            Self.writeAll(Data(reply.utf8), to: c)
             close(c)
+        }
+    }
+
+    private static func writeAll(_ data: Data, to fd: Int32) {
+        data.withUnsafeBytes { bytes in
+            guard let base = bytes.baseAddress else { return }
+            var offset = 0
+            while offset < bytes.count {
+                let count = write(fd, base.advanced(by: offset), bytes.count - offset)
+                if count < 0, errno == EINTR { continue }
+                if count <= 0 { return }
+                offset += count
+            }
         }
     }
 }

@@ -17,6 +17,8 @@ protocol Surface: AnyObject {
     var backdropColor: NSColor { get }
     /// Extra fields for `hyprmuxctl clients`.
     var info: [String: Any] { get }
+    /// Operations this surface exposes through `hyprmuxctl`.
+    var automationCapabilities: [String] { get }
 
     func setOccluded(_ occluded: Bool)
     /// Give keyboard focus to the surface.
@@ -28,6 +30,8 @@ protocol Surface: AnyObject {
 }
 
 extension Surface {
+    var automationCapabilities: [String] { [] }
+
     func takeFocus(in window: NSWindow) { window.makeFirstResponder(focusTarget) }
 
     /// True if the window's first responder sits inside this surface (e.g. its address bar).
@@ -47,5 +51,6 @@ extension TerminalView: Surface {
     var kind: String { "terminal" }
     var backdropColor: NSColor { backdrop }
     var info: [String: Any] { ["pwd": pwd ?? ""] }
+    var automationCapabilities: [String] { ["read_text", "send_text", "send_key"] }
     func setOccluded(_ occluded: Bool) { setTerminalOccluded(occluded) }
 }

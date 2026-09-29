@@ -458,20 +458,40 @@ These names work in `bind` lines and with `hyprmuxctl dispatch`.
 
 ## IPC: `hyprmuxctl`
 
-Shells inside Hyprmux get `HYPRMUX_SOCKET`, `HYPRMUX_CLIENT`, and
-`HYPRMUX_PID` in their environment. The client identifies the terminal, and
-the PID identifies its Hyprmux app instance. `hyprmuxctl` talks to that socket (default
-`/tmp/hyprmux-<uid>/hyprmux.sock`). Build it with
+Shells inside Hyprmux get `HYPRMUX_SOCKET`, `HYPRMUX_SURFACE_ID`,
+`HYPRMUX_CLIENT`, and `HYPRMUX_PID` in their environment. The two surface
+variables identify the terminal; `HYPRMUX_CLIENT` remains for compatibility.
+The PID identifies its Hyprmux app instance.
+
+The distributed app ships `hyprmuxctl` and adds its directory to terminal `PATH`.
+`HYPRMUXCTL_PATH` names that exact client, and `HYPRMUX_SKILL_PATH` names the bundled
+agent skill. `hyprmuxctl` talks to the instance socket, which defaults to
+`/tmp/hyprmux-<uid>/hyprmux.sock`. Development builds can build the client with
 `swift build --product hyprmuxctl`.
+
+Commands that accept `--surface` take either a number or `surface:N`. Without
+that option, they target `HYPRMUX_SURFACE_ID`, then `HYPRMUX_CLIENT`, then the
+focused surface. Explicit targets can be hidden group tabs or live on another
+workspace. Reading or sending input never focuses the target.
+
+Surface IDs increase across all surface kinds and are not reused during one app run.
+They do not encode workspace membership and can change after session restoration.
+Right-click a surface and choose **Copy Surface ID** to copy its `surface:N` reference.
+See [Terminal automation](AUTOMATION.md) for workflows, limits, and agent skill installation.
 
 | Command | Reply |
 |---|---|
+| `skill install\|status\|path\|source\|uninstall [--force]` | Manages the bundled agent skill under `~/.agents/skills`. This command is local and needs no socket. |
 | `dispatch <dispatcher> [args]` | Runs a dispatcher. |
-| `clients` | JSON for every window: id, kind, workspace, frame, focus, floating, group, URL or pwd. |
+| `clients`, `surfaces` | JSON for every surface: id, `surface:N` ref, capabilities, kind, workspace, frame, focus, group, URL or pwd. |
+| `identify [--surface ID]` | JSON for the caller, explicit target, or focused surface. |
+| `read-screen [--surface ID] [--scrollback] [--lines N] [--json]` | Reads rendered terminal text. `--lines` implies scrollback. |
+| `send [--surface ID] TEXT` | Types text into a terminal. Reads stdin when text is omitted; arguments decode `\n`, `\t`, and `\\`. |
+| `send-key [--surface ID] KEY` | Sends a terminal key such as `ctrl+c`, `enter`, `tab`, or `escape`. |
 | `workspaces`, `activewindow`, `version` | JSON or text. |
 | `reload` | Reloads the config. |
-| `sendtext <text>` | Types text into the focused terminal (`\n` = Enter). |
-| `sendkey <MODS>, <key>` | Injects a key press through the normal key path. |
+| `sendtext <text>` | Legacy command that types into the focused terminal (`\n` = Enter). |
+| `sendkey <MODS>, <key>` | Legacy test command that injects a key through the normal application path. |
 | `sendmouse down\|drag\|up\|move <MODS>, <button>, <x y>` | Injects one mouse event (holds, hand-timed gestures). Buttons: 272 left, 273 right, 274 middle. |
 | `senddrag <MODS>, <button>, <x1 y1>, <x2 y2>` | Injects a paced drag (about 16 ms per step). |
 | `hittest <x y>` | Which views a click at that point reaches. |

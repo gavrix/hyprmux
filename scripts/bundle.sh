@@ -33,16 +33,28 @@ sign() {
 }
 
 swift build -c "$CONFIG" --product Hyprmux
-BIN="$(swift build -c "$CONFIG" --show-bin-path)/Hyprmux"
+swift build -c "$CONFIG" --product hyprmuxctl
+BIN_DIR="$(swift build -c "$CONFIG" --show-bin-path)"
+BIN="$BIN_DIR/Hyprmux"
+CTL_BIN="$BIN_DIR/hyprmuxctl"
 
 # HYPRMUX_APP builds the bundle somewhere else (test copies, demo recordings).
 APP="${HYPRMUX_APP:-$ROOT/build/Hyprmux.app}"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/Hyprmux"
+cp "$CTL_BIN" "$APP/Contents/MacOS/hyprmuxctl"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
 # App icon, rendered from Resources/AppIcon/*.svg by scripts/make-icon.sh.
 cp "$ROOT/Resources/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
+
+SKILL="$ROOT/.agents/skills/hyprmuxctl"
+if [[ ! -f "$SKILL/SKILL.md" ]]; then
+  echo "error: missing bundled agent skill: $SKILL/SKILL.md" >&2
+  exit 1
+fi
+mkdir -p "$APP/Contents/Resources/skills"
+cp -R "$SKILL" "$APP/Contents/Resources/skills/hyprmuxctl"
 
 # libghostty resources are checked in so building Hyprmux does not require an
 # installed Ghostty or cmux app. Keep these paths aligned with what libghostty
@@ -104,6 +116,8 @@ PLIST
   done
 fi
 
+# A second Mach-O executable inside Contents/MacOS must be signed before the outer bundle.
+sign "$APP/Contents/MacOS/hyprmuxctl"
 sign "$APP"
 if [[ "$SIGN" == "-" ]]; then
   echo "signed ad hoc: permissions reset on every build (see docs/DEVELOPMENT.md, Signing)" >&2

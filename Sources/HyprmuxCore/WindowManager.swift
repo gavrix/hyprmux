@@ -32,6 +32,7 @@ public enum Effect: Equatable, Sendable {
     case spawn(command: String)
     case spawnWeb(url: String)
     case spawnSim(query: String)
+    case spawnAndroid(query: String)
     case simButton(ClientID, String)
     case webNav(ClientID, WebNav)
     case close(ClientID)
@@ -117,6 +118,9 @@ public final class WindowManager {
     var recency: [ClientID: Int] = [:]
     var groups: [GroupID: Group] = [:]
     var nextGroupID: UInt64 = 1
+    /// Workspaces a session or layout is filling in. They look empty until their tree is
+    /// set, and must not be collected meanwhile (see `restoreWorkspace`).
+    var building: Set<WorkspaceID> = []
     private var focusCounter = 0
 
     public init(monitor: CGRect, settings: WMSettings = .init()) {
@@ -201,6 +205,7 @@ public final class WindowManager {
         case .exec(let cmd): perform(.spawn(command: cmd))
         case .web(let url): perform(.spawnWeb(url: url))
         case .sim(let q): perform(.spawnSim(query: q))
+        case .android(let q): perform(.spawnAndroid(query: q))
         case .simButton(let b): if let f = focused { perform(.simButton(f, b)) }
         case .webNav(let n): if let f = focused { perform(.webNav(f, n)) }
         case .killActive: if let f = focused { perform(.close(f)) }
@@ -376,7 +381,7 @@ public final class WindowManager {
 
     func collectEmptyWorkspaces() {
         for (id, ws) in workspaces where ws.isEmpty {
-            if id == .regular(activeWorkspace) { continue }
+            if id == .regular(activeWorkspace) || building.contains(id) { continue }
             if case .special(let s) = id, s == specialVisible { continue }
             workspaces[id] = nil
         }

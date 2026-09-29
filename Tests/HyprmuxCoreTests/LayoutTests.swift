@@ -425,8 +425,13 @@ final class WindowManagerTests: XCTestCase {
         wm.perform = { effects.append($0) }
         wm.addClient(ClientID(7))
         wm.dispatch(.exec("htop"))
+        wm.dispatch(.android("Pixel_API_36"))
         wm.dispatch(.killActive)
-        XCTAssertEqual(effects, [.spawn(command: "htop"), .close(ClientID(7))])
+        XCTAssertEqual(effects, [
+            .spawn(command: "htop"),
+            .spawnAndroid(query: "Pixel_API_36"),
+            .close(ClientID(7)),
+        ])
     }
 }
 

@@ -81,7 +81,7 @@ public struct SessionFullscreen: Codable, Equatable, Sendable {
 
 /// One window's content.
 public struct SessionTile: Codable, Equatable, Sendable {
-    /// "terminal", "web", or "sim".
+    /// "terminal", "web", "sim", or "android".
     public var kind: String
     /// Unique within the file. Focus and fullscreen refer to tiles by key.
     public var key: Int?
@@ -96,9 +96,14 @@ public struct SessionTile: Codable, Equatable, Sendable {
     public var url: String?
     /// Simulator: UDID (or a device name).
     public var sim: String?
+    /// Android Emulator: stable Android Virtual Device id.
+    public var avd: String?
+    /// Android Emulator: display name, retained as a restore fallback and for hand-written layouts.
+    public var avdName: String?
 
     public init(kind: String, key: Int? = nil, title: String? = nil, cwd: String? = nil, command: String? = nil,
-                agent: SessionAgent? = nil, url: String? = nil, sim: String? = nil) {
+                agent: SessionAgent? = nil, url: String? = nil, sim: String? = nil,
+                avd: String? = nil, avdName: String? = nil) {
         self.kind = kind
         self.key = key
         self.title = title
@@ -107,6 +112,8 @@ public struct SessionTile: Codable, Equatable, Sendable {
         self.agent = agent
         self.url = url
         self.sim = sim
+        self.avd = avd
+        self.avdName = avdName
     }
 }
 
@@ -377,7 +384,14 @@ extension WindowManager {
     }
 
     /// Builds one saved workspace into `id` (which must be empty or new).
+    ///
+    /// `make` can run the main run loop (a simulator tile waits for a helper process), so
+    /// queued work such as a web tile taking focus runs in the middle of this. A focus
+    /// change that switches workspaces collects empty ones, and this one looks empty until
+    /// its tree is set: it's marked as being built so it isn't collected.
     func restoreWorkspace(_ w: SessionWorkspace, into id: WorkspaceID, make: (SessionTile) -> ClientID?) -> [ClientID] {
+        building.insert(id)
+        defer { building.remove(id) }
         let ws = ensure(id)
         var byKey: [Int: ClientID] = [:]
         var made: [ClientID] = []

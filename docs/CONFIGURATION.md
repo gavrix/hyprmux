@@ -216,7 +216,7 @@ hud {
 
 - **Config errors:** one red notice that updates on every save and goes away
   once the config is clean.
-- **Warnings:** such as "no booted simulator".
+- **Warnings:** such as "no booted simulator" or "no running Android emulator".
 - **Terminal notifications:** a program can send one with OSC 9
   (`printf '\e]9;Build done\a'`) or OSC 777
   (`printf '\e]777;notify;Title;Body\a'`). Clicking it focuses that terminal.
@@ -224,7 +224,7 @@ hud {
 Clicking any notification closes it. The same message posted again counts up
 (`×3`) instead of stacking.
 
-**Pickers** list things to choose from, such as booted simulators. Typing filters
+**Pickers** list things to choose from, such as workspaces and running devices. Typing filters
 the list, fzf-style: letters match in order, and words separated by spaces match
 anywhere. While a picker is open, binds are off and the keyboard belongs to it:
 
@@ -291,6 +291,8 @@ What comes back:
 - **Web tiles:** the page they were on.
 - **Simulators:** the same device, if it's still booted. If not, the tile is
   skipped and a warning says so.
+- **Android emulators:** the same stable AVD id, with its name as a fallback.
+  The AVD must already be running. Otherwise, Hyprmux skips it and shows a warning.
 
 Anything else comes back as an empty terminal or a start page. A restored launch
 skips `exec-once` and `exec`, so startup terminals don't appear twice.
@@ -343,7 +345,7 @@ format as the session file.
   Summoning twice never opens a second copy.
 
 What a layout keeps: the split tree, floating windows, groups, each terminal's
-directory, programs from `session:programs`, web pages, and simulators. An agent
+directory, programs from `session:programs`, web pages, simulators, and Android AVDs. An agent
 is kept by kind only, so summoning starts a new session with `session:start:KIND`
 instead of reopening the one it was saved from.
 
@@ -366,6 +368,9 @@ even), and two `children`; `tabs` makes a group:
   }]
 }
 ```
+
+An Android tile uses `{"kind":"android","avd":"stable-id","avdName":"Display name"}`.
+Hyprmux only restores it when that AVD is already running.
 
 A `command` in a layout you wrote runs as written (the `programs` list only
 applies to what Hyprmux records). A file can hold several workspaces, each with
@@ -420,7 +425,8 @@ These names work in `bind` lines and with `hyprmuxctl dispatch`.
 | `exec` | [command] | New terminal, optionally running a command. |
 | `web` / `openurl` | [url or search] | New web tile. Empty: a start page with the address bar focused. |
 | `webnav` | `back` `forward` `reload` `stop` `home` `focusurl` `inspect` | Navigation in the focused web tile. |
-| `sim` / `simulator` | [udid, name, or `booted`] | Show an iOS Simulator in a tile. Empty: the only booted one, or a picker when several are booted. |
+| `sim` / `simulator` | [udid, name, or `booted`] | Show an iOS Simulator. Empty: attach the only running iOS or Android device, or show a combined picker. |
+| `android` / `avd` | [AVD id or name] | Attach a running Android AVD. Empty: the sole running AVD, or a picker when several are running. Never boots an AVD. |
 | `simbutton` | `home` `lock` | Press a simulator hardware button. |
 | `killactive` | | Close the focused window. |
 | `movefocus` | `l` `r` `u` `d` | Focus the neighbor in that direction. |

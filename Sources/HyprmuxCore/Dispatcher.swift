@@ -75,6 +75,8 @@ public enum Dispatcher: Equatable, Sendable {
     case webNav(WebNav)
     /// Show an iOS Simulator's screen in a tile: UDID, device name, or "booted".
     case sim(String)
+    /// Attach to a running Android Virtual Device: stable AVD id or name.
+    case android(String)
     /// Press a simulator hardware button: home, lock.
     case simButton(String)
     case killActive
@@ -129,6 +131,7 @@ public enum Dispatcher: Equatable, Sendable {
         case "exec": return .success(.exec(a))
         case "web", "openurl": return .success(.web(a))
         case "sim", "simulator": return .success(.sim(a))
+        case "android", "avd": return .success(.android(a))
         case "simbutton":
             guard ["home", "lock"].contains(a.lowercased()) else { return .failure(.init("simbutton: expected home or lock")) }
             return .success(.simButton(a.lowercased()))

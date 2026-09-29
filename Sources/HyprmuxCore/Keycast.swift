@@ -60,7 +60,8 @@ extension Dispatcher {
             case .focusurl: return "Address bar"
             case .inspect: return "Web inspector"
             }
-        case .sim(let q): return q.isEmpty ? "Show simulator" : "Show simulator \(q)"
+        case .sim(let q): return q.isEmpty ? "Show device" : "Show simulator \(q)"
+        case .android(let q): return q.isEmpty ? "Show Android emulator" : "Show Android emulator \(q)"
         case .simButton(let b): return b == "lock" ? "Simulator lock" : "Simulator home"
         case .killActive: return "Close window"
         case .moveFocus(let d): return "Focus \(dir(d))"

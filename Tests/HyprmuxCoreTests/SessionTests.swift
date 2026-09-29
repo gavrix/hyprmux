@@ -84,6 +84,36 @@ final class SessionTests: XCTestCase {
         XCTAssertEqual(p[0].frame, CGRect(x: 0, y: 0, width: 1600, height: 1000))
     }
 
+    /// Creating a surface can run the main run loop (a simulator tile waits for a helper
+    /// process), so queued focus changes land while a workspace is half built. The
+    /// workspace under construction looks empty then, and used to be thrown away, leaving
+    /// its clients running but in no workspace.
+    func testFocusChangeDuringRestoreKeepsTheWorkspaceBeingBuilt() {
+        var s = SessionState()
+        func ws(_ id: String, _ cwds: [String]) -> SessionWorkspace {
+            let tiles = cwds.map { SessionNode.slot(SessionSlot(tabs: [SessionTile(kind: "terminal", cwd: $0)])) }
+            let tree = tiles.dropFirst().reduce(tiles[0]) { .split(vertical: false, ratio: 1, first: $0, second: $1) }
+            return SessionWorkspace(id: id, tiled: tree)
+        }
+        s.workspaces = [ws("1", ["/a"]), ws("2", ["/b"]), ws("3", ["/c1", "/c2", "/c3"]), ws("4", ["/d"])]
+        let wm = makeWM()
+        var n: UInt64 = 0
+        var cwds: [ClientID: String] = [:]
+        wm.restoreSession(s) { t in
+            // The last tile of 3: a web tile on 2 takes focus in the middle of it.
+            if t.cwd == "/c3", let b = cwds.first(where: { $0.value == "/b" })?.key { wm.focus(b) }
+            n += 1
+            cwds[ClientID(n)] = t.cwd
+            return ClientID(n)
+        }
+        let placed = Dictionary(uniqueKeysWithValues: wm.snapshot().placements.map { (cwds[$0.id]!, $0.workspace) })
+        XCTAssertEqual(placed.count, 6)
+        XCTAssertEqual(placed["/c1"], .regular(3))
+        XCTAssertEqual(placed["/c3"], .regular(3))
+        XCTAssertEqual(wm.exportSession { cwds[$0].map { SessionTile(kind: "terminal", cwd: $0) } }.workspaces.map(\.id),
+                       ["1", "2", "3", "4"])
+    }
+
     func testExportLeavesOutUndescribedClients() {
         let wm = makeWM()
         wm.addClient(ClientID(1))
@@ -129,6 +159,20 @@ final class SessionTests: XCTestCase {
         let float = snap.placements.first { $0.workspace == .special("magic") }!
         XCTAssertTrue(float.floating)
         XCTAssertEqual(float.frame, CGRect(x: 160, y: 100, width: 800, height: 500))
+    }
+
+    func testAndroidTileSchemaPreservesStableAVDIdentity() throws {
+        let json = #"{"workspaces":[{"id":"1","tiled":{"kind":"android","avd":"Pixel_8_API_36","avdName":"Pixel 8"}}]}"#
+        let state = try SessionState.decode(Data(json.utf8))
+        guard case .slot(let slot)? = state.workspaces.first?.tiled else { return XCTFail("expected Android slot") }
+        let tile = try XCTUnwrap(slot.tabs.first)
+        XCTAssertEqual(tile.kind, "android")
+        XCTAssertEqual(tile.avd, "Pixel_8_API_36")
+        XCTAssertEqual(tile.avdName, "Pixel 8")
+
+        let encoded = String(decoding: try state.encoded(), as: UTF8.self)
+        XCTAssertTrue(encoded.contains(#""avd" : "Pixel_8_API_36""#))
+        XCTAssertTrue(encoded.contains(#""avdName" : "Pixel 8""#))
     }
 }
 

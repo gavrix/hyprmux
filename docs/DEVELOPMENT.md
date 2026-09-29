@@ -10,8 +10,8 @@ disrupted session.
 scripts/fetch-ghosttykit.sh   # libghostty (pinned, checksummed)
 scripts/fetch-cef.sh          # Chromium SDK; needed to build even if you use WebKit
                               # (bundle.sh runs both)
-swift build                   # all targets
-swift test                    # core tests
+swift build                   # all targets; resolves grpc-swift and SwiftProtobuf
+swift test                    # core and Android discovery tests
 scripts/bundle.sh             # build/Hyprmux.app (debug); `scripts/bundle.sh release` for release
 open build/Hyprmux.app
 ```
@@ -25,6 +25,13 @@ open build/Hyprmux.app
 - signs it ad hoc.
 
 The framework copy is an APFS clone, so bundling takes a few seconds.
+
+Android Emulator protobuf and gRPC Swift files are checked in under
+`Sources/AndroidEmulatorBridge/Generated`. Normal builds do not run `protoc`.
+After editing the wire-compatible subset, run
+`scripts/gen-android-emulator-protos.sh`. The script uses generators from PATH
+or dependency checkout builds. The subset must retain the field numbers from
+the installed SDK's `emulator/lib/emulator_controller.proto`.
 
 ## Demo recording
 
@@ -119,6 +126,8 @@ permissions once more.
   to do something, it emits an `Effect`.
 - **New tile kinds** conform to `Surface`. A new web engine subclasses
   `BrowserSurface`.
+- **Android Emulator protocol code** stays in `AndroidEmulatorBridge`.
+  The app target sees endpoint, frame, and client types, not generated messages.
 - **Private or C APIs** sit behind a small Objective-C bridge
   (`ChromiumBridge`, `SimulatorBridge`) with a plain Objective-C header for
   Swift. Look up private classes and functions at runtime
@@ -184,6 +193,8 @@ Rules that came out of real mistakes:
 - **Use throwaway simulators** for anything that sends input:
   `xcrun simctl create "Hyprmux Test" ...`, boot it, delete it after. Only read
   (display) from the user's simulators.
+- **Never send input to or restart a user's Android emulator.** Discovery tests
+  use fixture files and fake process checks. Interactive testing needs a throwaway AVD.
 - **Clean up** test instances, temporary configs, profiles, simulators, and
   screenshots.
 
@@ -231,6 +242,13 @@ Each one cost a debugging session.
 - **Simulator touches.** SimulatorKit has no "moved" builder. Re-mark down
   messages as continuing contacts (0x7), or long press never fires. Keep a held
   finger alive at 60 Hz.
+- **Android discovery credentials.** Never log an endpoint dictionary or bearer
+  token. Endpoint descriptions must redact credentials, including error paths.
+- **Android frame format.** `streamScreenshot` uses RGBA8888 within a 720×1280
+  bound. Keep native dimensions separately because touch coordinates use them.
+  Emulator 37.2.3+ uses a client-owned file mapping. Copy each notified frame
+  before rendering because the emulator can overwrite MMAP data concurrently.
+  Keep gRPC fallback enabled for older versions and rejected MMAP requests.
 - **Cross-fades over transparency blink.** Swap instantly where Hyprland does
   (group tabs).
 - **Config watching.** Watch the file as well as its directory: in-place

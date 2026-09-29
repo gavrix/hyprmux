@@ -140,6 +140,12 @@ final class ConfigTests: XCTestCase {
         XCTAssertEqual(try? Dispatcher.parse("sim", "iPhone 17 Pro").get(), .sim("iPhone 17 Pro"))
     }
 
+    func testAndroidDispatcherAliases() {
+        XCTAssertEqual(try? Dispatcher.parse("android", "").get(), .android(""))
+        XCTAssertEqual(try? Dispatcher.parse("avd", "Pixel_API_36").get(), .android("Pixel_API_36"))
+        XCTAssertEqual(try? Dispatcher.parse("ANDROID", "Pixel 8").get(), .android("Pixel 8"))
+    }
+
     func testWebDispatchers() {
         XCTAssertEqual(try? Dispatcher.parse("web", "github.com").get(), .web("github.com"))
         XCTAssertEqual(try? Dispatcher.parse("webnav", "back").get(), .webNav(.back))

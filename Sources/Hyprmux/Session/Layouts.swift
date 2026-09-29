@@ -1,3 +1,4 @@
+import AndroidEmulatorBridge
 import AppKit
 import HyprmuxCore
 
@@ -124,11 +125,15 @@ extension Compositor {
             return
         }
         var missingSims: [String] = []
+        var missingAndroid: [String] = []
+        let runningAndroid = AndroidEmulatorDiscovery.running()
         let touched = wm.loadLayout(layout, defaultName: name) { [weak self] t in
-            self?.restoreTile(t, missingSims: &missingSims)
+            self?.restoreTile(t, missingSims: &missingSims,
+                              missingAndroid: &missingAndroid, runningAndroid: runningAndroid)
         }
         apply(animated: true)
         if touched.isEmpty { flash("Layout \(name) has nothing to open") }
         if !missingSims.isEmpty { flash("Layout \(name): simulator \(missingSims.joined(separator: ", ")) isn't available") }
+        if !missingAndroid.isEmpty { flash("Layout \(name): Android AVD \(missingAndroid.joined(separator: ", ")) isn't running") }
     }
 }

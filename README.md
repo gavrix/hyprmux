@@ -2,7 +2,7 @@
 
 A Hyprland-style tiling environment for macOS, inside one window. Tiles hold
 terminals ([libghostty](https://github.com/ghostty-org/ghostty)), web pages
-(WebKit or Chromium), and live iOS Simulator screens. You drive them with
+(WebKit or Chromium), and live iOS Simulator or Android Emulator screens. You drive them with
 Hyprland's keybinds, dispatchers, workspaces, groups, and bezier animations,
 configured in `hyprland.conf` syntax that reloads when you save it.
 
@@ -32,6 +32,10 @@ https://github.com/user-attachments/assets/e8d17d9a-0c64-484d-a049-5247830f8e8d
   touch (tap, drag, long press, edge swipes), keyboard, and Home/Lock buttons.
   A Home button sits under the screen; ⌘Esc and ⇧⌘Esc press Home and Lock.
   Simulator.app isn't needed.
+- **Android Emulator tiles:** attach to running Android Virtual Devices (AVDs).
+  Emulator 37.2.3+ writes scaled raw RGBA into shared memory, with automatic gRPC
+  fallback for older releases. Mouse touches, keyboard events, and visible Back,
+  Home, and Recent apps buttons use gRPC.
 - **Looks:** gradient borders, shadows, rounded or squircle corners
   (`rounding_power`), inactive-window opacity and blur, and a see-through
   background with a full-screen mode that keeps the wallpaper visible.
@@ -44,8 +48,8 @@ https://github.com/user-attachments/assets/e8d17d9a-0c64-484d-a049-5247830f8e8d
   (OSC 9 and OSC 777) show up there.
 - **Keycast:** `hud:keycast` shows each shortcut as you press it, for screen
   sharing and recordings (the demo above uses it).
-- **Pickers:** fzf-style lists in the same style, for choosing among several
-  things: workspaces, booted simulators. Type to filter, Return to choose.
+- **Pickers:** fzf-style lists for workspaces and running iOS or Android devices.
+  Type to filter, then press Return to choose.
 - **Scripting:** `hyprmuxctl`, a `hyprctl`-like CLI over a Unix socket.
 
 ## Requirements
@@ -53,6 +57,9 @@ https://github.com/user-attachments/assets/e8d17d9a-0c64-484d-a049-5247830f8e8d
 - macOS 14 or later on Apple silicon.
 - Xcode 16 or later (Swift 6 toolchain). Simulator tiles use the private
   frameworks of the selected Xcode (`xcode-select -p`).
+- Android Emulator from the Android SDK for Android tiles. Version 37.2.3 or
+  newer enables shared-memory display transport. Hyprmux attaches only to AVDs
+  you already started; it never boots or stops one.
 - About 1.5 GB of disk: the libghostty and Chromium SDK downloads, the build,
   and the app bundle (Chromium is always bundled; the engine is chosen at runtime).
 
@@ -88,7 +95,7 @@ Developer ID signature and notarization.
 |---|---|
 | ⌘↩ | new terminal |
 | ⌘B | new web tile (⌘O focuses the address bar) |
-| ⌘I | show a booted iOS Simulator (a picker if several are booted) |
+| ⌘I | attach a booted iOS Simulator or running Android AVD |
 | ⌘W | close |
 | ⌘H/J/K/L, ⌘ arrows | move focus |
 | ⇧⌘H/J/K/L | move the window |
@@ -125,6 +132,7 @@ syntax, all dispatchers, and the IPC commands.
 hyprmuxctl dispatch workspace 2
 hyprmuxctl dispatch web github.com
 hyprmuxctl dispatch sim booted
+hyprmuxctl dispatch android Pixel_8_API_36
 hyprmuxctl clients            # JSON for every window
 ```
 
@@ -162,6 +170,8 @@ model as tmux's socket. Session restore re-runs only the programs you list in
   work in tiles.
 - **Private frameworks:** simulator tiles and the libghostty fork depend on
   private or fast-moving APIs, so an Xcode or libghostty update can break them.
+- **Android Emulator API:** its gRPC control service is experimental. Hyprmux uses
+  the local discovery file and bearer token created by current emulator releases.
 
 ## License
 
@@ -170,5 +180,5 @@ see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## Credits
 
-Built on Ghostty, the Chromium Embedded Framework, and pieces of idb. Inspired by
+Built on Ghostty, the Chromium Embedded Framework, grpc-swift, SwiftProtobuf, and pieces of idb. Inspired by
 [Hyprland](https://hyprland.org) and [cmux](https://github.com/manaflow-ai/cmux).

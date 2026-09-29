@@ -1,3 +1,4 @@
+import AndroidEmulatorBridge
 import AppKit
 import ChromiumBridge
 import HyprmuxCore
@@ -103,6 +104,9 @@ extension Compositor {
             return tile
         case let s as SimulatorSurface:
             return SessionTile(kind: "sim", title: title, sim: s.display.udid)
+        case let android as AndroidSurface:
+            return SessionTile(kind: "android", title: title,
+                               avd: android.endpoint.avdID, avdName: android.endpoint.name)
         default:
             return nil
         }
@@ -116,9 +120,12 @@ extension Compositor {
         defer { sessionSavingEnabled = true }
         guard config.session.enabled, let s = SessionStore.load(), !s.workspaces.isEmpty else { return false }
         var missingSims: [String] = []
+        var missingAndroid: [String] = []
+        let runningAndroid = AndroidEmulatorDiscovery.running()
         let made = wm.restoreSession(s) { [weak self] tile in
             guard let self else { return nil }
-            return self.restoreTile(tile, missingSims: &missingSims)
+            return self.restoreTile(tile, missingSims: &missingSims,
+                                    missingAndroid: &missingAndroid, runningAndroid: runningAndroid)
         }
         guard !made.isEmpty else { return false }
         log.info("session: restored \(made.count) windows")
@@ -128,11 +135,17 @@ extension Compositor {
                   ? "Simulator \(missingSims[0]) isn't available; its tile was skipped."
                   : "\(missingSims.count) simulators weren't available; their tiles were skipped.")
         }
+        if !missingAndroid.isEmpty {
+            flash(missingAndroid.count == 1
+                  ? "Android AVD \(missingAndroid[0]) isn't running; its tile was skipped."
+                  : "\(missingAndroid.count) Android AVDs weren't running; their tiles were skipped.")
+        }
         return true
     }
 
     /// Creates a tile's surface and view. Nil skips it (a simulator that's gone).
-    func restoreTile(_ t: SessionTile, missingSims: inout [String]) -> ClientID? {
+    func restoreTile(_ t: SessionTile, missingSims: inout [String],
+                     missingAndroid: inout [String], runningAndroid: [AndroidEmulatorEndpoint]) -> ClientID? {
         switch t.kind {
         case "web":
             let web = makeWeb(t.url ?? "")
@@ -146,6 +159,15 @@ extension Compositor {
             let sim = makeSim(display)
             adopt(sim)
             return sim.clientID
+        case "android":
+            let endpoint = t.avd.flatMap { AndroidEmulatorDiscovery.match($0, in: runningAndroid) }
+                ?? t.avdName.flatMap { AndroidEmulatorDiscovery.match($0, in: runningAndroid) }
+            guard let endpoint, let android = try? makeAndroid(endpoint) else {
+                missingAndroid.append(t.avdName ?? t.title ?? t.avd ?? "?")
+                return nil
+            }
+            adopt(android)
+            return android.clientID
         default:
             // Terminals, and anything unknown: a shell, in its directory, maybe running something.
             var opts = SurfaceOptions()

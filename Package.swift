@@ -9,6 +9,10 @@ let package = Package(
         .executable(name: "hyprmuxctl", targets: ["hyprmuxctl"]),
         .executable(name: "HyprmuxHelper", targets: ["HyprmuxHelper"]),
     ],
+    dependencies: [
+        .package(url: "https://github.com/grpc/grpc-swift.git", exact: "1.27.6"),
+        .package(url: "https://github.com/apple/swift-protobuf.git", exact: "1.38.1"),
+    ],
     targets: [
         .binaryTarget(
             name: "GhosttyKit",
@@ -22,7 +26,7 @@ let package = Package(
         // AppKit shell: window, compositor views, animations, libghostty surfaces.
         .executableTarget(
             name: "Hyprmux",
-            dependencies: ["HyprmuxCore", "GhosttyKit", "ChromiumBridge", "SimulatorBridge"],
+            dependencies: ["HyprmuxCore", "GhosttyKit", "ChromiumBridge", "SimulatorBridge", "AndroidEmulatorBridge"],
             swiftSettings: [.swiftLanguageMode(.v5)],
             linkerSettings: [
                 .linkedLibrary("c++"),
@@ -67,6 +71,16 @@ let package = Package(
             cSettings: [.unsafeFlags(["-fobjc-arc"])],
             linkerSettings: [.linkedFramework("IOSurface")]
         ),
+        // Android Emulator discovery and its small checked-in gRPC client surface.
+        .target(
+            name: "AndroidEmulatorBridge",
+            dependencies: [
+                .product(name: "GRPC", package: "grpc-swift"),
+                .product(name: "SwiftProtobuf", package: "swift-protobuf"),
+            ],
+            exclude: ["Protos"],
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
         .executableTarget(
             name: "HyprmuxHelper",
             dependencies: ["ChromiumBridge"],
@@ -75,6 +89,10 @@ let package = Package(
         .testTarget(
             name: "HyprmuxCoreTests",
             dependencies: ["HyprmuxCore"]
+        ),
+        .testTarget(
+            name: "AndroidEmulatorBridgeTests",
+            dependencies: ["AndroidEmulatorBridge"]
         ),
     ],
     cxxLanguageStandard: .cxx20

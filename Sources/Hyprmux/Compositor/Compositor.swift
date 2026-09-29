@@ -1,3 +1,4 @@
+import AndroidEmulatorBridge
 import AppKit
 import HyprmuxCore
 import ChromiumBridge
@@ -319,21 +320,32 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         return web
     }
 
-    /// Shows a booted simulator's screen in a tile. The simulator keeps running when the tile closes.
-    /// Empty query: the only booted device, or a menu to pick one when several are booted.
+    /// Shows an iOS Simulator or Android Emulator in a tile.
+    /// Empty query: the only running device, or one picker containing both platforms.
     private func spawnSim(_ query: String) {
         if query.isEmpty {
             let booted: [HMSimDeviceInfo]
+            let simulatorError: Error?
             do {
                 booted = try HMSimulator.devices().filter(\.booted)
+                simulatorError = nil
             } catch {
-                flash("Simulator: \(error.localizedDescription)")
-                return
+                booted = []
+                simulatorError = error
             }
-            switch booted.count {
-            case 0: flash("No booted simulator. Boot one in Xcode or with xcrun simctl boot.")
-            case 1: spawnSim(booted[0].udid)
-            default: pickSimulator(booted)
+            let android = AndroidEmulatorDiscovery.running()
+            switch booted.count + android.count {
+            case 0:
+                if let simulatorError {
+                    flash("No running device. Simulator: \(simulatorError.localizedDescription)")
+                } else {
+                    flash("No booted iOS Simulator or running Android emulator.")
+                }
+            case 1:
+                if let device = booted.first { spawnSim(device.udid) }
+                else if let endpoint = android.first { openAndroid(endpoint) }
+            default:
+                pickDevice(booted, android)
             }
             return
         }
@@ -351,6 +363,40 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         let sim = SimulatorSurface(id: allocateID(), display: display)
         sim.onClose = { [weak self] s in self?.removeClient(s.clientID) }
         return sim
+    }
+
+    /// Attaches to a running Android Virtual Device. Hyprmux never boots an AVD.
+    /// Empty query: the sole running AVD, or a picker when several are running.
+    private func spawnAndroid(_ query: String) {
+        let endpoints = AndroidEmulatorDiscovery.running()
+        if query.isEmpty {
+            switch endpoints.count {
+            case 0: flash("No running Android emulator. Start an AVD first.")
+            case 1: openAndroid(endpoints[0])
+            default: pickAndroidEmulator(endpoints)
+            }
+            return
+        }
+        guard let endpoint = AndroidEmulatorDiscovery.match(query, in: endpoints) else {
+            flash("No running Android AVD matches \(query).")
+            return
+        }
+        openAndroid(endpoint)
+    }
+
+    private func openAndroid(_ endpoint: AndroidEmulatorEndpoint) {
+        do {
+            manage(try makeAndroid(endpoint))
+        } catch {
+            flash("Android Emulator: \(error.localizedDescription)")
+        }
+    }
+
+    func makeAndroid(_ endpoint: AndroidEmulatorEndpoint) throws -> AndroidSurface {
+        let android = try AndroidSurface(id: allocateID(), endpoint: endpoint)
+        android.onClose = { [weak self] surface in self?.removeClient(surface.clientID) }
+        android.onError = { [weak self] message in self?.flash("Android Emulator: \(message)") }
+        return android
     }
 
     // MARK: Pickers
@@ -398,11 +444,34 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         })).sorted()
     }
 
-    /// Picker of booted simulators: type to filter by name or runtime.
-    private func pickSimulator(_ devices: [HMSimDeviceInfo]) {
-        let items = devices.map { PickerItem(id: $0.udid, title: $0.name, detail: Self.runtimeName($0.runtime)) }
-        hud.picker.present(Picker(title: "simulator", items: items, maxVisible: config.hud.pickerMaxRows)) { [weak self] r in
-            if case .item(let udid)? = r { self?.spawnSim(udid) }
+    /// One picker for every running mobile device Hyprmux can embed.
+    private func pickDevice(_ devices: [HMSimDeviceInfo], _ endpoints: [AndroidEmulatorEndpoint]) {
+        let ios = devices.map {
+            PickerItem(id: "ios:\($0.udid)", title: $0.name, detail: Self.runtimeName($0.runtime))
+        }
+        let android = endpoints.map {
+            let detail = $0.avdID == $0.name ? "Android" : "Android · \($0.avdID)"
+            return PickerItem(id: "android:\($0.avdID)", title: $0.name, detail: detail)
+        }
+        hud.picker.present(Picker(title: "device", items: ios + android, maxVisible: config.hud.pickerMaxRows)) { [weak self] result in
+            guard case .item(let id)? = result else { return }
+            if id.hasPrefix("ios:") {
+                self?.spawnSim(String(id.dropFirst(4)))
+            } else if id.hasPrefix("android:") {
+                self?.spawnAndroid(String(id.dropFirst(8)))
+            }
+        }
+    }
+
+    /// Picker of AVDs that already have a live emulator process.
+    private func pickAndroidEmulator(_ endpoints: [AndroidEmulatorEndpoint]) {
+        let items = endpoints.map {
+            PickerItem(id: String($0.pid), title: $0.name, detail: $0.avdID == $0.name ? "running" : $0.avdID)
+        }
+        hud.picker.present(Picker(title: "android emulator", items: items, maxVisible: config.hud.pickerMaxRows)) { [weak self] result in
+            guard case .item(let rawPID)? = result, let pid = Int32(rawPID),
+                  let endpoint = endpoints.first(where: { $0.pid == pid }) else { return }
+            self?.openAndroid(endpoint)
         }
     }
 
@@ -481,6 +550,8 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
             views[id]?.surface.requestClose()
         case .spawnSim(let q):
             DispatchQueue.main.async { [weak self] in self?.spawnSim(q) }
+        case .spawnAndroid(let q):
+            DispatchQueue.main.async { [weak self] in self?.spawnAndroid(q) }
         case .simButton(let id, let name):
             (views[id]?.surface as? SimulatorSurface)?.press(name == "lock" ? .lock : .home)
         case .spawnWeb(let url):

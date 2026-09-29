@@ -1,8 +1,8 @@
 # Architecture
 
 Hyprmux is one macOS app that acts as a small compositor. Its window is the
-"monitor". Inside it, tiles hold terminals, web pages, or iOS Simulator
-screens, laid out and driven the way Hyprland lays out and drives windows.
+"monitor". Inside it, tiles hold terminals, web pages, iOS Simulator screens,
+or Android Emulator screens. Hyprmux lays them out and drives them like Hyprland windows.
 There is no Apple window-management API underneath. Tiles are views that
 Hyprmux owns, positions, and animates itself.
 
@@ -22,12 +22,14 @@ Hyprmux owns, positions, and animates itself.
 │                                            ├ TerminalView (libghostty)
 │                                            ├ WebKitSurface (WKWebView)
 │                                            ├ ChromiumSurface (CEF)  │
-│                                            └ SimulatorSurface       │
+│                                            ├ SimulatorSurface       │
+│                                            └ AndroidSurface         │
 │    HUD: overlay layer, theme, NotificationStack, PickerPresenter    │
 │    IPCServer (Unix socket) ◄── hyprmuxctl                          │
 │                                                                     │
 │  ChromiumBridge (Obj-C++)  ── CEF framework + 4 helper apps          │
 │  SimulatorBridge (Obj-C)   ── Xcode's CoreSimulator/SimulatorKit     │
+│  AndroidEmulatorBridge     ── grpc-swift + checked-in generated API  │
 │  GhosttyKit (prebuilt libghostty)                                   │
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -42,6 +44,7 @@ Hyprmux owns, positions, and animates itself.
 | `CEFWrapper` | C++ | CEF's `libcef_dll_wrapper`, built by SwiftPM from `vendor/cef` (no cmake). |
 | `HyprmuxHelper` | Obj-C | Chromium's helper process (GPU, renderer, ...). |
 | `SimulatorBridge` | Obj-C | Simulator display and input through Xcode's private frameworks. |
+| `AndroidEmulatorBridge` | Swift 5 | Running-AVD discovery and the Android Emulator's authenticated gRPC screenshot, touch, and key calls. Generated protobuf code stays inside this target. |
 | `GhosttyKit` | binary | Prebuilt libghostty xcframework (terminal emulation and rendering). |
 | `hyprmuxctl` | Swift | The IPC client. |
 
@@ -155,6 +158,8 @@ handles occlusion, close, and destroy.
     See [Chromium](#chromium-cef).
 - **`SimulatorSurface`:** a booted iOS Simulator's screen, with touch and
   keys. See [Simulator](#ios-simulator).
+- **`AndroidSurface`:** a running AVD's raw screenshot stream, with touch and
+  physical Mac key input. See [Android Emulator](#android-emulator).
 
 ### Input
 
@@ -227,8 +232,9 @@ Hyprland overlay layer: elements sit above every tile and never tile.
 
 - **Schema and model in the core:** `SessionState` (JSON) holds workspaces,
   split trees, floating rects as fractions of the work area, groups, focus, and
-  names. `WindowManager.exportSession` and `restoreSession` take closures: the
-  app describes each client as a `SessionTile`, and creates a client from one.
+  names. Android tiles retain their stable AVD id and display name.
+  `WindowManager.exportSession` and `restoreSession` take closures. The app
+  describes each client as a `SessionTile`, and creates a client from one.
   A tile the app skips collapses its split. `RestorePolicy` decides which
   foreground programs re-run and turns agent reports into resume commands.
 - **Describing a terminal** (`Compositor+Session.swift`): the directory comes
@@ -322,11 +328,38 @@ not a crash.
 - **Buttons:** Home and Lock use `IndigoHIDMessageForButton`. The bar's Home
   button and the `simbutton` binds share one path.
 
+## Android Emulator
+
+`AndroidEmulatorBridge` reads emulator advertisements from macOS running-AVD
+folders. It accepts only regular, user-owned `pid_*.ini` and `pid_*_info.ini`
+files whose process still exists. Endpoints must use loopback addresses. Hyprmux never starts or
+stops an emulator.
+
+- **Discovery:** reads the stable `avd.id`, display `avd.name`, local gRPC port,
+  and optional `grpc.token`. Endpoint descriptions always redact the token.
+- **Display:** the first native RGBA8888 frame establishes input coordinates.
+  Emulator 37.2.3+ then writes frames within a 720×1280 bound into a client-owned
+  file mapping. Each notification snapshots the mapping before Core Animation
+  reads it. Older emulators and rejected MMAP requests fall back to gRPC bytes.
+  The surface wraps pixels in `CGImage` without codec work and keeps only the
+  newest pending frame.
+- **Input:** one long-lived `streamInputEvent` call carries touch and keyboard
+  events. The mouse maps into the aspect-fitted device image. Touch pressure is
+  1 while down and 0 when released. Keys use physical macOS codes with the
+  proto's `Mac` code type. Modifier transitions use `flagsChanged`. The visible
+  Back, Home, and Recent apps buttons send `GoBack`, `GoHome`, and `AppSwitch`.
+- **Lifecycle:** occluded tiles cancel their screenshot stream. Closing a tile
+  closes only the gRPC channel and leaves the AVD running.
+
+The source proto subset mirrors the installed Android Emulator definitions.
+Generated Swift is checked in, so normal builds do not need `protoc`.
+
 ## Rendering pipeline notes
 
 - **Terminals:** libghostty draws terminals on its own Metal layer.
 - **Chromium:** composites into its child view through its own layer tree.
 - **Simulator:** its `IOSurface` is a layer's contents.
+- **Android Emulator:** raw RGBA frames wrap in `CGImage` values and become a layer's contents.
 - **Everything else** is Core Animation: borders, masks, shadow, the blur
   view, and the tab strip.
 - **Opacity:** the clip's group opacity applies to all of them, which is how

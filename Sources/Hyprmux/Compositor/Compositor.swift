@@ -937,6 +937,9 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
             case .reload:
                 handle(.reload)
                 return "ok"
+            case .caption(let text):
+                hud.caption.show(text)
+                return "ok"
             case .resume(let r):
                 let id = ClientID(r.client)
                 guard views[id]?.surface is TerminalView else { return "error: no terminal \(r.client)" }

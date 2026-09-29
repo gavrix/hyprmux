@@ -36,7 +36,21 @@ styling change:
 scripts/demo/record.sh              # -> docs/media/demo.mp4 and demo.gif
 scripts/demo/record.sh --rehearse   # play it without recording; the instance stays open
 scripts/demo/publish.sh             # put the new video in the README
+scripts/demo/record.sh --clip intro # one short clip for posting -> build/clips/intro.mp4
+scripts/demo/record.sh --clip all   # every clip in scripts/demo/clips/
 ```
+
+**Clips** (`scripts/demo/clips/*.sh`) are short, 16:9 (1600x900) videos for
+posting, one feature each: `intro`, `config`, `workspaces`, and `simulator`. Each
+defines `play()` and optionally `setup()`, which runs before recording starts, and
+`teardown()`, which runs after it stops. Helpers such as `key`, `type_line`, and
+`caption` come from `lib.sh`. `caption "Title | subtitle"` shows a caption panel
+at the top of the window (the `caption` IPC command); `caption` with no text
+hides it. The simulator clip creates a throwaway simulator and deletes it
+afterwards. It opens the simulator by UDID, because ⌘I would list every booted
+one. For the config clip, record.sh writes the default config and the demo
+overrides into one file, `/tmp/hyprmux-demo/hyprmux.conf`, so nvim can edit it
+and each save reloads live.
 
 GitHub plays a README video inline only when it's hosted as an attachment, not
 as a file in the repo. `publish.sh` posts `demo.mp4` to the repo's "README media"

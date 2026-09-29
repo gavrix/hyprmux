@@ -72,7 +72,8 @@ extension Dispatcher {
             if case .id(let n) = t { return "Workspace \(n)" }
             return "Go to \(ws(t))"
         case .moveToWorkspace(let t, let silent): return (silent ? "Send to " : "Move to ") + ws(t)
-        case .toggleSpecialWorkspace(let s): return s == "special" ? "Scratchpad" : "Scratchpad \(s)"
+        // "magic" is Hyprland's stock scratchpad name: not worth showing.
+        case .toggleSpecialWorkspace(let s): return ["special", "magic"].contains(s) ? "Scratchpad" : "Scratchpad \(s)"
         case .toggleFloating: return "Float / tile"
         case .fullscreen(let m): return m == .maximize ? "Maximize" : "Fullscreen"
         case .toggleSplit: return "Flip split"

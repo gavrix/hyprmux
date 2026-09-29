@@ -471,5 +471,6 @@ the PID identifies its Hyprmux app instance. `hyprmuxctl` talks to that socket (
 | `hittest <x y>` | Which views a click at that point reaches. |
 | `debug` | Focus internals: app active, key window, first responder, and which window holds the keyboard. |
 | `resume {json}` | An agent reports how to bring its terminal back. See [Session restore](#session-restore). |
+| `caption [Title \| subtitle]` | A caption panel at the top of the window, for demo recordings. No text hides it. |
 
 Coordinates are in the Hyprmux window's space, from the top-left.

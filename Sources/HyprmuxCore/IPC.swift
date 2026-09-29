@@ -33,6 +33,8 @@ public enum IPCRequest: Equatable {
     case sendMouse(phase: String, Modifiers, button: Int, at: CGPoint)
     /// An agent says how to bring its terminal back: `resume {"client":…, "pid":…, "kind":…, "session":…}`.
     case resume(ResumeReport)
+    /// Demo recordings: a caption at the top of the window, "Title | subtitle". Empty clears it.
+    case caption(String)
 
     public static func parse(_ line: String) -> Result<IPCRequest, ParseError> {
         let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -53,6 +55,7 @@ public enum IPCRequest: Equatable {
         case "reload": return .success(.reload)
         case "version": return .success(.version)
         case "debug": return .success(.debug)
+        case "caption": return .success(.caption(rest))
         case "resume":
             guard let r = try? JSONDecoder().decode(ResumeReport.self, from: Data(rest.utf8)) else {
                 return .failure(ParseError("resume: expected JSON with client, pid, kind, session"))

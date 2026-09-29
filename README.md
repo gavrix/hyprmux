@@ -22,8 +22,9 @@ https://github.com/user-attachments/assets/4cfa8cc4-6a7e-4292-a5b9-cbbce61a1e8d
   move, and fullscreen as a whole.
 - **Terminals:** a full Ghostty terminal in each tile, with your Ghostty config,
   IME, mouse, clipboard, and shell integration.
-- **Web tiles:** an address bar that takes URLs, hosts, or search terms. Popups
-  open as new tiles, and ⌘-click on a terminal link opens it in a tile.
+- **Web tiles:** back, forward, and reload buttons, and an address bar that takes
+  URLs, hosts, or search terms. Popups open as new tiles. ⌘-click or middle-click
+  on a page link, or ⌘-click on a terminal link, opens it in a tile.
   - **WebKit engine:** light, but no passkeys.
   - **Chromium engine (CEF):** passkeys from your phone or a USB security key,
     enough for Okta and GitHub sign-in.

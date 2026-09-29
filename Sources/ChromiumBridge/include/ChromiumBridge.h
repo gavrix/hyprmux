@@ -14,6 +14,8 @@ NS_ASSUME_NONNULL_BEGIN
               canGoBack:(BOOL)canGoBack
            canGoForward:(BOOL)canGoForward;
 - (void)chromiumBrowser:(HMChromiumBrowser *)browser progressChanged:(double)progress;
+/// Status text: the URL of the hovered link, or empty.
+- (void)chromiumBrowser:(HMChromiumBrowser *)browser statusMessageChanged:(NSString *)message;
 /// The page opened a window (window.open, target=_blank). Return a browser made with
 /// -initPendingWithParentView: to host it (keeps window.opener), or nil to block it.
 - (nullable HMChromiumBrowser *)chromiumBrowser:(HMChromiumBrowser *)browser wantsPopupForURL:(NSString *)url;

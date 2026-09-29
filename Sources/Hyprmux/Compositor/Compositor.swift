@@ -796,6 +796,14 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         apply(animated: true)
     }
 
+    private func hasHoveredLink(_ s: Surface?) -> Bool {
+        switch s {
+        case let t as TerminalView: t.hoveredLink != nil
+        case let b as BrowserSurface: b.hoveredLink != nil
+        default: false
+        }
+    }
+
     private func handleMouseBind(_ e: NSEvent) -> NSEvent? {
         guard e.window === window else { return e }
         let p = point(e)
@@ -805,9 +813,12 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
             if hud.contains(p) { return e }
             let button = e.type == .leftMouseDown ? 272 : 273
             let mods = modifiers(e.modifierFlags)
-            // Cmd+click on a terminal link opens the link, even when $mod+click moves windows.
-            if button == 272, e.modifierFlags.contains(.command), let id = wm.client(at: p), let term = views[id]?.surface as? TerminalView,
-               term.hoveredLink != nil {
+            // Cmd+click on a link (terminal or web) opens the link, even when $mod+click moves windows.
+            if button == 272, e.modifierFlags.contains(.command), let id = wm.client(at: p), hasHoveredLink(views[id]?.surface) {
+                if id != wm.focused {
+                    wm.focus(id)
+                    apply(animated: true)
+                }
                 return e
             }
             guard let bind = config.binds.first(where: {
@@ -958,17 +969,22 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
                 injectDrag(mods, button: button, from: from, to: to)
                 return "ok"
             case .sendMouse(let phase, let mods, let button, let at):
-                let right = button == 273
+                let right = button == 273, middle = button == 274
                 let type: NSEvent.EventType = switch phase {
-                case "down": right ? .rightMouseDown : .leftMouseDown
-                case "drag": right ? .rightMouseDragged : .leftMouseDragged
+                case "down": middle ? .otherMouseDown : right ? .rightMouseDown : .leftMouseDown
+                case "drag": middle ? .otherMouseDragged : right ? .rightMouseDragged : .leftMouseDragged
                 case "move": .mouseMoved
-                default: right ? .rightMouseUp : .leftMouseUp
+                default: middle ? .otherMouseUp : right ? .rightMouseUp : .leftMouseUp
                 }
-                if let e = NSEvent.mouseEvent(
+                if var e = NSEvent.mouseEvent(
                     with: type, location: root.convert(at, to: nil), modifierFlags: nsFlags(mods),
                     timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
                     context: nil, eventNumber: 0, clickCount: 1, pressure: phase == "up" ? 0 : 1) {
+                    // mouseEvent(with:) can't set the button; other-mouse events default to 0.
+                    if middle, let cg = e.cgEvent {
+                        cg.setIntegerValueField(.mouseEventButtonNumber, value: 2)
+                        e = NSEvent(cgEvent: cg) ?? e
+                    }
                     NSApp.postEvent(e, atStart: false)
                 }
                 return "ok"

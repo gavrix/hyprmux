@@ -37,6 +37,9 @@ class BrowserSurface: FlippedView, Surface, NSTextFieldDelegate {
     /// Holds the engine's view. Laid out below the address bar.
     let content = FlippedView()
     private let bar = NSView()
+    private let backButton = BarButton(symbol: "chevron.left", label: "Back")
+    private let forwardButton = BarButton(symbol: "chevron.right", label: "Forward")
+    private let reloadButton = BarButton(symbol: "arrow.clockwise", label: "Reload")
     private let address = AddressField()
     private let progressLine = NSView()
     private var showBar: Bool
@@ -47,6 +50,10 @@ class BrowserSurface: FlippedView, Surface, NSTextFieldDelegate {
     var topCornerInset: CGFloat = 0 { didSet { if topCornerInset != oldValue { layoutContent() } } }
     private(set) var loading = false
     private var progress: Double = 0
+    private(set) var canGoBack = false
+    private(set) var canGoForward = false
+    /// The link under the pointer, if any. Lets $mod+click on a link open it instead of moving the tile.
+    private(set) var hoveredLink: String?
 
     init(id: ClientID, options: BrowserOptions) {
         clientID = id
@@ -58,6 +65,13 @@ class BrowserSurface: FlippedView, Surface, NSTextFieldDelegate {
         bar.wantsLayer = true
         bar.layer?.backgroundColor = NSColor(white: 0.1, alpha: 0.92).cgColor
         addSubview(bar)
+        for (button, action) in [(backButton, #selector(goBackClicked)), (forwardButton, #selector(goForwardClicked)),
+                                 (reloadButton, #selector(reloadClicked))] {
+            button.target = self
+            button.action = action
+            bar.addSubview(button)
+        }
+        updateNavButtons()
         address.delegate = self
         address.onCancel = { [weak self] in self?.focusPage() }
         address.placeholderString = "Search or enter address"
@@ -115,6 +129,17 @@ class BrowserSurface: FlippedView, Surface, NSTextFieldDelegate {
     func engineLoadingChanged(_ l: Bool) {
         loading = l
         layoutProgress()
+        updateNavButtons()
+    }
+
+    func engineHistoryChanged(canGoBack back: Bool, canGoForward forward: Bool) {
+        canGoBack = back
+        canGoForward = forward
+        updateNavButtons()
+    }
+
+    func engineHoveredLinkChanged(_ link: String?) {
+        hoveredLink = (link?.isEmpty ?? true) ? nil : link
     }
 
     func engineProgressChanged(_ p: Double) {
@@ -130,7 +155,8 @@ class BrowserSurface: FlippedView, Surface, NSTextFieldDelegate {
     var backdropColor: NSColor { NSColor(white: 0.1, alpha: 1) }
     var info: [String: Any] {
         ["url": currentURL, "engine": engineName,
-         "address": address.currentEditor()?.string ?? address.stringValue, "editingAddress": isEditingAddress]
+         "address": address.currentEditor()?.string ?? address.stringValue, "editingAddress": isEditingAddress,
+         "canGoBack": canGoBack, "canGoForward": canGoForward, "loading": loading, "hoveredLink": hoveredLink ?? ""]
     }
     func setOccluded(_ occluded: Bool) {}
     func requestClose() { engineClose() }
@@ -191,6 +217,16 @@ class BrowserSurface: FlippedView, Surface, NSTextFieldDelegate {
 
     private var isEditingAddress: Bool { address.currentEditor() != nil }
 
+    @objc private func goBackClicked() { engineGoBack() }
+    @objc private func goForwardClicked() { engineGoForward() }
+    @objc private func reloadClicked() { loading ? engineStop() : engineReload() }
+
+    private func updateNavButtons() {
+        backButton.isEnabled = canGoBack
+        forwardButton.isEnabled = canGoForward
+        reloadButton.setSymbol(loading ? "xmark" : "arrow.clockwise", label: loading ? "Stop" : "Reload")
+    }
+
     // MARK: Layout
 
     override func setFrameSize(_ newSize: NSSize) {
@@ -203,7 +239,14 @@ class BrowserSurface: FlippedView, Surface, NSTextFieldDelegate {
         bar.isHidden = !showBar
         bar.frame = CGRect(x: 0, y: 0, width: bounds.width, height: h)
         let side = max(8, topCornerInset)
-        address.frame = CGRect(x: side, y: 5, width: max(0, bounds.width - 2 * side), height: h - 10)
+        let button: CGFloat = 22, gap: CGFloat = 2
+        var x = side - 4  // the symbols have their own padding
+        for b in [backButton, forwardButton, reloadButton] {
+            b.frame = CGRect(x: x, y: (h - button) / 2, width: button, height: button)
+            x += button + gap
+        }
+        x += 4
+        address.frame = CGRect(x: x, y: 5, width: max(0, bounds.width - x - side), height: h - 10)
         content.frame = CGRect(x: 0, y: h, width: bounds.width, height: max(0, bounds.height - h))
         layoutProgress()
     }
@@ -227,6 +270,32 @@ class BrowserSurface: FlippedView, Surface, NSTextFieldDelegate {
         }
         return false
     }
+}
+
+/// Borderless icon button in the address bar. Never takes keyboard focus.
+final class BarButton: NSButton {
+    init(symbol: String, label: String) {
+        super.init(frame: .zero)
+        isBordered = false
+        bezelStyle = .regularSquare
+        imagePosition = .imageOnly
+        refusesFirstResponder = true
+        setSymbol(symbol, label: label)
+    }
+
+    required init?(coder: NSCoder) { fatalError("not supported") }
+
+    func setSymbol(_ symbol: String, label: String) {
+        let config = NSImage.SymbolConfiguration(pointSize: 12, weight: .medium)
+        image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)?.withSymbolConfiguration(config)
+        toolTip = label
+        setAccessibilityLabel(label)
+    }
+
+    override var isEnabled: Bool { didSet { updateTint() } }
+    override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); updateTint() }
+    private func updateTint() { contentTintColor = NSColor(white: isEnabled ? 0.85 : 0.35, alpha: 1) }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
 
 /// Text field that reports Escape even when empty.

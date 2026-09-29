@@ -138,6 +138,11 @@ class HMClient : public CefClient,
     [o.delegate chromiumBrowser:o addressChanged:NS(url)];
   }
 
+  void OnStatusMessage(CefRefPtr<CefBrowser> browser, const CefString &value) override {
+    HMChromiumBrowser *o = owner_;
+    [o.delegate chromiumBrowser:o statusMessageChanged:NS(value)];
+  }
+
   void OnLoadingProgressChange(CefRefPtr<CefBrowser> browser, double progress) override {
     HMChromiumBrowser *o = owner_;
     [o.delegate chromiumBrowser:o progressChanged:progress];

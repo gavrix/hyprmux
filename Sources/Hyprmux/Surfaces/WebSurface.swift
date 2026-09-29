@@ -26,10 +26,17 @@ final class WebKitSurface: BrowserSurface, WKNavigationDelegate, WKUIDelegate {
             webView.observe(\.url, options: [.new]) { [weak self] wv, _ in self?.engineURLChanged(wv.url?.absoluteString ?? "") },
             webView.observe(\.estimatedProgress, options: [.new]) { [weak self] wv, _ in self?.engineProgressChanged(wv.estimatedProgress) },
             webView.observe(\.isLoading, options: [.new]) { [weak self] wv, _ in self?.engineLoadingChanged(wv.isLoading) },
+            webView.observe(\.canGoBack, options: [.new]) { [weak self] wv, _ in self?.historyChanged(wv) },
+            webView.observe(\.canGoForward, options: [.new]) { [weak self] wv, _ in self?.historyChanged(wv) },
         ]
+        historyChanged(webView)
     }
 
     required init?(coder: NSCoder) { fatalError("not supported") }
+
+    private func historyChanged(_ wv: WKWebView) {
+        engineHistoryChanged(canGoBack: wv.canGoBack, canGoForward: wv.canGoForward)
+    }
 
     private static func makeConfiguration() -> WKWebViewConfiguration {
         let c = WKWebViewConfiguration()
@@ -85,8 +92,10 @@ final class WebKitSurface: BrowserSurface, WKNavigationDelegate, WKUIDelegate {
             decisionHandler(.cancel)
             return
         }
-        // Cmd+click: open in a new tile instead of navigating.
-        if action.modifierFlags.contains(.command), action.navigationType == .linkActivated, let url = action.request.url {
+        // Cmd+click or middle-click: open in a new tile instead of navigating.
+        // buttonNumber is a mask here (WebEventFactory::toNSButtonNumber): middle is 1 << 2.
+        let newTile = action.modifierFlags.contains(.command) || action.buttonNumber == 1 << 2
+        if newTile, action.navigationType == .linkActivated, let url = action.request.url {
             host?.browserSurface(self, openInNewTile: url.absoluteString)
             decisionHandler(.cancel)
             return
@@ -117,6 +126,15 @@ final class WebKitSurface: BrowserSurface, WKNavigationDelegate, WKUIDelegate {
     }
 
     func webViewDidClose(_ webView: WKWebView) { requestClose() }
+
+    /// Private WKUIDelegate callback (Safari's status bar uses it): the element under the pointer.
+    /// If WebKit stops calling it, hovered links are unknown and $mod+click moves the tile as before.
+    @objc(_webView:mouseDidMoveOverElement:withFlags:userInfo:)
+    func webView(_ webView: WKWebView, mouseDidMoveOverElement hit: AnyObject?, withFlags flags: NSEvent.ModifierFlags, userInfo: AnyObject?) {
+        let sel = NSSelectorFromString("absoluteLinkURL")
+        guard let hit, hit.responds(to: sel) else { return engineHoveredLinkChanged(nil) }
+        engineHoveredLinkChanged((hit.perform(sel)?.takeUnretainedValue() as? URL)?.absoluteString)
+    }
 
     func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String,
                  initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping () -> Void) {

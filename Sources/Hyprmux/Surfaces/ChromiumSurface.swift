@@ -93,6 +93,12 @@ final class ChromiumSurface: BrowserSurface, HMChromiumBrowserDelegate {
 
     func chromiumBrowser(_ b: HMChromiumBrowser, loadingChanged loading: Bool, canGoBack: Bool, canGoForward: Bool) {
         engineLoadingChanged(loading)
+        engineHistoryChanged(canGoBack: canGoBack, canGoForward: canGoForward)
+    }
+
+    func chromiumBrowser(_ b: HMChromiumBrowser, statusMessageChanged message: String) {
+        // Chromium shows the hovered link's URL as its status message.
+        engineHoveredLinkChanged(message)
     }
 
     func chromiumBrowser(_ b: HMChromiumBrowser, wantsPopupForURL url: String) -> HMChromiumBrowser? {

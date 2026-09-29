@@ -145,8 +145,9 @@ handles occlusion, close, and destroy.
     back to their views (title, pwd, close, clipboard, open URL).
   - Ghostty's own new-split and goto-split actions map onto Hyprmux
     dispatchers.
-- **`BrowserSurface`:** the shared part of a web tile: address bar, start
-  page, navigation. Two engines subclass it:
+- **`BrowserSurface`:** the shared part of a web tile: address bar and
+  navigation buttons, start page, navigation, and the hovered link (so
+  `$mod`+click on a link opens it instead of moving the tile). Two engines subclass it:
   - **`WebKitSurface`:** a `WKWebView`. Light, but no passkeys: Apple gates
     WebAuthn in web views behind a browser entitlement.
   - **`ChromiumSurface`:** CEF through `ChromiumBridge`. Chromium implements

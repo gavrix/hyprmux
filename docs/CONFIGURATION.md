@@ -167,7 +167,7 @@ Groups hold several windows as tabs in one tile.
 | `home` | DuckDuckGo | Page for `webnav home`. |
 | `search` | DuckDuckGo | Search URL for address-bar text that isn't a URL; `%s` is the query. |
 | `open_terminal_links` | true | ⌘-click on a link in a terminal opens a web tile instead of your browser. Over a link, ⌘-click opens it even when `$mod` + click is bound to `movewindow`. |
-| `address_bar` | true | Show the address bar. |
+| `address_bar` | true | Show the address bar, with back, forward, and reload buttons. |
 | `chromium_extensions` | — | Comma-separated unpacked extension folders to load into Chromium. Extensions that need tabs (like 1Password) don't work in tiles. |
 | `chromium_flags` | — | Space-separated Chromium switches, e.g. `remote-debugging-port=9333`. |
 
@@ -464,7 +464,7 @@ the PID identifies its Hyprmux app instance. `hyprmuxctl` talks to that socket (
 | `reload` | Reloads the config. |
 | `sendtext <text>` | Types text into the focused terminal (`\n` = Enter). |
 | `sendkey <MODS>, <key>` | Injects a key press through the normal key path. |
-| `sendmouse down\|drag\|up\|move <MODS>, <button>, <x y>` | Injects one mouse event (holds, hand-timed gestures). |
+| `sendmouse down\|drag\|up\|move <MODS>, <button>, <x y>` | Injects one mouse event (holds, hand-timed gestures). Buttons: 272 left, 273 right, 274 middle. |
 | `senddrag <MODS>, <button>, <x1 y1>, <x2 y2>` | Injects a paced drag (about 16 ms per step). |
 | `hittest <x y>` | Which views a click at that point reaches. |
 | `debug` | Focus internals: app active, key window, first responder, and which window holds the keyboard. |

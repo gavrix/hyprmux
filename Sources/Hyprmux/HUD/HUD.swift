@@ -28,6 +28,7 @@ final class HUD {
 
     private(set) var notifications: NotificationStack!
     private(set) var picker: PickerPresenter!
+    private(set) var keycast: KeycastPresenter!
 
     init(config: HyprmuxConfig, theme: HUDTheme, animator: Animator) {
         self.config = config
@@ -37,6 +38,7 @@ final class HUD {
         layer.layer?.masksToBounds = false
         notifications = NotificationStack(hud: self)
         picker = PickerPresenter(hud: self)
+        keycast = KeycastPresenter(hud: self)
     }
 
     func reload(config: HyprmuxConfig, theme: HUDTheme) {
@@ -44,6 +46,7 @@ final class HUD {
         self.theme = theme
         notifications.reload()
         picker.reload()
+        keycast.reload()
     }
 
     /// The monitor window resized or the bar moved.
@@ -55,13 +58,15 @@ final class HUD {
         if changed {
             notifications.relayout(animated: animated)
             picker.relayout()
+            keycast.relayout()
         }
     }
 
     /// Whether a point (monitor coordinates) is over a HUD element, so tile clicks and
     /// focus-follows-mouse leave it alone.
     func contains(_ p: CGPoint) -> Bool {
-        layer.subviews.contains { !$0.isHidden && $0.alphaValue > 0 && $0.frame.contains(p) }
+        // The keycast only shows keys; clicks go through it.
+        layer.subviews.contains { !($0 is KeycastView) && !$0.isHidden && $0.alphaValue > 0 && $0.frame.contains(p) }
     }
 
     /// Frames of the HUD panels on screen, for `hyprmuxctl debug`.

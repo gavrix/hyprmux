@@ -89,6 +89,21 @@ public struct KeyBind: Equatable, Sendable {
     /// Hyprland bind flags: e (repeat), l (locked), r (release), n (non-consuming), m (mouse).
     public var flags: Set<Character>
     public var submap: String
+    /// From `bindd = MODS, key, description, dispatcher, args`. Shown by the keycast.
+    public var description: String?
+
+    public init(mods: Modifiers, trigger: BindTrigger, dispatcher: Dispatcher, flags: Set<Character>,
+                submap: String, description: String? = nil) {
+        self.mods = mods
+        self.trigger = trigger
+        self.dispatcher = dispatcher
+        self.flags = flags
+        self.submap = submap
+        self.description = description
+    }
+
+    /// What the keycast shows for this bind: its description, or one made from the dispatcher.
+    public var label: String { description.flatMap { $0.isEmpty ? nil : $0 } ?? dispatcher.label }
 }
 
 public struct HyprmuxConfig: Sendable {
@@ -429,6 +444,7 @@ public enum ConfigParser {
             case "hud:notifications:width": if let v = num() { config.hud.notificationWidth = min(max(v, 160), 1200) }
             case "hud:picker:width": if let v = num() { config.hud.pickerWidth = min(max(v, 240), 1600) }
             case "hud:picker:max_rows": if let v = num() { config.hud.pickerMaxRows = min(max(1, Int(v)), 40) }
+            case "hud:keycast": if let v = bool() { config.hud.keycast = v }
             case "session:restore": if let v = bool() { config.session.enabled = v }
             case "session:programs": config.session.programs = list()
             case "session:deny": config.session.deny = list()
@@ -463,7 +479,8 @@ public enum ConfigParser {
             let maxParts = hasDescription ? 5 : 4
             var parts = value.split(separator: ",", maxSplits: maxParts - 1, omittingEmptySubsequences: false)
                 .map { $0.trimmingCharacters(in: .whitespaces) }
-            if hasDescription, parts.count >= 3 { parts.remove(at: 2) }
+            var description: String?
+            if hasDescription, parts.count >= 3 { description = parts.remove(at: 2) }
             guard parts.count >= 3 else { error(file, line, "\(key): expected 'MODS, key, dispatcher[, args]'"); return }
             let mods: Modifiers
             switch Modifiers.parse(parts[0]) {
@@ -485,7 +502,8 @@ public enum ConfigParser {
                 case .failure(let e): error(file, line, "\(key): \(e)"); return
                 }
             }
-            config.binds.append(KeyBind(mods: mods, trigger: trigger, dispatcher: dispatcher, flags: flags, submap: submap))
+            config.binds.append(KeyBind(mods: mods, trigger: trigger, dispatcher: dispatcher, flags: flags,
+                                        submap: submap, description: description))
         }
     }
 }

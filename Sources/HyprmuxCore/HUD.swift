@@ -63,6 +63,8 @@ public struct HUDSettings: Equatable, Sendable {
     /// Pickers (menus, selection lists) open centered in the window.
     public var pickerWidth: Double = 600
     public var pickerMaxRows = 10
+    /// Show each shortcut Hyprmux acts on, for screen sharing and recordings.
+    public var keycast = false
 
     public init() {}
 }

@@ -43,8 +43,9 @@ as a file in the repo. `publish.sh` posts `demo.mp4` to the repo's "README media
 issue (`gh issue comment --attach`) and points the README at the new attachment.
 Commit the README, the MP4, and the GIF afterwards.
 
-- **`scenario.sh`** is the demo: dispatchers, keys, and text typed into
-  terminals, with pauses. Edit it to show something new.
+- **`scenario.sh`** is the demo: the real default shortcuts, text typed into
+  terminals, and pauses. The demo config turns on `hud:keycast`, so each
+  shortcut shows on screen as it's pressed. Edit it to show something new.
 - **`hyprmux.conf`** is the default config plus a few overrides: no
   follow-mouse, no session restore, WebKit, and a plain `zsh` in a fake project
   under `/tmp/hyprmux-demo`.

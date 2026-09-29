@@ -212,6 +212,16 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         return "Empty workspace"
     }
 
+    /// What a picker key did, for the keycast. Nil for keys not worth showing.
+    private static func pickerKeyLabel(_ code: UInt16) -> String? {
+        switch code {
+        case 0x24, 0x4C: "Choose"
+        case 0x35: "Cancel"
+        case 0x7E, 0x7D, 0x30, 0x23, 0x2D: "Select"
+        default: nil
+        }
+    }
+
     private static func describe(_ m: Modifiers) -> String {
         var s = ""
         if m.contains(.ctrl) { s += "⌃" }
@@ -769,6 +779,9 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
             hud.picker.focus(in: window)
             guard hud.picker.handleKey(e) else { return e }
             consumedKeyUps.insert(e.keyCode)
+            if let label = Self.pickerKeyLabel(e.keyCode) {
+                hud.keycast.press(chord: KeyChord.display(modifiers(e.modifierFlags), .key(e.keyCode)), label: label)
+            }
             return nil
         }
         let mods = modifiers(e.modifierFlags)
@@ -777,6 +790,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         }) else { return e }
         consumedKeyUps.insert(e.keyCode)
         if e.isARepeat && !bind.flags.contains("e") { return nil }
+        hud.keycast.press(chord: KeyChord.display(bind.mods, bind.trigger), label: bind.label)
         dispatch(bind.dispatcher)
         return bind.flags.contains("n") ? e : nil
     }
@@ -1061,7 +1075,13 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         case 0x30: chars = "\t"
         case 0x31: chars = " "
         case 0x35: chars = "\u{1b}"
-        default: chars = mods.contains(.shift) ? name.uppercased() : name
+        default:
+            // US layout: what Shift makes of punctuation and digits (":" from ";", ...).
+            let shifted: [String: String] = [
+                "1": "!", "2": "@", "3": "#", "4": "$", "5": "%", "6": "^", "7": "&", "8": "*", "9": "(", "0": ")",
+                "-": "_", "=": "+", "[": "{", "]": "}", "\\": "|", ";": ":", "'": "\"", ",": "<", ".": ">", "/": "?", "`": "~",
+            ]
+            chars = mods.contains(.shift) ? (shifted[name] ?? name.uppercased()) : name
         }
         for type in [NSEvent.EventType.keyDown, .keyUp] {
             guard let e = NSEvent.keyEvent(

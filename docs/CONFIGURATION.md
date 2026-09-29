@@ -210,6 +210,7 @@ hud {
 | `notifications:width` | 380 | Width in points. |
 | `picker:width` | 600 | Width of pickers in points. They open centered in the window. |
 | `picker:max_rows` | 10 | Rows shown at once. Longer lists scroll. |
+| `keycast` | false | Show each shortcut Hyprmux acts on at the bottom of the window, with what it did: **⌘↩** New terminal. Quick repeats count up (×3). Plain typing never shows. For screen sharing and recordings. |
 
 **What shows up:**
 
@@ -386,6 +387,7 @@ bind  = MODS, key, dispatcher, args
 binde = $mod CTRL, L, resizeactive, 40 0      # e = repeats while held
 bindm = $mod, mouse:272, movewindow           # m = mouse drag (272 left, 273 right)
 bindn = ...                                   # n = the key also reaches the app
+bindd = $mod, Return, Open a shell, exec,     # d = with a description (the keycast shows it)
 ```
 
 - **Modifiers:** `SUPER` (also `CMD`) is ⌘. The others are `SHIFT`, `CTRL`, and

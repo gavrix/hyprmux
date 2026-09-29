@@ -41,6 +41,8 @@ https://github.com/user-attachments/assets/4cfa8cc4-6a7e-4292-a5b9-cbbce61a1e8d
 - **Notifications:** Hyprmux's own notices, styled like your terminal and
   your window borders. Config errors, warnings, and terminal notifications
   (OSC 9 and OSC 777) show up there.
+- **Keycast:** `hud:keycast` shows each shortcut as you press it, for screen
+  sharing and recordings (the demo above uses it).
 - **Pickers:** fzf-style lists in the same style, for choosing among several
   things: workspaces, booted simulators. Type to filter, Return to choose.
 - **Scripting:** `hyprmuxctl`, a `hyprctl`-like CLI over a Unix socket.

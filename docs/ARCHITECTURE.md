@@ -306,7 +306,7 @@ not a crash.
   `framebufferSurface`, an `IOSurface`. A callback fires when the surface
   changes and another when pixels change. `SimulatorSurface` hands the surface
   to a layer: no copies, no screen recording, no Simulator.app. The screen is
-  letterboxed in the tile.
+  letterboxed in the tile, above a slim bar with a Home button.
 - **Touch:** goes through `SimDeviceLegacyHIDClient`, one message per phase, as
   the mouse moves.
   - The message layout comes from idb (`Sources/SimulatorBridge/idb`, MIT),
@@ -319,7 +319,8 @@ not a crash.
     recognizes the home swipe and other system gestures.
 - **Keys:** macOS key codes map to USB HID usages
   (`IndigoHIDMessageForKeyboardArbitrary`).
-- **Buttons:** Home and Lock use `IndigoHIDMessageForButton`.
+- **Buttons:** Home and Lock use `IndigoHIDMessageForButton`. The bar's Home
+  button and the `simbutton` binds share one path.
 
 ## Rendering pipeline notes
 

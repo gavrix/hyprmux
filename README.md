@@ -30,6 +30,7 @@ https://github.com/user-attachments/assets/e8d17d9a-0c64-484d-a049-5247830f8e8d
     enough for Okta and GitHub sign-in.
 - **iOS Simulator tiles:** a booted simulator's screen at native resolution, with
   touch (tap, drag, long press, edge swipes), keyboard, and Home/Lock buttons.
+  A Home button sits under the screen; ⌘Esc and ⇧⌘Esc press Home and Lock.
   Simulator.app isn't needed.
 - **Looks:** gradient borders, shadows, rounded or squircle corners
   (`rounding_power`), inactive-window opacity and blur, and a see-through

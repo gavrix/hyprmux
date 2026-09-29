@@ -3,13 +3,17 @@ import HyprmuxCore
 import SimulatorBridge
 
 /// A booted iOS Simulator's screen, read straight from its framebuffer IOSurface
-/// (no Simulator.app window, no screen recording). Letterboxed in the tile.
+/// (no Simulator.app window, no screen recording). Letterboxed in the tile, above a
+/// slim bar with the Home button.
 final class SimulatorSurface: FlippedView, Surface {
     let clientID: ClientID
     let display: HMSimDisplay
     var onClose: ((SimulatorSurface) -> Void)?
 
     private let screen = PassthroughView()  // clicks go to the surface, not the image
+    private let bar = NSView()
+    private let homeButton = BarButton(symbol: "house", label: "Home")
+    private let barHeight: CGFloat = 28
     private var touchesSent = 0
     private var closed = false
 
@@ -24,15 +28,36 @@ final class SimulatorSurface: FlippedView, Surface {
         screen.layer?.contentsGravity = .resizeAspect
         screen.layer?.magnificationFilter = .linear
         screen.layer?.minificationFilter = .trilinear
-        screen.autoresizingMask = [.width, .height]
-        screen.frame = bounds
         addSubview(screen)
+
+        bar.wantsLayer = true
+        bar.layer?.backgroundColor = NSColor(white: 0.1, alpha: 1).cgColor
+        addSubview(bar)
+        homeButton.target = self
+        homeButton.action = #selector(homeClicked)
+        bar.addSubview(homeButton)
+        layoutContent()
 
         display.onFrame = { [weak self] in self?.refresh() }
         refresh()
     }
 
     required init?(coder: NSCoder) { fatalError("not supported") }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        layoutContent()
+    }
+
+    private func layoutContent() {
+        let h = min(barHeight, bounds.height)
+        screen.frame = CGRect(x: 0, y: 0, width: bounds.width, height: bounds.height - h)
+        bar.frame = CGRect(x: 0, y: bounds.height - h, width: bounds.width, height: h)
+        let button: CGFloat = 22
+        homeButton.frame = CGRect(x: (bounds.width - button) / 2, y: (h - button) / 2, width: button, height: button)
+    }
+
+    @objc private func homeClicked() { press(.home) }
 
     /// Point the layer at the current framebuffer. Re-assigning makes Core Animation
     /// re-read the surface; the surface object itself can change (e.g. on rotation).
@@ -65,14 +90,15 @@ final class SimulatorSurface: FlippedView, Surface {
     override var acceptsFirstResponder: Bool { true }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
-    /// Where the device screen is drawn inside the tile (aspect-fit), top-left origin.
+    /// Where the device screen is drawn inside the tile (aspect-fit above the bar), top-left origin.
     private var screenRect: CGRect {
-        guard let s = display.surface else { return bounds }
+        let area = screen.frame
+        guard let s = display.surface else { return area }
         let w = CGFloat(IOSurfaceGetWidth(s)), h = CGFloat(IOSurfaceGetHeight(s))
-        guard w > 0, h > 0 else { return bounds }
-        let scale = min(bounds.width / w, bounds.height / h)
+        guard w > 0, h > 0 else { return area }
+        let scale = min(area.width / w, area.height / h)
         let size = CGSize(width: w * scale, height: h * scale)
-        return CGRect(x: (bounds.width - size.width) / 2, y: (bounds.height - size.height) / 2,
+        return CGRect(x: area.minX + (area.width - size.width) / 2, y: area.minY + (area.height - size.height) / 2,
                       width: size.width, height: size.height)
     }
 
@@ -164,7 +190,7 @@ final class SimulatorSurface: FlippedView, Surface {
         display.sendKeyUsage(u, down: event.modifierFlags.contains(flag))
     }
 
-    /// Hardware buttons from binds (`simbutton, home`).
+    /// Hardware buttons from binds (`simbutton, home`) and the bar's Home button.
     func press(_ button: HMSimButton) {
         display.send(button, down: true)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in

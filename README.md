@@ -6,7 +6,7 @@ terminals ([libghostty](https://github.com/ghostty-org/ghostty)), web pages
 Hyprland's keybinds, dispatchers, workspaces, groups, and bezier animations,
 configured in `hyprland.conf` syntax that reloads when you save it.
 
-https://github.com/user-attachments/assets/4cfa8cc4-6a7e-4292-a5b9-cbbce61a1e8d
+https://github.com/user-attachments/assets/e8d17d9a-0c64-484d-a049-5247830f8e8d
 
 <sub>No video player? Here's [a GIF](docs/media/demo.gif). Recorded by
 [`scripts/demo/record.sh`](scripts/demo/record.sh).</sub>

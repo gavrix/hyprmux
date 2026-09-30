@@ -116,6 +116,63 @@ The build prints which identity it used. After switching identities, grant the
 permissions once more. The bundle also copies the agent skill from
 `.agents/skills/hyprmuxctl` into `Contents/Resources/skills`.
 
+## Public release
+
+Public releases require a paid Apple Developer account, a `Developer ID
+Application` certificate, and a validated `notarytool` Keychain profile. Create
+the default profile once:
+
+```sh
+xcrun notarytool store-credentials hyprmux-notary \
+  --apple-id YOUR_APPLE_ID --team-id YOUR_TEAM_ID
+```
+
+Build, sign with the hardened runtime, create the drag-to-Applications DMG,
+notarize it, staple Apple's ticket, and write its SHA-256 checksum:
+
+```sh
+scripts/release.sh                 # version from Resources/Info.plist
+scripts/release.sh 0.2.0           # override the assembled app's version
+```
+
+The output is `build/Hyprmux-VERSION-arm64.dmg`. Set
+`HYPRMUX_SIGN_IDENTITY` when the Keychain contains several Developer ID
+identities, or `HYPRMUX_NOTARY_PROFILE` for a differently named profile.
+`HYPRMUX_SKIP_NOTARIZATION=1` creates a signed test image that Gatekeeper will
+reject on other Macs.
+
+### GitHub Actions
+
+The **Release DMG** workflow runs manually on GitHub's Apple-silicon macOS
+runner. It always uploads the notarized DMG as a workflow artifact. Its
+`publish` input can also create the matching `vVERSION` GitHub Release.
+
+Create a `release` GitHub environment and add these environment secrets:
+
+| Secret | Value |
+|---|---|
+| `APPLE_DEVELOPER_ID_P12_BASE64` | Base64 of the exported Developer ID Application `.p12` |
+| `APPLE_DEVELOPER_ID_P12_PASSWORD` | Password used when exporting that `.p12` |
+| `APPLE_NOTARY_APPLE_ID` | Apple Account email used for notarization |
+| `APPLE_NOTARY_PASSWORD` | Apple app-specific password |
+| `APPLE_TEAM_ID` | Developer team identifier |
+| `APPLE_KEYCHAIN_PASSWORD` | A new random password used only for the temporary runner Keychain |
+
+Export the certificate and private key from Keychain Access as a password-protected
+`.p12`, then copy its Base64 form:
+
+```sh
+base64 -i DeveloperIDApplication.p12 | pbcopy
+```
+
+Optionally add `APPLE_DEVELOPER_ID_SHA1` when the `.p12` contains more than one
+Developer ID identity. Obtain it with `security find-identity -v -p codesigning`.
+Never commit the `.p12`, its password, or notarization credentials.
+
+Run **Actions → Release DMG → Run workflow**, enter `0.2.0`, and choose whether
+to publish it. The `release` environment can require manual approval before
+GitHub exposes its secrets to the job.
+
 ## Where code goes
 
 - **Decisions in the core.** Anything that decides layout, focus, or state

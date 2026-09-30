@@ -1,0 +1,162 @@
+name: Release DMG
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version, for example 0.1.0
+        required: true
+        type: string
+      publish:
+        description: Publish a GitHub Release after notarization
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build, sign, and notarize
+    runs-on: macos-15
+    timeout-minutes: 90
+    environment: release
+    env:
+      VERSION: ${{ inputs.version }}
+      NOTARY_PROFILE: hyprmux-notary
+
+    steps:
+      - name: Validate version
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "$VERSION" =~ ^[0-9]+([.][0-9]+){1,2}$ ]]; then
+            echo "Invalid version: $VERSION" >&2
+            exit 1
+          fi
+
+      - name: Check out source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Restore SwiftPM cache
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: |
+            .build/checkouts
+            .build/repositories
+            .build/artifacts
+            .cache
+            vendor/GhosttyKit.xcframework
+            vendor/cef
+          key: ${{ runner.os }}-${{ runner.arch }}-release-${{ hashFiles('Package.resolved', 'scripts/fetch-ghosttykit.sh', 'scripts/fetch-cef.sh') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-release-
+
+      - name: Install signing and notarization credentials
+        shell: bash
+        env:
+          DEVELOPER_ID_P12_BASE64: ${{ secrets.APPLE_DEVELOPER_ID_P12_BASE64 }}
+          DEVELOPER_ID_P12_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_P12_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_NOTARY_APPLE_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_NOTARY_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          KEYCHAIN_PASSWORD: ${{ secrets.APPLE_KEYCHAIN_PASSWORD }}
+          SIGN_IDENTITY_SHA1: ${{ secrets.APPLE_DEVELOPER_ID_SHA1 }}
+        run: |
+          set -euo pipefail
+          required=(
+            DEVELOPER_ID_P12_BASE64
+            DEVELOPER_ID_P12_PASSWORD
+            APPLE_ID
+            APPLE_APP_PASSWORD
+            APPLE_TEAM_ID
+            KEYCHAIN_PASSWORD
+          )
+          for name in "${required[@]}"; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "Missing GitHub environment secret: $name" >&2
+              exit 1
+            fi
+          done
+
+          CERTIFICATE_PATH="$RUNNER_TEMP/developer-id.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/hyprmux-release.keychain-db"
+          printf '%s' "$DEVELOPER_ID_P12_BASE64" | base64 --decode -o "$CERTIFICATE_PATH"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERTIFICATE_PATH" \
+            -P "$DEVELOPER_ID_P12_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list \
+            -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH"
+
+          if [[ -z "$SIGN_IDENTITY_SHA1" ]]; then
+            SIGN_IDENTITY_SHA1="$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" \
+              | awk '/Developer ID Application:/ { print $2; exit }')"
+          fi
+          if [[ -z "$SIGN_IDENTITY_SHA1" ]]; then
+            echo "No Developer ID Application identity was imported" >&2
+            exit 1
+          fi
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH" \
+            | grep -F "$SIGN_IDENTITY_SHA1" | grep -q 'Developer ID Application:'
+
+          xcrun notarytool store-credentials "$NOTARY_PROFILE" \
+            --apple-id "$APPLE_ID" \
+            --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_PASSWORD" \
+            --keychain "$KEYCHAIN_PATH"
+
+          echo "HYPRMUX_SIGN_IDENTITY=$SIGN_IDENTITY_SHA1" >> "$GITHUB_ENV"
+          echo "HYPRMUX_NOTARY_PROFILE=$NOTARY_PROFILE" >> "$GITHUB_ENV"
+          echo "HYPRMUX_NOTARY_KEYCHAIN=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+          echo "SIGNING_KEYCHAIN=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+          rm -f "$CERTIFICATE_PATH"
+
+      - name: Build and notarize DMG
+        shell: bash
+        run: scripts/release.sh "$VERSION"
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: Hyprmux-${{ inputs.version }}-arm64
+          path: |
+            build/Hyprmux-${{ inputs.version }}-arm64.dmg
+            build/Hyprmux-${{ inputs.version }}-arm64.dmg.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Publish GitHub Release
+        if: ${{ inputs.publish }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="v$VERSION"
+          if git rev-parse "$TAG" >/dev/null 2>&1 || gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release or tag already exists: $TAG" >&2
+            exit 1
+          fi
+          gh release create "$TAG" \
+            "build/Hyprmux-$VERSION-arm64.dmg" \
+            "build/Hyprmux-$VERSION-arm64.dmg.sha256" \
+            --target "$GITHUB_SHA" \
+            --generate-notes \
+            --title "Hyprmux $VERSION"
+
+      - name: Clean up keychain
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          if [[ -n "${SIGNING_KEYCHAIN:-}" ]]; then
+            security delete-keychain "$SIGNING_KEYCHAIN" || true
+          fi

@@ -127,20 +127,31 @@ extension Compositor {
             return self.restoreTile(tile, missingSims: &missingSims,
                                     missingAndroid: &missingAndroid, runningAndroid: runningAndroid)
         }
-        guard !made.isEmpty else { return false }
+        guard !made.isEmpty else {
+            // Startup creates its fallback terminal after this returns. Defer the warning
+            // until that first layout gives the notification HUD a non-empty work area.
+            DispatchQueue.main.async { [weak self] in
+                self?.warnAboutMissingDevices(simulators: missingSims, android: missingAndroid)
+            }
+            return false
+        }
         log.info("session: restored \(made.count) windows")
         apply(animated: false)
-        if !missingSims.isEmpty {
-            flash(missingSims.count == 1
-                  ? "Simulator \(missingSims[0]) isn't available; its tile was skipped."
-                  : "\(missingSims.count) simulators weren't available; their tiles were skipped.")
-        }
-        if !missingAndroid.isEmpty {
-            flash(missingAndroid.count == 1
-                  ? "Android AVD \(missingAndroid[0]) isn't running; its tile was skipped."
-                  : "\(missingAndroid.count) Android AVDs weren't running; their tiles were skipped.")
-        }
+        warnAboutMissingDevices(simulators: missingSims, android: missingAndroid)
         return true
+    }
+
+    private func warnAboutMissingDevices(simulators: [String], android: [String]) {
+        if !simulators.isEmpty {
+            flash(simulators.count == 1
+                  ? "Simulator \(simulators[0]) isn't available; its tile was skipped."
+                  : "\(simulators.count) simulators weren't available; their tiles were skipped.")
+        }
+        if !android.isEmpty {
+            flash(android.count == 1
+                  ? "Android AVD \(android[0]) isn't running; its tile was skipped."
+                  : "\(android.count) Android AVDs weren't running; their tiles were skipped.")
+        }
     }
 
     /// Creates a tile's surface and view. Nil skips it (a simulator that's gone).

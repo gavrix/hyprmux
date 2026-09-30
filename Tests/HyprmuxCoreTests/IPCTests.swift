@@ -65,6 +65,71 @@ final class IPCTests: XCTestCase {
         )
     }
 
+    func testDispatchTakesALeadingSurface() throws {
+        XCTAssertEqual(try IPCRequest.parse("dispatch movewindow l").get(), .dispatch(.moveWindow(.left), surface: nil))
+        XCTAssertEqual(
+            try IPCRequest.parse("dispatch --surface surface:5 movetoworkspacesilent 3").get(),
+            .dispatch(.moveToWorkspace(.id(3), silent: true), surface: SurfaceReference(5))
+        )
+        XCTAssertEqual(
+            try IPCRequest.parse("dispatch --surface=5 killactive").get(),
+            .dispatch(.killActive, surface: SurfaceReference(5))
+        )
+        // An exec command line keeps its own options and spacing.
+        XCTAssertEqual(
+            try IPCRequest.parse("dispatch exec ls --surface  -la").get(),
+            .dispatch(.exec("ls --surface  -la"), surface: nil)
+        )
+        XCTAssertThrowsError(try IPCRequest.parse("dispatch --surface 5 workspace 2").get(), "not a window dispatcher")
+        XCTAssertThrowsError(try IPCRequest.parse("dispatch --surface 5").get())
+        XCTAssertThrowsError(try IPCRequest.parse("dispatch --surface nope killactive").get())
+    }
+
+    func testNewSurfaceRequest() throws {
+        XCTAssertEqual(try IPCRequest.parse("new-surface").get(), .newSurface(NewSurfaceRequest()))
+        let command = Data("devx pi --session x".utf8).base64EncodedString()
+        let cwd = Data("/tmp/a b".utf8).base64EncodedString()
+        let input = Data("echo hi\n".utf8).base64EncodedString()
+        let workspace = Data("name:My work".utf8).base64EncodedString()
+        XCTAssertEqual(
+            try IPCRequest.parse(
+                "new-surface --workspace-base64 \(workspace) --focus --floating --cwd-base64 \(cwd) --input-base64 \(input) --base64 \(command)"
+            ).get(),
+            .newSurface(NewSurfaceRequest(kind: .terminal, workspace: .named("My work"), focus: true, floating: true,
+                                          argument: "devx pi --session x", cwd: "/tmp/a b", input: "echo hi\n"))
+        )
+        XCTAssertEqual(
+            try IPCRequest.parse("new-surface --type web --workspace special:notes github.com").get(),
+            .newSurface(NewSurfaceRequest(kind: .web, workspace: .special("notes"), argument: "github.com"))
+        )
+        XCTAssertEqual(
+            try IPCRequest.parse("new-surface -- htop --focus").get(),
+            .newSurface(NewSurfaceRequest(argument: "htop --focus"))
+        )
+        XCTAssertThrowsError(try IPCRequest.parse("new-surface --type tv").get())
+        XCTAssertThrowsError(try IPCRequest.parse("new-surface --workspace nowhere").get())
+        XCTAssertThrowsError(try IPCRequest.parse("new-surface --type web --cwd /tmp").get())
+        XCTAssertThrowsError(try IPCRequest.parse("new-surface --focus --no-focus").get())
+        XCTAssertThrowsError(try IPCRequest.parse("new-surface --bogus").get())
+        XCTAssertThrowsError(try IPCRequest.parse("new-surface --workspace 2 --workspace-base64 Mg==").get())
+    }
+
+    func testSurfaceLifecycleRequests() throws {
+        XCTAssertEqual(try IPCRequest.parse("close-surface").get(), .closeSurface(nil))
+        XCTAssertEqual(try IPCRequest.parse("close-surface --surface 4").get(), .closeSurface(SurfaceReference(4)))
+        XCTAssertEqual(try IPCRequest.parse("focus-surface --surface surface:4").get(), .focusSurface(SurfaceReference(4)))
+        XCTAssertThrowsError(try IPCRequest.parse("close-surface 4").get())
+        XCTAssertEqual(
+            try IPCRequest.parse("move-surface --surface 4 --workspace e+1").get(),
+            .moveSurface(surface: SurfaceReference(4), workspace: .relativeExisting(1), focus: false)
+        )
+        XCTAssertEqual(
+            try IPCRequest.parse("move-surface --workspace-base64 \(Data("2".utf8).base64EncodedString()) --focus").get(),
+            .moveSurface(surface: nil, workspace: .id(2), focus: true)
+        )
+        XCTAssertThrowsError(try IPCRequest.parse("move-surface --surface 4").get(), "needs a workspace")
+    }
+
     func testSendKeyRequest() throws {
         XCTAssertEqual(
             try IPCRequest.parse("send-key --surface 4 ctrl+c").get(),

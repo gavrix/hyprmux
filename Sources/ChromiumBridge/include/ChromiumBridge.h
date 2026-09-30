@@ -23,6 +23,8 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)chromiumBrowser:(HMChromiumBrowser *)browser openURLInNewTile:(NSString *)url;
 - (void)chromiumBrowserDidCreate:(HMChromiumBrowser *)browser;
 - (void)chromiumBrowserGotFocus:(HMChromiumBrowser *)browser;
+/// A page load wants keyboard focus. Return NO to refuse, e.g. for a tile opened in the background.
+- (BOOL)chromiumBrowserShouldTakeNavigationFocus:(HMChromiumBrowser *)browser;
 - (void)chromiumBrowserDidClose:(HMChromiumBrowser *)browser;
 @end
 

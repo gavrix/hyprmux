@@ -155,7 +155,7 @@ final class ConfigTests: XCTestCase {
     func testIPCParsing() {
         XCTAssertEqual(try? IPCRequest.parse("sendkey , g").get(), .sendKey([], 0x05))
         XCTAssertEqual(try? IPCRequest.parse("sendkey SUPER SHIFT, Return").get(), .sendKey([.super, .shift], 0x24))
-        XCTAssertEqual(try? IPCRequest.parse("dispatch workspace 3").get(), .dispatch(.workspace(.id(3))))
+        XCTAssertEqual(try? IPCRequest.parse("dispatch workspace 3").get(), .dispatch(.workspace(.id(3)), surface: nil))
         XCTAssertEqual(try? IPCRequest.parse("sendmouse down , 272, 10 20").get(),
                        .sendMouse(phase: "down", [], button: 272, at: CGPoint(x: 10, y: 20)))
         XCTAssertEqual(try? IPCRequest.parse("senddrag , 272, 1 2, 3 4").get(),

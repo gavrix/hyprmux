@@ -164,6 +164,13 @@ class HMClient : public CefClient,
     [o.delegate chromiumBrowserGotFocus:o];
   }
 
+  // Chromium focuses a page when it loads. Returning true cancels that.
+  bool OnSetFocus(CefRefPtr<CefBrowser> browser, FocusSource source) override {
+    if (source != FOCUS_SOURCE_NAVIGATION) return false;
+    HMChromiumBrowser *o = owner_;
+    return ![o.delegate chromiumBrowserShouldTakeNavigationFocus:o];
+  }
+
   // Request
 
   bool OnOpenURLFromTab(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame,

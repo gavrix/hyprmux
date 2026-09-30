@@ -456,6 +456,16 @@ These names work in `bind` lines and with `hyprmuxctl dispatch`.
 | `reload` | | Reload the config. |
 | `exit` | | Quit Hyprmux. |
 
+A bind applies window dispatchers to the focused window. They are `killactive`,
+`movefocus`, `movewindow`, `swapwindow`, `resizeactive`, `moveactive`,
+`movetoworkspace`, `movetoworkspacesilent`, `togglefloating`, `fullscreen`,
+`togglesplit`, `swapsplit`, `splitratio`, `cyclenext`, `centerwindow`, `webnav`,
+`simbutton`, and the group dispatchers.
+`hyprmuxctl dispatch --surface N` applies them to another window without focusing it.
+Only dispatchers about focus (`movefocus`, `cyclenext`) or following a window
+(`movetoworkspace`) move focus. A layout dispatcher on a hidden group tab acts on its
+group's slot. `moveintogroup` on an unfocused window adds it as a background tab.
+
 ## IPC: `hyprmuxctl`
 
 Shells inside Hyprmux get `HYPRMUX_SOCKET`, `HYPRMUX_SURFACE_ID`,
@@ -471,8 +481,10 @@ agent skill. `hyprmuxctl` talks to the instance socket, which defaults to
 
 Commands that accept `--surface` take either a number or `surface:N`. Without
 that option, they target `HYPRMUX_SURFACE_ID`, then `HYPRMUX_CLIENT`, then the
-focused surface. Explicit targets can be hidden group tabs or live on another
-workspace. Reading or sending input never focuses the target.
+focused surface. `dispatch` is the exception: it acts on the focused window unless
+`--surface` is given. Explicit targets can be hidden group tabs or live on another
+workspace. Reading, sending input, opening, and moving never focus a surface unless
+the command has `--focus`.
 
 Surface IDs increase across all surface kinds and are not reused during one app run.
 They do not encode workspace membership and can change after session restoration.
@@ -482,7 +494,11 @@ See [Terminal automation](AUTOMATION.md) for workflows, limits, and agent skill 
 | Command | Reply |
 |---|---|
 | `skill install\|status\|path\|source\|uninstall [--force]` | Manages the bundled agent skill under `~/.agents/skills`. This command is local and needs no socket. |
-| `dispatch <dispatcher> [args]` | Runs a dispatcher. |
+| `dispatch [--surface ID] <dispatcher> [args]` | Runs a dispatcher. With `--surface`, a window dispatcher acts on that surface instead of the focused one; other dispatchers reject it. |
+| `new-surface [--type terminal\|web\|sim\|android] [--workspace WS] [--focus] [--floating] [--cwd DIR] [--input TEXT] [ARG...]` | Opens a surface and replies with its JSON entry. `WS` uses workspace syntax (`3`, `name:NAME`, `special:NAME`, `empty`). ARG is a terminal command (default: the shell), a URL, or a device. `--input` types into the new shell. |
+| `close-surface [--surface ID]` | Closes a surface, like `killactive`. |
+| `focus-surface [--surface ID]` | Focuses a surface, switching to its workspace and showing a hidden tab. |
+| `move-surface [--surface ID] --workspace WS [--focus]` | Moves a surface and its group to a workspace, and replies with its JSON entry. `--focus` follows it. |
 | `clients`, `surfaces` | JSON for every surface: id, `surface:N` ref, capabilities, kind, workspace, frame, focus, group, URL or pwd. |
 | `identify [--surface ID]` | JSON for the caller, explicit target, or focused surface. |
 | `read-screen [--surface ID] [--scrollback] [--lines N] [--json]` | Reads rendered terminal text. `--lines` implies scrollback. |

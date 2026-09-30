@@ -138,6 +138,10 @@ hyprmuxctl surfaces                         # JSON for every surface and its cap
 hyprmuxctl read-screen --surface surface:2 --lines 100
 hyprmuxctl send --surface surface:3 'npm test\n'
 hyprmuxctl send-key --surface surface:3 ctrl+c
+hyprmuxctl new-surface --workspace 3 --input 'npm test\n'   # a shell in the background
+hyprmuxctl move-surface --surface surface:3 --workspace name:review
+hyprmuxctl dispatch --surface surface:3 togglefloating      # any bind, on any window
+hyprmuxctl close-surface --surface surface:3
 ```
 
 Shells inside Hyprmux get `HYPRMUX_SOCKET`, `HYPRMUX_SURFACE_ID`,

@@ -135,11 +135,17 @@ public final class WindowManager {
 
     // MARK: Client lifecycle
 
+    /// Places a new client. `workspace` nil means where the focused window is.
+    /// With `focus` false, focus and the visible workspace stay as they are: the client takes
+    /// focus only when nothing has it and it lands in view.
     public func addClient(_ id: ClientID, floating: Bool = false, workspace: WorkspaceID? = nil, focus: Bool = true) {
         precondition(clients[id] == nil, "\(id) already managed")
         let wsID = workspace ?? targetWorkspace
         let ws = ensure(wsID)
-        if ws.fullscreen != nil { ws.fullscreen = nil }
+        let visible = visibleWorkspaces.contains(wsID)
+        let takesFocus = focus || (focused == nil && visible)
+        // A window opened in the background doesn't end someone's fullscreen.
+        if ws.fullscreen != nil, takesFocus { ws.fullscreen = nil }
         clients[id] = ClientState(workspace: wsID, floating: floating)
         // Opened from a focused group: become its new tab instead of a new tile.
         if settings.autoGroup, workspace == nil, let f = focused, let gid = clients[f]?.group, let g = groups[gid],
@@ -148,18 +154,29 @@ public final class WindowManager {
             g.members.insert(id, at: at)
             clients[id]!.group = gid
             clients[id]!.floating = clients[f]!.floating
+            // In the background it stays a hidden tab, so the focused tab keeps its slot.
+            guard takesFocus else { return }
             replaceInSlot(g.active, with: id, in: ws)
             g.active = id
-            if focus || focused == nil { self.focus(id) }
+            self.focus(id)
             return
         }
         if floating {
             clients[id]!.floatRect = defaultFloatRect()
             ws.floating.append(id)
         } else {
-            insertTiled(id, into: ws)
+            // The pointer only says where to split on the workspace it's over.
+            insertTiled(id, into: ws, useCursor: visible)
         }
-        if focus || focused == nil { self.focus(id) }
+        if takesFocus { self.focus(id) }
+    }
+
+    /// Resolves a workspace target the way `movetoworkspace` does. A new `name:` workspace
+    /// takes the name. Nil when the target doesn't exist (`previous` with no history).
+    public func claimWorkspace(_ t: WorkspaceTarget) -> WorkspaceID? {
+        guard let id = resolve(t) else { return nil }
+        nameIfNew(t, id)
+        return id
     }
 
     public func removeClient(_ id: ClientID) {
@@ -200,40 +217,47 @@ public final class WindowManager {
 
     // MARK: Dispatch
 
-    public func dispatch(_ d: Dispatcher) {
+    /// Runs a dispatcher. Window dispatchers act on `target`, or on the focused window when
+    /// it is nil, as a bind would. A target doesn't take focus unless the dispatcher is about
+    /// focus (`movefocus`, `cyclenext`) or follows the window (`movetoworkspace`).
+    /// A target is ignored for dispatchers that don't act on a window (`targetsWindow`).
+    public func dispatch(_ d: Dispatcher, target: ClientID? = nil) {
+        if target != nil, !d.targetsWindow { return }
+        if let target, clients[target] == nil { return }
+        let subject = target ?? focused
         switch d {
         case .exec(let cmd): perform(.spawn(command: cmd))
         case .web(let url): perform(.spawnWeb(url: url))
         case .sim(let q): perform(.spawnSim(query: q))
         case .android(let q): perform(.spawnAndroid(query: q))
-        case .simButton(let b): if let f = focused { perform(.simButton(f, b)) }
-        case .webNav(let n): if let f = focused { perform(.webNav(f, n)) }
-        case .killActive: if let f = focused { perform(.close(f)) }
-        case .moveFocus(let dir): moveFocus(dir)
-        case .moveWindow(let dir): moveWindow(dir)
-        case .swapWindow(let dir): swapWindow(dir)
-        case .resizeActive(let dx, let dy): resizeActive(dx: dx, dy: dy)
-        case .moveActive(let dx, let dy): moveActive(dx: dx, dy: dy)
+        case .simButton(let b): if let f = subject { perform(.simButton(f, b)) }
+        case .webNav(let n): if let f = subject { perform(.webNav(f, n)) }
+        case .killActive: if let f = subject { perform(.close(f)) }
+        case .moveFocus(let dir): moveFocus(dir, target)
+        case .moveWindow(let dir): moveWindow(dir, target)
+        case .swapWindow(let dir): swapWindow(dir, target)
+        case .resizeActive(let dx, let dy): resizeActive(dx: dx, dy: dy, target)
+        case .moveActive(let dx, let dy): moveActive(dx: dx, dy: dy, target)
         case .workspace(let t): gotoWorkspace(t)
-        case .moveToWorkspace(let t, let silent): moveToWorkspace(t, silent: silent)
+        case .moveToWorkspace(let t, let silent): moveToWorkspace(t, silent: silent, target)
         case .toggleSpecialWorkspace(let name): toggleSpecial(name)
-        case .toggleFloating: toggleFloating()
-        case .fullscreen(let mode): toggleFullscreen(mode)
-        case .toggleSplit: withTiledFocus { $0.tiled.toggleSplit($1) }
-        case .swapSplit: withTiledFocus { $0.tiled.swapSplit($1) }
-        case .splitRatio(let v, let exact): withTiledFocus { $0.tiled.splitRatio($1, v, exact: exact) }
-        case .cycleNext(let prev): cycleNext(previous: prev)
+        case .toggleFloating: toggleFloating(target)
+        case .fullscreen(let mode): toggleFullscreen(mode, target)
+        case .toggleSplit: withTiledSlot(target) { $0.tiled.toggleSplit($1) }
+        case .swapSplit: withTiledSlot(target) { $0.tiled.swapSplit($1) }
+        case .splitRatio(let v, let exact): withTiledSlot(target) { $0.tiled.splitRatio($1, v, exact: exact) }
+        case .cycleNext(let prev): cycleNext(previous: prev, target)
         case .focusCurrentOrLast: focusCurrentOrLast()
-        case .centerWindow: centerWindow()
+        case .centerWindow: centerWindow(target)
         case .submap(let name): perform(.submap(name))
         case .renameWorkspace(let n, let name): rename(n, to: name)
         case .picker(let kind): perform(.picker(kind))
         case .monitorFullscreen: perform(.monitorFullscreen)
-        case .toggleGroup: toggleGroup()
-        case .changeGroupActive(let step): changeGroupActive(step)
-        case .moveIntoGroup(let dir): moveIntoGroup(dir)
-        case .moveOutOfGroup: moveOutOfGroup()
-        case .moveGroupWindow(let fwd): moveGroupWindow(forward: fwd)
+        case .toggleGroup: toggleGroup(target)
+        case .changeGroupActive(let step): changeGroupActive(step, target)
+        case .moveIntoGroup(let dir): moveIntoGroup(dir, target)
+        case .moveOutOfGroup: moveOutOfGroup(target)
+        case .moveGroupWindow(let fwd): moveGroupWindow(forward: fwd, target)
         case .reload: perform(.reload)
         case .exit: perform(.exit)
         }
@@ -471,10 +495,12 @@ public final class WindowManager {
         if let f = ws.lastFocused ?? mostRecent(in: ws) { focus(f) }
     }
 
-    private func moveToWorkspace(_ t: WorkspaceTarget, silent: Bool) {
-        guard let id = focused, let state = clients[id], let target = resolve(t),
-              target != state.workspace, let from = workspaces[state.workspace] else { return }
+    private func moveToWorkspace(_ t: WorkspaceTarget, silent: Bool, _ subject: ClientID?) {
+        // A group moves as a whole, so a hidden tab moves its slot.
+        guard let (id, from, state) = slotContext(subject), let target = resolve(t),
+              target != state.workspace else { return }
         nameIfNew(t, target)
+        let wasFocused = focused == id
         detach(id, from: from)
         if from.lastFocused == id { from.lastFocused = nil }
         clients[id]!.tiledSlot = nil  // a slot only makes sense on its own workspace
@@ -484,14 +510,16 @@ public final class WindowManager {
         // A group moves as a whole: hidden tabs follow the shown one.
         if let g = group(of: id) { for m in g.members { clients[m]!.workspace = target } }
         if state.floating { to.floating.append(id) } else { insertTiled(id, into: to, useCursor: false) }
-        to.lastFocused = id
+        // Arriving there later focuses it, unless focus is on another window there right now.
+        let focusIsThere = !wasFocused && focused.flatMap { clients[$0]?.workspace } == target
+        if !focusIsThere { to.lastFocused = id }
 
-        if silent {
+        if !silent {
+            focus(subject ?? id)  // a hidden tab that moved its group comes to the front
+        } else if wasFocused {
             focused = nil
             if let next = mostRecent(in: from) { focus(next) }
             else if case .special = from.id { closeSpecial() }
-        } else {
-            focus(id)
         }
         collectEmptyWorkspaces()
     }
@@ -559,13 +587,22 @@ public final class WindowManager {
         return nil
     }
 
-    func focusedContext() -> (ClientID, Workspace, ClientState)? {
-        guard let f = focused, let st = clients[f], let ws = workspaces[st.workspace] else { return nil }
-        return (f, ws, st)
+    /// A client with its workspace and state. Nil `id` means the focused client.
+    func context(_ id: ClientID?) -> (ClientID, Workspace, ClientState)? {
+        guard let id = id ?? focused, let st = clients[id], let ws = workspaces[st.workspace] else { return nil }
+        return (id, ws, st)
     }
 
-    private func withTiledFocus(_ body: (Workspace, ClientID) -> Void) {
-        guard let (f, ws, st) = focusedContext(), !st.floating else { return }
+    /// Like `context`, but a hidden group tab stands for the tab shown in its slot.
+    /// Layout dispatchers move, float, and resize the slot, not one tab.
+    func slotContext(_ id: ClientID?) -> (ClientID, Workspace, ClientState)? {
+        guard let id = id ?? focused else { return nil }
+        return context(group(of: id)?.active ?? id)
+    }
+
+
+    private func withTiledSlot(_ subject: ClientID?, _ body: (Workspace, ClientID) -> Void) {
+        guard let (f, ws, st) = slotContext(subject), !st.floating else { return }
         body(ws, f)
     }
 
@@ -575,9 +612,9 @@ public final class WindowManager {
         return out
     }
 
-    private func moveFocus(_ dir: Direction) {
-        guard let (f, ws, st) = focusedContext() else {
-            if let any = fallbackFocus() { focus(any) }
+    private func moveFocus(_ dir: Direction, _ subject: ClientID?) {
+        guard let (f, ws, st) = slotContext(subject) else {
+            if subject == nil, let any = fallbackFocus() { focus(any) }
             return
         }
         let all = frames(in: ws)
@@ -589,8 +626,8 @@ public final class WindowManager {
         }
     }
 
-    private func moveWindow(_ dir: Direction) {
-        guard let (f, ws, st) = focusedContext() else { return }
+    private func moveWindow(_ dir: Direction, _ subject: ClientID?) {
+        guard let (f, ws, st) = slotContext(subject) else { return }
         if st.floating {
             // Floating: snap to the work-area edge in that direction.
             guard var r = clients[f]?.floatRect else { return }
@@ -618,8 +655,8 @@ public final class WindowManager {
         ws.tiled.insert(f, target: nil, focalPoint: focal, area: tileArea, focalDecidesSide: true)
     }
 
-    private func swapWindow(_ dir: Direction) {
-        guard let (f, ws, st) = focusedContext(), !st.floating else { return }
+    private func swapWindow(_ dir: Direction, _ subject: ClientID?) {
+        guard let (f, ws, st) = slotContext(subject), !st.floating else { return }
         let tiled = tiledFrames(ws)
         guard let from = tiled[f] else { return }
         let candidates = tiled.filter { $0.key != f }.map { ($0.key, $0.value) }
@@ -627,8 +664,8 @@ public final class WindowManager {
         ws.tiled.swap(f, n)
     }
 
-    private func resizeActive(dx: Double, dy: Double) {
-        guard let (f, ws, st) = focusedContext() else { return }
+    private func resizeActive(dx: Double, dy: Double, _ subject: ClientID?) {
+        guard let (f, ws, st) = slotContext(subject) else { return }
         if st.floating {
             guard var r = clients[f]?.floatRect else { return }
             r.size.width = max(80, r.width + dx)
@@ -640,8 +677,8 @@ public final class WindowManager {
         }
     }
 
-    private func moveActive(dx: Double, dy: Double) {
-        guard let (f, _, st) = focusedContext(), st.floating, var r = clients[f]?.floatRect else { return }
+    private func moveActive(dx: Double, dy: Double, _ subject: ClientID?) {
+        guard let (f, _, st) = slotContext(subject), st.floating, var r = clients[f]?.floatRect else { return }
         r.origin.x += dx
         r.origin.y += dy
         clients[f]!.floatRect = r
@@ -669,8 +706,8 @@ public final class WindowManager {
         ws.tiled.insert(id, target: nil, focalPoint: point, area: tileArea, focalDecidesSide: true)
     }
 
-    private func toggleFloating() {
-        guard let (f, ws, st) = focusedContext() else { return }
+    private func toggleFloating(_ subject: ClientID?) {
+        guard let (f, ws, st) = slotContext(subject) else { return }
         defer {
             // Hidden tabs share the slot's floating state.
             if let g = group(of: f) { for m in g.members { clients[m]!.floating = clients[f]!.floating } }
@@ -700,8 +737,8 @@ public final class WindowManager {
         }
     }
 
-    private func toggleFullscreen(_ mode: FullscreenMode) {
-        guard let (f, ws, _) = focusedContext() else { return }
+    private func toggleFullscreen(_ mode: FullscreenMode, _ subject: ClientID?) {
+        guard let (f, ws, _) = slotContext(subject) else { return }
         if let cur = ws.fullscreen, cur.id == f, cur.mode == mode {
             ws.fullscreen = nil
         } else {
@@ -709,9 +746,9 @@ public final class WindowManager {
         }
     }
 
-    private func cycleNext(previous: Bool) {
-        guard let (f, ws, _) = focusedContext() else {
-            if let any = fallbackFocus() { focus(any) }
+    private func cycleNext(previous: Bool, _ subject: ClientID?) {
+        guard let (f, ws, _) = slotContext(subject) else {
+            if subject == nil, let any = fallbackFocus() { focus(any) }
             return
         }
         let order = ws.clients
@@ -726,8 +763,8 @@ public final class WindowManager {
         focus(byRecency[1])
     }
 
-    private func centerWindow() {
-        guard let (f, _, st) = focusedContext(), st.floating, var r = clients[f]?.floatRect else { return }
+    private func centerWindow(_ subject: ClientID?) {
+        guard let (f, _, st) = slotContext(subject), st.floating, var r = clients[f]?.floatRect else { return }
         let a = workArea
         r.origin = CGPoint(x: (a.midX - r.width / 2).rounded(), y: (a.midY - r.height / 2).rounded())
         clients[f]!.floatRect = r

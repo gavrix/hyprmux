@@ -321,7 +321,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
     }
 
     /// A web surface loading `input` (empty: the start page), not yet managed.
-    func makeWeb(_ input: String) -> BrowserSurface {
+    func makeWeb(_ input: String, focusStartPage: Bool = true) -> BrowserSurface {
         let options = BrowserOptions(config)
         let id = allocateID()
         let web: BrowserSurface = webEngine == "chromium"
@@ -330,7 +330,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         web.host = self
         if input.isEmpty {
             // Deferred so the focus pass in apply() doesn't move focus back to the page.
-            DispatchQueue.main.async { web.openStartPage() }
+            DispatchQueue.main.async { web.openStartPage(focusAddress: focusStartPage) }
         } else {
             web.open(input)
         }
@@ -551,9 +551,9 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
 
     // MARK: Dispatch
 
-    func dispatch(_ d: Dispatcher) {
-        log.debug("dispatch \(String(describing: d), privacy: .public)")
-        wm.dispatch(d)
+    func dispatch(_ d: Dispatcher, target: ClientID? = nil) {
+        log.debug("dispatch \(String(describing: d), privacy: .public) target=\(target?.raw ?? 0)")
+        wm.dispatch(d, target: target)
         apply(animated: true)
     }
 
@@ -1003,9 +1003,39 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
             return "error: \(e)"
         case .success(let req):
             switch req {
-            case .dispatch(let d):
+            case .dispatch(let d, nil):
                 dispatch(d)
                 return "ok"
+            case .dispatch(let d, let reference?):
+                guard let (id, surface) = automationTarget(reference) else { return "error: surface not found" }
+                switch d {
+                case .webNav where !(surface is BrowserSurface):
+                    return "error: surface \(id.raw) is not a web surface"
+                case .simButton where !(surface is SimulatorSurface):
+                    return "error: surface \(id.raw) is not an iOS simulator"
+                default:
+                    dispatch(d, target: id)
+                    return "ok"
+                }
+            case .newSurface(let request):
+                return openSurface(request)
+            case .closeSurface(let reference):
+                guard let (id, surface) = automationTarget(reference) else { return "error: surface not found" }
+                log.debug("close-surface client=\(id.raw)")
+                surface.requestClose()
+                return "ok"
+            case .focusSurface(let reference):
+                guard let (id, _) = automationTarget(reference) else { return "error: surface not found" }
+                log.debug("focus reason=ipc client=\(id.raw)")
+                wm.focus(id)
+                apply(animated: true)
+                return "ok"
+            case .moveSurface(let reference, let workspace, let focus):
+                guard let (id, _) = automationTarget(reference) else { return "error: surface not found" }
+                // Replies with the surface's entry, so the caller sees where it ended up.
+                dispatch(.moveToWorkspace(workspace, silent: !focus), target: id)
+                guard let p = wm.snapshot().placement(id) else { return "error: surface not found" }
+                return json(clientInfo(p))
             case .clients, .surfaces:
                 return json(wm.snapshot().placements.map(clientInfo))
             case .identify(let reference):
@@ -1143,6 +1173,60 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
             info["group"] = ["id": g.id.raw, "members": g.members.map(\.raw), "active": g.active.raw]
         }
         return info
+    }
+
+    /// `new-surface`: opens a surface synchronously and replies with its `surfaces` entry.
+    private func openSurface(_ r: NewSurfaceRequest) -> String {
+        var workspace: WorkspaceID?
+        if let t = r.workspace {
+            guard let id = wm.claimWorkspace(t) else { return "error: no such workspace" }
+            workspace = id
+        }
+        let surface: Surface
+        switch r.kind {
+        case .terminal:
+            var opts = SurfaceOptions.inherited(from: focusedTerminal ?? lastTerminal)
+            if let cwd = r.cwd { opts.workingDirectory = cwd }
+            opts.command = r.argument.isEmpty ? nil : r.argument
+            opts.initialInput = r.input
+            guard let term = makeTerminal(opts) else { return "error: failed to create terminal" }
+            surface = term
+        case .web:
+            surface = makeWeb(r.argument, focusStartPage: r.focus)
+        case .sim:
+            let query = r.argument.isEmpty ? "booted" : r.argument
+            do {
+                surface = makeSim(try HMSimDisplay(query: query))
+            } catch {
+                return "error: simulator: \(error.localizedDescription)"
+            }
+        case .android:
+            let endpoints = AndroidEmulatorDiscovery.running()
+            let endpoint: AndroidEmulatorEndpoint
+            if r.argument.isEmpty {
+                guard endpoints.count == 1 else {
+                    return endpoints.isEmpty
+                        ? "error: no running Android emulator"
+                        : "error: several Android emulators are running; name one"
+                }
+                endpoint = endpoints[0]
+            } else {
+                guard let match = AndroidEmulatorDiscovery.match(r.argument, in: endpoints) else {
+                    return "error: no running Android AVD matches \(r.argument)"
+                }
+                endpoint = match
+            }
+            do {
+                surface = try makeAndroid(endpoint)
+            } catch {
+                return "error: Android Emulator: \(error.localizedDescription)"
+            }
+        }
+        adopt(surface)
+        wm.addClient(surface.clientID, floating: r.floating, workspace: workspace, focus: r.focus)
+        apply(animated: true)
+        guard let p = wm.snapshot().placement(surface.clientID) else { return "error: surface closed while opening" }
+        return json(clientInfo(p))
     }
 
     private func automationTarget(_ reference: SurfaceReference?) -> (ClientID, Surface)? {
@@ -1305,6 +1389,10 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         log.debug("focus reason=web client=\(s.clientID.raw)")
         wm.focus(s.clientID)
         apply(animated: true)
+    }
+
+    func browserSurfaceShouldTakeNavigationFocus(_ s: BrowserSurface) -> Bool {
+        wm.focused == s.clientID
     }
 
     func browserSurfaceTitleDidChange(_ s: BrowserSurface) {

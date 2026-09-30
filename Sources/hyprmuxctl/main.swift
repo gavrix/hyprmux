@@ -12,9 +12,19 @@ let args = Array(CommandLine.arguments.dropFirst())
 guard !args.isEmpty, args[0] != "-h", args[0] != "--help" else {
     print("""
     usage: hyprmuxctl <command> [args]
-      dispatch <dispatcher> [args]   run a dispatcher (same names as bind lines)
+      dispatch [--surface <id>] <dispatcher> [args]
+                                      run a dispatcher (same names as bind lines); window
+                                      dispatchers act on --surface instead of the focused one
       clients | surfaces             list every managed surface as JSON
       identify [--surface <id>]      describe the caller, target, or focused surface
+      new-surface [--type terminal|web|sim|android] [--workspace <ws>] [--focus] [--floating]
+                  [--cwd <dir>] [--input <text>] [[--] <command | url | device>]
+                                      open a surface and print it as JSON; it takes focus
+                                      only with --focus
+      close-surface [--surface <id>]  close a surface
+      focus-surface [--surface <id>]  focus a surface, switching to its workspace
+      move-surface [--surface <id>] --workspace <ws> [--focus]
+                                      move a surface (and its group) to a workspace
       read-screen [--surface <id>] [--scrollback] [--lines N] [--json]
       send [--surface <id>] <text>   type text into a terminal; reads stdin when omitted
       send-key [--surface <id>] <key>  send a terminal key, e.g. ctrl+c or enter
@@ -188,6 +198,108 @@ func targetArguments(_ surface: String?) -> [String] {
     return ["--surface", surface]
 }
 
+func encodedText(_ value: String) -> String { Data(value.utf8).base64EncodedString() }
+
+/// Splits `--name=value` into its parts; other arguments come back whole.
+func splitOption(_ argument: String) -> (name: String, inline: String?) {
+    guard argument.hasPrefix("--"), let equals = argument.firstIndex(of: "=") else { return (argument, nil) }
+    return (String(argument[..<equals]), String(argument[argument.index(after: equals)...]))
+}
+
+/// Reads the value of the option at `index` (inline or the next argument) and moves past it.
+func optionValue(_ name: String, inline: String?, in arguments: [String], at index: inout Int) throws -> String {
+    if let inline {
+        index += 1
+        return inline
+    }
+    guard index + 1 < arguments.count else { throw CLIError(message: "\(name) requires a value") }
+    index += 2
+    return arguments[index - 1]
+}
+
+/// Relative directories are relative to the caller, not to Hyprmux.
+func absolutePath(_ path: String) -> String {
+    let expanded = (path as NSString).expandingTildeInPath
+    let base = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+    return URL(fileURLWithPath: expanded, relativeTo: base).standardizedFileURL.path
+}
+
+/// Free text goes over the wire base64-encoded, because the protocol splits lines on spaces.
+/// Options end at `--` or at the first plain word, which starts the command, URL, or device.
+func newSurfaceLine(_ arguments: [String]) throws -> String {
+    var wire = ["new-surface"]
+    var positional: [String] = []
+    var index = 0
+    while index < arguments.count {
+        let argument = arguments[index]
+        if argument == "--" {
+            positional = Array(arguments[(index + 1)...])
+            break
+        }
+        let (name, inline) = splitOption(argument)
+        switch name {
+        case "--type":
+            wire += ["--type", try optionValue(name, inline: inline, in: arguments, at: &index)]
+        case "--workspace":
+            wire += ["--workspace-base64", encodedText(try optionValue(name, inline: inline, in: arguments, at: &index))]
+        case "--cwd":
+            let directory = absolutePath(try optionValue(name, inline: inline, in: arguments, at: &index))
+            wire += ["--cwd-base64", encodedText(directory)]
+        case "--input":
+            let text = IPCText.unescape(try optionValue(name, inline: inline, in: arguments, at: &index))
+            wire += ["--input-base64", encodedText(text)]
+        case "--focus", "--no-focus", "--floating":
+            guard inline == nil else { throw CLIError(message: "\(name) takes no value") }
+            wire.append(name)
+            index += 1
+        default:
+            guard !argument.hasPrefix("--") else { throw CLIError(message: "new-surface: unknown option \(argument)") }
+            positional = Array(arguments[index...])
+            index = arguments.count
+        }
+    }
+    let text = positional.joined(separator: " ")
+    if !text.isEmpty { wire += ["--base64", encodedText(text)] }
+    return wire.joined(separator: " ")
+}
+
+func moveSurfaceLine(_ arguments: [String]) throws -> String {
+    let parsed = try takeSurface(from: arguments)
+    var wire = ["move-surface"] + targetArguments(parsed.surface)
+    var workspace: String?
+    var index = 0
+    let rest = parsed.remaining
+    while index < rest.count {
+        let (name, inline) = splitOption(rest[index])
+        switch name {
+        case "--workspace":
+            guard workspace == nil else { throw CLIError(message: "--workspace specified more than once") }
+            workspace = try optionValue(name, inline: inline, in: rest, at: &index)
+        case "--focus", "--no-focus":
+            guard inline == nil else { throw CLIError(message: "\(name) takes no value") }
+            wire.append(name)
+            index += 1
+        default:
+            throw CLIError(message: "move-surface: unexpected argument \(rest[index])")
+        }
+    }
+    guard let workspace else { throw CLIError(message: "move-surface requires --workspace") }
+    return (wire + ["--workspace-base64", encodedText(workspace)]).joined(separator: " ")
+}
+
+/// `dispatch` names a surface only explicitly, before the dispatcher. Without one, window
+/// dispatchers act on the focused window, as they always have.
+func dispatchLine(_ arguments: [String]) throws -> String {
+    guard let first = arguments.first else { throw CLIError(message: "dispatch requires a dispatcher") }
+    let (name, inline) = splitOption(first)
+    guard name == "--surface" else { return (["dispatch"] + arguments).joined(separator: " ") }
+    var index = 0
+    let surface = try validatedSurface(try optionValue(name, inline: inline, in: arguments, at: &index))
+    let rest = Array(arguments[index...])
+    guard !rest.isEmpty else { throw CLIError(message: "dispatch requires a dispatcher") }
+    return (["dispatch", "--surface", surface] + rest).joined(separator: " ")
+}
+
 var unwrapReadScreenResponse = false
 
 func commandLine() throws -> String {
@@ -236,6 +348,16 @@ func commandLine() throws -> String {
     case "surfaces":
         guard commandArgs.isEmpty else { throw CLIError(message: "surfaces takes no arguments") }
         return command
+    case "dispatch":
+        return try dispatchLine(commandArgs)
+    case "new-surface":
+        return try newSurfaceLine(commandArgs)
+    case "close-surface", "focus-surface":
+        let parsed = try takeSurface(from: commandArgs)
+        guard parsed.remaining.isEmpty else { throw CLIError(message: "\(command) takes only --surface") }
+        return ([command] + targetArguments(parsed.surface)).joined(separator: " ")
+    case "move-surface":
+        return try moveSurfaceLine(commandArgs)
     default:
         return args.joined(separator: " ")
     }

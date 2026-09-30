@@ -111,10 +111,52 @@ public enum IPCText {
     }
 }
 
+/// Surface kinds `new-surface` opens. The names match the `kind` field of `surfaces`.
+public enum SurfaceKind: String, Equatable, Sendable, CaseIterable {
+    case terminal, web, sim, android
+}
+
+/// `new-surface`: what to open, where, and whether it takes focus.
+public struct NewSurfaceRequest: Equatable, Sendable {
+    public var kind: SurfaceKind
+    /// Nil: the focused window's workspace, as a bind opens it.
+    public var workspace: WorkspaceTarget?
+    /// False keeps focus and the visible workspace as they are.
+    public var focus: Bool
+    public var floating: Bool
+    /// Terminal: a command to run instead of the login shell (empty: the shell).
+    /// Web: a URL or search terms (empty: the start page).
+    /// Sim and Android: the device (empty: the only running one).
+    public var argument: String
+    /// Terminal only. Nil: the focused terminal's directory, as a bind does.
+    public var cwd: String?
+    /// Terminal only: typed into the shell as its first input, e.g. "npm test\n".
+    public var input: String?
+
+    public init(kind: SurfaceKind = .terminal, workspace: WorkspaceTarget? = nil, focus: Bool = false,
+                floating: Bool = false, argument: String = "", cwd: String? = nil, input: String? = nil) {
+        self.kind = kind
+        self.workspace = workspace
+        self.focus = focus
+        self.floating = floating
+        self.argument = argument
+        self.cwd = cwd
+        self.input = input
+    }
+}
+
 /// Minimal line protocol, modeled on hyprctl. Replies are JSON, plain text,
 /// `ok`, or `error: ...`. New surface commands accept explicit surface handles.
+/// Free text that may contain spaces travels as `--NAME-base64` (or `--base64` for
+/// the main text), because the line is split on whitespace.
 public enum IPCRequest: Equatable {
-    case dispatch(Dispatcher)
+    /// A dispatcher. With a surface it acts on that window instead of the focused one.
+    case dispatch(Dispatcher, surface: SurfaceReference?)
+    case newSurface(NewSurfaceRequest)
+    case closeSurface(SurfaceReference?)
+    case focusSurface(SurfaceReference?)
+    /// Moves a surface (its whole group) to a workspace. `focus` follows it there.
+    case moveSurface(surface: SurfaceReference?, workspace: WorkspaceTarget, focus: Bool)
     case clients
     case surfaces
     case identify(SurfaceReference?)
@@ -148,11 +190,35 @@ public enum IPCRequest: Equatable {
         }()
         switch cmd {
         case "dispatch":
-            let (name, args): (String, String) = {
-                guard let sp = rest.firstIndex(of: " ") else { return (rest, "") }
-                return (String(rest[..<sp]), String(rest[rest.index(after: sp)...]))
-            }()
-            return Dispatcher.parse(name, args).map { .dispatch($0) }
+            return parseDispatch(rest)
+        case "new-surface":
+            return parseNewSurface(rest)
+        case "close-surface", "focus-surface":
+            var args = words(rest)
+            switch takeOption("--surface", from: &args) {
+            case .failure(let error): return .failure(error)
+            case .success(let value):
+                guard args.isEmpty else { return .failure(ParseError("\(cmd): unexpected arguments")) }
+                return parseSurface(value).map { cmd == "close-surface" ? .closeSurface($0) : .focusSurface($0) }
+            }
+        case "move-surface":
+            var args = words(rest)
+            let surface: SurfaceReference?
+            let workspace: WorkspaceTarget?
+            switch takeOption("--surface", from: &args).flatMap(parseSurface) {
+            case .failure(let error): return .failure(error)
+            case .success(let value): surface = value
+            }
+            switch takeWorkspace(from: &args) {
+            case .failure(let error): return .failure(error)
+            case .success(let value): workspace = value
+            }
+            let focus = removeFlag("--focus", from: &args)
+            let noFocus = removeFlag("--no-focus", from: &args)
+            guard !(focus && noFocus) else { return .failure(ParseError("move-surface: --focus and --no-focus conflict")) }
+            guard args.isEmpty else { return .failure(ParseError("move-surface: unexpected arguments")) }
+            guard let workspace else { return .failure(ParseError("move-surface: expected --workspace")) }
+            return .success(.moveSurface(surface: surface, workspace: workspace, focus: focus))
         case "clients": return .success(.clients)
         case "surfaces": return .success(.surfaces)
         case "identify":
@@ -278,6 +344,133 @@ public enum IPCRequest: Equatable {
         default:
             return .failure(ParseError("unknown command '\(cmd)'"))
         }
+    }
+
+    /// `dispatch [--surface S] NAME ARGS`. Only options before the name count, so a
+    /// dispatcher's own arguments (an `exec` command line) pass through untouched.
+    private static func parseDispatch(_ rest: String) -> Result<IPCRequest, ParseError> {
+        var body = Substring(rest)
+        var surface: SurfaceReference?
+        func nextWord() -> String {
+            body = body.drop(while: { $0.isWhitespace })
+            let word = body.prefix(while: { !$0.isWhitespace })
+            body = body.dropFirst(word.count)
+            return String(word)
+        }
+        var name = nextWord()
+        if name == "--surface" || name.hasPrefix("--surface=") {
+            let value = name == "--surface" ? nextWord() : String(name.dropFirst("--surface=".count))
+            switch SurfaceReference.parse(value) {
+            case .failure(let error): return .failure(error)
+            case .success(let reference): surface = reference
+            }
+            name = nextWord()
+        }
+        guard !name.isEmpty else { return .failure(ParseError("dispatch: expected a dispatcher")) }
+        // The dispatcher's arguments start after the one space that ends its name.
+        let args = body.first == " " ? String(body.dropFirst()) : String(body)
+        return Dispatcher.parse(name, args).flatMap { d in
+            if surface != nil, !d.targetsWindow {
+                return .failure(ParseError("dispatch: \(name) does not act on a surface"))
+            }
+            return .success(.dispatch(d, surface: surface))
+        }
+    }
+
+    /// `new-surface [--type KIND] [--workspace WS] [--focus] [--floating] [--cwd DIR]
+    /// [--input-base64 B64] [--base64 B64 | [--] ARGUMENT...]`.
+    private static func parseNewSurface(_ rest: String) -> Result<IPCRequest, ParseError> {
+        var args = words(rest)
+        // Everything after `--` is the argument, even words that look like options.
+        var positional: [String] = []
+        if let end = args.firstIndex(of: "--") {
+            positional = Array(args[(end + 1)...])
+            args.removeSubrange(end...)
+        }
+        var request = NewSurfaceRequest()
+        switch takeOption("--type", from: &args) {
+        case .failure(let error): return .failure(error)
+        case .success(let value?):
+            guard let kind = SurfaceKind(rawValue: value.lowercased()) else {
+                let kinds = SurfaceKind.allCases.map(\.rawValue).joined(separator: ", ")
+                return .failure(ParseError("new-surface: --type must be one of \(kinds)"))
+            }
+            request.kind = kind
+        case .success(nil): break
+        }
+        switch takeWorkspace(from: &args) {
+        case .failure(let error): return .failure(error)
+        case .success(let value): request.workspace = value
+        }
+        switch takeText("--cwd", from: &args) {
+        case .failure(let error): return .failure(error)
+        case .success(let value): request.cwd = value
+        }
+        switch takeText("--input", from: &args) {
+        case .failure(let error): return .failure(error)
+        case .success(let value): request.input = value
+        }
+        let encoded: String?
+        switch takeOption("--base64", from: &args) {
+        case .failure(let error): return .failure(error)
+        case .success(let value): encoded = value
+        }
+        request.focus = removeFlag("--focus", from: &args)
+        let noFocus = removeFlag("--no-focus", from: &args)
+        guard !(request.focus && noFocus) else { return .failure(ParseError("new-surface: --focus and --no-focus conflict")) }
+        request.floating = removeFlag("--floating", from: &args)
+        if let option = args.first(where: { $0.hasPrefix("--") }) {
+            return .failure(ParseError("new-surface: unknown option \(option)"))
+        }
+        positional = args + positional
+        if let encoded {
+            guard positional.isEmpty else { return .failure(ParseError("new-surface: --base64 and a plain argument conflict")) }
+            guard let text = decodeBase64(encoded) else { return .failure(ParseError("new-surface: invalid base64 argument")) }
+            request.argument = text
+        } else {
+            request.argument = positional.joined(separator: " ")
+        }
+        if request.kind != .terminal, request.cwd != nil || request.input != nil {
+            return .failure(ParseError("new-surface: --cwd and --input are for terminals"))
+        }
+        return .success(.newSurface(request))
+    }
+
+    /// `--workspace WS` or `--workspace-base64 B64`, in Hyprland workspace syntax.
+    private static func takeWorkspace(from args: inout [String]) -> Result<WorkspaceTarget?, ParseError> {
+        takeText("--workspace", from: &args).flatMap { value in
+            guard let value else { return .success(nil) }
+            guard let target = WorkspaceTarget(hyprland: value) else {
+                return .failure(ParseError("invalid workspace '\(value)'"))
+            }
+            return .success(target)
+        }
+    }
+
+    /// A free-text option, given plainly (`--cwd /tmp`) or encoded (`--cwd-base64 L3RtcA==`).
+    private static func takeText(_ name: String, from args: inout [String]) -> Result<String?, ParseError> {
+        let plain: String?
+        let encoded: String?
+        switch takeOption(name, from: &args) {
+        case .failure(let error): return .failure(error)
+        case .success(let value): plain = value
+        }
+        switch takeOption(name + "-base64", from: &args) {
+        case .failure(let error): return .failure(error)
+        case .success(let value): encoded = value
+        }
+        switch (plain, encoded) {
+        case (nil, nil): return .success(nil)
+        case (let value?, nil): return .success(value)
+        case (nil, let value?):
+            guard let text = decodeBase64(value) else { return .failure(ParseError("\(name)-base64: invalid base64")) }
+            return .success(text)
+        default: return .failure(ParseError("\(name): specified more than once"))
+        }
+    }
+
+    private static func decodeBase64(_ value: String) -> String? {
+        Data(base64Encoded: value).map { String(decoding: $0, as: UTF8.self) }
     }
 
     private static func words(_ value: String) -> [String] {

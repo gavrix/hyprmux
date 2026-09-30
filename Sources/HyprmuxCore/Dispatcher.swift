@@ -203,6 +203,23 @@ public enum Dispatcher: Equatable, Sendable {
     }
 }
 
+extension Dispatcher {
+    /// Whether the dispatcher acts on one window. A bind applies it to the focused window;
+    /// IPC can name another one (`dispatch --surface N ...`). The rest act on the app or a workspace.
+    public var targetsWindow: Bool {
+        switch self {
+        case .webNav, .simButton, .killActive, .moveFocus, .moveWindow, .swapWindow,
+             .resizeActive, .moveActive, .moveToWorkspace, .toggleFloating, .fullscreen,
+             .toggleSplit, .swapSplit, .splitRatio, .cycleNext, .centerWindow,
+             .toggleGroup, .changeGroupActive, .moveIntoGroup, .moveOutOfGroup, .moveGroupWindow:
+            return true
+        case .exec, .web, .sim, .android, .workspace, .toggleSpecialWorkspace, .focusCurrentOrLast,
+             .submap, .renameWorkspace, .picker, .monitorFullscreen, .reload, .exit:
+            return false
+        }
+    }
+}
+
 public struct ParseError: Error, Equatable, Sendable, CustomStringConvertible {
     public let message: String
     public init(_ message: String) { self.message = message }

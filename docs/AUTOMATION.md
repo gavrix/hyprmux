@@ -1,7 +1,8 @@
 # Terminal automation
 
-`hyprmuxctl` lets tools discover Hyprmux surfaces and control terminal surfaces.
-Operations go through Hyprmux's Unix socket and do not change focus or workspace visibility.
+`hyprmuxctl` lets tools discover, open, arrange, and close Hyprmux surfaces, and control terminal surfaces.
+Operations go through Hyprmux's Unix socket.
+They do not change focus or workspace visibility unless a command has `--focus`.
 
 ## Install and connect
 
@@ -71,6 +72,86 @@ Commands resolve their target in this order:
 Use an explicit target for cross-terminal work.
 Explicit reads and input do not focus the target, switch workspaces, or activate hidden group tabs.
 
+`dispatch` is the exception.
+Without `--surface`, it acts on the focused window, as a key binding does.
+
+## Manage surfaces
+
+Open a surface with `new-surface`.
+It prints the new surface's JSON entry, the same shape as `surfaces` returns:
+
+```sh
+hyprmuxctl new-surface                                   # a shell next to the focused window
+hyprmuxctl new-surface --workspace 3 --cwd ~/src/app     # a shell on workspace 3
+hyprmuxctl new-surface --workspace name:agents -- htop   # run a command instead of the shell
+hyprmuxctl new-surface --input 'devx pi\n'               # type into the new shell once it starts
+hyprmuxctl new-surface --type web github.com
+hyprmuxctl new-surface --type sim booted
+hyprmuxctl new-surface --type android Pixel_8_API_36
+ref=$(hyprmuxctl new-surface --workspace 2 | jq -r .ref)
+```
+
+| Option | Meaning |
+|---|---|
+| `--type` | `terminal` (default), `web`, `sim`, or `android`. |
+| `--workspace` | Workspace syntax: `3`, `name:NAME`, `special:NAME`, `empty`, `+1`. Default: the focused window's workspace. A new `name:` creates and names a workspace. |
+| `--focus` | Focus the surface, switching to its workspace. |
+| `--floating` | Open it floating instead of tiled. |
+| `--cwd` | Terminal directory. Relative paths are relative to the caller. Default: the focused terminal's directory. |
+| `--input` | Text typed into the new shell. Decodes `\n`, `\t`, and `\\`. The shell stays after the program exits. |
+
+The argument after the options is the terminal command, the URL, or the device.
+Options end at `--` or at the first plain word, so put them first.
+A terminal command replaces the shell, and the terminal closes when it exits.
+Without an argument, a web surface opens the start page.
+A simulator defaults to `booted`, and Android to the only running emulator.
+
+Without `--focus`, focus and the visible workspace stay as they are.
+The one exception is an empty screen: a surface that lands in view takes focus when nothing has it.
+Without `--workspace`, a background surface opened while a group is focused joins it as a hidden tab.
+It does not end a fullscreen window.
+
+Close, focus, or move a surface:
+
+```sh
+hyprmuxctl close-surface --surface surface:7
+hyprmuxctl focus-surface --surface surface:7             # switches workspace, shows a hidden tab
+hyprmuxctl move-surface --surface surface:7 --workspace 4
+hyprmuxctl move-surface --surface surface:7 --workspace name:review --focus
+```
+
+`close-surface` closes immediately, like `killactive`, even when a program is running.
+`move-surface` moves the surface's whole group, and prints the surface's JSON entry.
+Without `--focus`, focus stays where it is.
+These commands follow the usual target order, so without `--surface` they act on the calling terminal.
+
+## Run any dispatcher on a surface
+
+Every key binding runs a dispatcher, and `dispatch` runs the same ones.
+Window dispatchers act on the focused window.
+Name another window with `--surface` before the dispatcher:
+
+```sh
+hyprmuxctl dispatch --surface surface:7 movewindow l
+hyprmuxctl dispatch --surface surface:7 swapwindow r
+hyprmuxctl dispatch --surface surface:7 resizeactive 40 0
+hyprmuxctl dispatch --surface surface:7 togglefloating
+hyprmuxctl dispatch --surface surface:7 fullscreen 1
+hyprmuxctl dispatch --surface surface:7 moveintogroup l
+hyprmuxctl dispatch --surface surface:9 webnav reload
+```
+
+A targeted dispatcher does not focus the window.
+Dispatchers about focus still move it: `movefocus` and `cyclenext` start from the target.
+`movetoworkspace` follows the window, and `movetoworkspacesilent` doesn't.
+On a hidden group tab, layout dispatchers act on the group's slot.
+`moveintogroup` on an unfocused window adds it behind the group's shown tab.
+`changegroupactive` shows another tab without focusing it.
+
+Dispatchers that act on the app or a workspace reject `--surface`.
+Examples are `exec`, `web`, `workspace`, `togglespecialworkspace`, `renameworkspace`, and `picker`.
+[CONFIGURATION.md](CONFIGURATION.md#dispatchers) lists every dispatcher.
+
 ## Read terminal output
 
 Read the visible viewport:
@@ -126,6 +207,7 @@ Targeted input works for terminals on inactive workspaces and hidden group tabs.
 ## Recommended agent workflow
 
 1. Run `surfaces` and inspect `kind`, `workspace`, `title`, and `capabilities`.
+   To work in a new terminal, open one with `new-surface` and use the `ref` it prints.
 2. Select a terminal by its returned `ref`, not its list position.
 3. Read recent output before sending input.
 4. Send text or one key with an explicit target.

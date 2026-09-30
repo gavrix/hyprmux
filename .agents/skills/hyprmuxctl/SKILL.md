@@ -1,14 +1,15 @@
 ---
 name: hyprmuxctl
-description: Discover, inspect, read, and control Hyprmux terminal surfaces with hyprmuxctl. Use when coordinating work between Hyprmux terminals, sending commands or keys to another surface, reading rendered terminal output, or testing Hyprmux without changing focus.
+description: Discover, open, arrange, close, read, and control Hyprmux surfaces with hyprmuxctl. Use when coordinating work between Hyprmux terminals, opening a terminal or web tile on a workspace, moving or closing surfaces, sending commands or keys to another surface, reading rendered terminal output, or testing Hyprmux without changing focus.
 compatibility: macOS with Hyprmux running and hyprmuxctl available
 ---
 
 <!-- managed-by-hyprmux -->
 
-# Hyprmux terminal automation
+# Hyprmux surface automation
 
-Use `hyprmuxctl` as the compositor-mediated interface between terminals.
+Use `hyprmuxctl` as the compositor-mediated interface to Hyprmux surfaces:
+terminals, web tiles, and simulator or emulator tiles.
 Do not open the Unix socket directly or depend on surface view objects.
 
 ## Establish the client
@@ -30,6 +31,10 @@ swift build --product hyprmuxctl
 Use `HYPRMUX_SOCKET` from the current terminal.
 Do not replace it unless the user identifies another Hyprmux instance.
 The bundled skill path is available as `HYPRMUX_SKILL_PATH`.
+
+A running Hyprmux can be older than the client.
+If a command replies `error: unknown command`, tell the user that Hyprmux needs a restart.
+Do not restart it yourself: that closes their shells.
 
 ## Discover before acting
 
@@ -97,15 +102,69 @@ hyprmuxctl send-key --surface surface:N shift+tab
 Targeted reads and input must not focus the target or switch workspaces.
 They can reach inactive workspaces and hidden group tabs.
 
+## Open, move, and close surfaces
+
+Open a surface without taking focus.
+It prints the new surface's JSON; read its `ref` for later commands:
+
+```sh
+ref=$(hyprmuxctl new-surface --workspace 3 --cwd "$PWD" --input 'npm test\n' | jq -r .ref)
+hyprmuxctl new-surface --workspace name:agents -- htop
+hyprmuxctl new-surface --type web --workspace 2 https://example.com
+hyprmuxctl new-surface --type sim booted
+```
+
+Put options before the command, URL, or device.
+`--input` types into a shell that stays open after the program exits.
+A command after `--` replaces the shell, and the terminal closes when it exits.
+Without `--cwd`, a terminal starts in the focused terminal's directory, not the caller's.
+`--workspace` takes `3`, `name:NAME`, `special:NAME`, or `empty`; a new `name:` creates the workspace.
+
+Move, focus, or close a surface by its reference:
+
+```sh
+hyprmuxctl move-surface --surface surface:N --workspace 4
+hyprmuxctl focus-surface --surface surface:N
+hyprmuxctl close-surface --surface surface:N
+```
+
+These default to the calling terminal, so always pass `--surface` for another one.
+`move-surface` moves the surface's whole group and prints its JSON.
+`close-surface` closes immediately, without confirmation, and ends the programs in that terminal.
+
+Run any key-binding dispatcher on a surface without focusing it:
+
+```sh
+hyprmuxctl dispatch --surface surface:N movewindow l
+hyprmuxctl dispatch --surface surface:N swapwindow r
+hyprmuxctl dispatch --surface surface:N resizeactive 40 0
+hyprmuxctl dispatch --surface surface:N togglefloating
+hyprmuxctl dispatch --surface surface:N moveintogroup l
+```
+
+Without `--surface`, `dispatch` acts on the focused window, which may belong to the user.
+`movefocus`, `cyclenext`, and `movetoworkspace` move focus even with a target.
+Use `movetoworkspacesilent` or `move-surface` to move a window without following it.
+App and workspace dispatchers such as `exec` and `workspace` reject `--surface`.
+
+## Respect the user's view
+
+The user is often working in the focused window.
+Open, move, and dispatch in the background by default.
+Use `--focus`, `focus-surface`, or a focus-moving dispatcher only when the user wants to see the result now.
+
 ## Verify and handle failures
 
 Read the target again after sending input.
+Check the `workspace` field that `new-surface` and `move-surface` print.
+After `close-surface`, confirm the `ref` is gone from `surfaces`.
 Treat any `error:` response or nonzero exit status as failure.
 Do not silently choose another surface when a target closes.
 
-Only use operations listed in the target's capabilities.
-Terminal surfaces currently expose `read_text`, `send_text`, and `send_key`.
-Browser and device surfaces do not yet support these automation commands.
+`capabilities` lists the content operations a surface supports.
+Terminal surfaces expose `read_text`, `send_text`, and `send_key`.
+Browser and device surfaces do not support `read-screen`, `send`, or `send-key` yet.
+Opening, moving, focusing, closing, and dispatching work for every surface kind.
 
 Avoid destructive commands unless the user explicitly requested them.
 Do not send input to an ambiguous or unrelated terminal.

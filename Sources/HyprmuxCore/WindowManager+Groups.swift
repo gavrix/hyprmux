@@ -90,9 +90,12 @@ extension WindowManager {
 
     // MARK: Dispatchers
 
-    /// Makes the focused window a one-tab group, or dissolves its group into separate windows.
-    func toggleGroup() {
-        guard let (f, ws, st) = focusedContext() else { return }
+    // Each takes the window to act on; nil means the focused one. Acting on another window
+    // leaves focus alone and doesn't change which tab a group shows, except to fill a slot.
+
+    /// Makes the window a one-tab group, or dissolves its group into separate windows.
+    func toggleGroup(_ subject: ClientID? = nil) {
+        guard let (f, ws, st) = slotContext(subject) else { return }
         if let gid = st.group, let g = groups[gid] {
             let hidden = g.members.filter { $0 != g.active }
             for m in g.members { clients[m]!.group = nil }
@@ -115,8 +118,8 @@ extension WindowManager {
         }
     }
 
-    func changeGroupActive(_ step: GroupStep) {
-        guard let f = focused, let g = group(of: f), g.members.count > 1 else { return }
+    func changeGroupActive(_ step: GroupStep, _ subject: ClientID? = nil) {
+        guard let f = subject ?? focused, let g = group(of: f), g.members.count > 1 else { return }
         let i = g.members.firstIndex(of: g.active)!
         let j: Int
         switch step {
@@ -124,16 +127,24 @@ extension WindowManager {
         case .previous: j = (i - 1 + g.members.count) % g.members.count
         case .index(let n): j = min(max(n - 1, 0), g.members.count - 1)
         }
-        focus(g.members[j])  // focus() activates hidden members
+        // A focused group keeps focus on its shown tab; another group just shows a different one.
+        if let focused, g.members.contains(focused) {
+            focus(g.members[j])  // focus() activates hidden members
+        } else {
+            activate(g.members[j])
+        }
     }
 
-    /// Moves the focused window into the group (or plain window, which becomes a
-    /// group) next to it in `dir`.
-    func moveIntoGroup(_ dir: Direction) {
-        guard let (f, ws, _) = focusedContext() else { return }
+    /// Moves the window into the group (or plain window, which becomes a group) next to it
+    /// in `dir`. Only the focused window becomes the shown tab; another joins behind it.
+    func moveIntoGroup(_ dir: Direction, _ subject: ClientID? = nil) {
+        guard let (f, ws, _) = context(subject) else { return }
+        let wasFocused = focused == f
+        // A hidden tab looks for neighbors from its group's slot.
+        let slot = group(of: f)?.active ?? f
         let all = frames(in: ws)
-        guard let from = all[f] else { return }
-        let others = all.filter { $0.key != f && group(of: $0.key).map { !$0.members.contains(f) } ?? true }
+        guard let from = all[slot] else { return }
+        let others = all.filter { $0.key != slot && group(of: $0.key).map { !$0.members.contains(f) } ?? true }
         guard let n = DirectionalSearch.neighbor(of: from, direction: dir,
                                                  candidates: others.map { ($0.key, $0.value) }, recency: recency)
         else { return }
@@ -156,15 +167,17 @@ extension WindowManager {
         g.members.insert(f, at: at)
         clients[f]!.group = gid
         clients[f]!.floating = clients[n]!.floating
+        guard wasFocused else { return }
         replaceInSlot(g.active, with: f, in: ws)
         g.active = f
         focus(f)
     }
 
-    /// Takes the focused window out of its group into a window of its own, next to the group.
-    func moveOutOfGroup() {
-        guard let (f, ws, st) = focusedContext(), let g = group(of: f), g.members.count > 1 else { return }
-        let slotRect = clients[f]?.floatRect
+    /// Takes the window out of its group into a window of its own, next to the group.
+    func moveOutOfGroup(_ subject: ClientID? = nil) {
+        guard let (f, ws, st) = context(subject), let g = group(of: f), g.members.count > 1 else { return }
+        let wasFocused = focused == f
+        let slotRect = clients[g.active]?.floatRect
         guard let shown = leaveGroup(f) else { return }
         if st.floating {
             clients[f]!.floatRect = (slotRect ?? defaultFloatRect()).offsetBy(dx: 30, dy: 30)
@@ -172,12 +185,12 @@ extension WindowManager {
         } else {
             ws.tiled.insert(f, target: shown, focalPoint: nil, area: tileArea)
         }
-        focus(f)
+        if wasFocused { focus(f) }
     }
 
-    /// Moves the active tab left/right in the tab order.
-    func moveGroupWindow(forward: Bool) {
-        guard let f = focused, let g = group(of: f), let i = g.members.firstIndex(of: f) else { return }
+    /// Moves the tab left/right in the tab order.
+    func moveGroupWindow(forward: Bool, _ subject: ClientID? = nil) {
+        guard let f = subject ?? focused, let g = group(of: f), let i = g.members.firstIndex(of: f) else { return }
         let j = forward ? i + 1 : i - 1
         guard j >= 0, j < g.members.count else { return }
         g.members.swapAt(i, j)

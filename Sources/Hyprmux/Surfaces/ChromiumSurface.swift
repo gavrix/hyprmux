@@ -120,6 +120,10 @@ final class ChromiumSurface: BrowserSurface, HMChromiumBrowserDelegate {
         host?.browserSurfaceDidRequestFocus(self)
     }
 
+    func chromiumBrowserShouldTakeNavigationFocus(_ b: HMChromiumBrowser) -> Bool {
+        host?.browserSurfaceShouldTakeNavigationFocus(self) ?? true
+    }
+
     func chromiumBrowserDidClose(_ b: HMChromiumBrowser) {
         browser = nil
         finishClose()

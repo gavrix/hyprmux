@@ -3,6 +3,9 @@ import HyprmuxCore
 
 protocol BrowserSurfaceHost: AnyObject {
     func browserSurfaceDidRequestFocus(_ s: BrowserSurface)
+    /// A page load wants keyboard focus. False for a tile that doesn't have focus,
+    /// so a background tile (opened with `new-surface`, or reloading) can't take it.
+    func browserSurfaceShouldTakeNavigationFocus(_ s: BrowserSurface) -> Bool
     func browserSurfaceTitleDidChange(_ s: BrowserSurface)
     func browserSurfaceDidClose(_ s: BrowserSurface)
     /// The engine view became ready (Chromium creates it asynchronously).
@@ -175,7 +178,8 @@ class BrowserSurface: FlippedView, Surface, NSTextFieldDelegate {
     }
 
     /// New-tab page: local, no autofocus (a page that autofocuses would steal the address bar).
-    func openStartPage() {
+    /// `focusAddress` false opens it in the background, leaving keyboard focus where it is.
+    func openStartPage(focusAddress takeFocus: Bool = true) {
         engineLoadHTML("""
         <html><head><meta name="color-scheme" content="dark"><title>New tab</title></head>
         <body style="margin:0;height:100vh;display:flex;align-items:center;justify-content:center;
@@ -183,7 +187,7 @@ class BrowserSurface: FlippedView, Surface, NSTextFieldDelegate {
         Type an address or search terms</body></html>
         """)
         address.stringValue = ""
-        focusAddress()
+        if takeFocus { focusAddress() }
     }
 
     func perform(_ nav: WebNav) {

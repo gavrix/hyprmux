@@ -303,8 +303,9 @@ extension WindowManager {
         for id in ws.floating {
             guard let sl = slot(id) else { continue }
             let r = clients[id]?.floatRect ?? defaultFloatRect()
-            let rect = area.width > 0 && area.height > 0
-                ? [(r.minX - area.minX) / area.width, (r.minY - area.minY) / area.height, r.width / area.width, r.height / area.height]
+            let rect: [Double] = area.width > 0 && area.height > 0
+                ? [Double((r.minX - area.minX) / area.width), Double((r.minY - area.minY) / area.height),
+                   Double(r.width / area.width), Double(r.height / area.height)]
                 : [0.2, 0.2, 0.6, 0.6]
             w.floating.append(SessionFloating(slot: sl, rect: rect.map { ($0 * 10_000).rounded() / 10_000 }))
         }

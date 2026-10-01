@@ -81,7 +81,7 @@ public struct SessionFullscreen: Codable, Equatable, Sendable {
 
 /// One window's content.
 public struct SessionTile: Codable, Equatable, Sendable {
-    /// "terminal", "web", "sim", or "android".
+    /// "terminal", "web", "sim", "android", or "app".
     public var kind: String
     /// Unique within the file. Focus and fullscreen refer to tiles by key.
     public var key: Int?
@@ -100,10 +100,15 @@ public struct SessionTile: Codable, Equatable, Sendable {
     public var avd: String?
     /// Android Emulator: display name, retained as a restore fallback and for hand-written layouts.
     public var avdName: String?
+    /// Client app: what `new-surface --type app` was given (target and arguments).
+    /// Tiles that came from one launch share it, and are relaunched together.
+    public var app: String?
+    /// Client app: the toplevel's restore token (docs/CLIENT_PROTOCOL.md, section 10).
+    public var restoreToken: String?
 
     public init(kind: String, key: Int? = nil, title: String? = nil, cwd: String? = nil, command: String? = nil,
                 agent: SessionAgent? = nil, url: String? = nil, sim: String? = nil,
-                avd: String? = nil, avdName: String? = nil) {
+                avd: String? = nil, avdName: String? = nil, app: String? = nil, restoreToken: String? = nil) {
         self.kind = kind
         self.key = key
         self.title = title
@@ -114,6 +119,8 @@ public struct SessionTile: Codable, Equatable, Sendable {
         self.sim = sim
         self.avd = avd
         self.avdName = avdName
+        self.app = app
+        self.restoreToken = restoreToken
     }
 }
 

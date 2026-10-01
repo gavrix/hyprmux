@@ -1,0 +1,10 @@
+{
+  "id": "electron",
+  "name": "Electron apps",
+  "description": "Lifts an Electron app through its main-process inspector: offscreen windows, proxied dialogs and menus.",
+  "match": { "bundleFiles": ["Contents/Frameworks/Electron Framework.framework"] },
+  "exec": "hyprmux-electron-bridge",
+  "args": ["--adapter", "generic", "{app}", "{args}"],
+  "probe": ["probe", "{app}", "--adapter", "generic"],
+  "priority": 0
+}

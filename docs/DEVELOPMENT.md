@@ -256,6 +256,68 @@ Rules that came out of real mistakes:
 - **Clean up** test instances, temporary configs, profiles, simulators, and
   screenshots.
 
+### Client apps
+
+Client apps find Hyprmux through `hyprmux-broker`, a launchd job. For
+development, load it from the bundle you're testing, and give the test
+instance its own `HYPRMUX_INSTANCE`, so it can't take over your own
+Hyprmux's registration:
+
+```sh
+scripts/dev-broker.sh load /tmp/HyprmuxTest.app   # log: ~/Library/Logs/hyprmux-broker.log
+open -g -n --env HYPRMUX_INSTANCE=test ... /tmp/HyprmuxTest.app   # plus the settings above
+swift build --product hyprmux-demo-client
+hyprmuxctl new-surface --type app -- "$(swift build --show-bin-path)/hyprmux-demo-client"
+HYPRMUX_INSTANCE=test HM_DEMO_STATS=1 "$(swift build --show-bin-path)/hyprmux-demo-client"   # its own tile, stats on stderr
+scripts/dev-broker.sh unload                      # when done
+```
+
+The demo echoes typed text into its title, so `hyprmuxctl surfaces` shows
+whether keys made the round trip. Build it with `-c release` to measure
+frame rates. A debug build spends most of each frame drawing.
+
+Electron apps go through `hyprmux-electron-bridge`, picked by the adapter
+manifests in `Resources/adapters/` ([ADAPTERS.md](ADAPTERS.md)). Start the test
+instance with `--env HYPRMUX_ADAPTER_BIN="$(swift build --show-bin-path)"`, so
+adapters resolve to debug builds without rebundling. A debug bridge finds
+`Resources/electron-hook.js` in the repo by itself. `hyprmuxctl adapters` shows
+which executable each adapter resolved to. `hyprmuxctl adapters match APP`
+shows the choice for one app.
+
+Each adapter process logs its stderr to
+`~/Library/Logs/Hyprmux/adapters/` (a subdirectory per `HYPRMUX_INSTANCE`), and
+`hyprmuxctl adapters` prints the latest log's path. Start the test instance
+with `--env HYPRMUX_HOOK_DEBUG=1` too, and the bridge and hook log their work
+there:
+
+- Keys, buttons, and text-input updates the bridge forwards, with timings.
+- Frames: dirty rect, hook cost, transit, and present time.
+- Input events the app's webContents receives, dialog and menu calls with
+  their results, and `<select>` popups.
+
+The bridge can also run from a shell, where it opens its own tile:
+
+```sh
+HYPRMUX_INSTANCE=test HYPRMUX_HOOK_DEBUG=1 "$(swift build --show-bin-path)/hyprmux-electron-bridge" /Applications/Reactotron.app
+kill -USR1 <bridge pid>   # with HYPRMUX_HOOK_DEBUG: writes each window's frame to /tmp/hyprmux-bridge-win<N>.png
+```
+
+The PNG dump shows what a tile displays when screen capture isn't
+available. Read coordinates off it carefully: the dump is in pixels, and
+`sendmouse` takes window points, so divide by the tile's scale and add the
+tile's `at` from `hyprmuxctl surfaces`.
+
+Testing app tiles from a background instance has limits:
+
+- **Menus:** context menus and `<select>` popups do open, but synthetic clicks
+  can't pick an item. AppKit's menu tracking ignores them.
+- **Dead keys and IME:** compositions need Hyprmux to be the active app. With
+  the instance in the background, ⌥E types nothing. `sendkey` with ALT
+  computes characters from the keyboard layout (⌥S gives ß), like a real key.
+- **Text:** `hyprmuxctl send --surface ID TEXT` types into an app tile through
+  text input. Its `surfaces` entry shows `textInput`, with the last key's
+  input-method result.
+
 ### Test tools
 
 | Tool | Use |
@@ -264,6 +326,7 @@ Rules that came out of real mistakes:
 | `hyprmuxctl send --surface ID` / `send-key --surface ID` | Sends terminal input directly without focusing the target or running Hyprmux binds. |
 | `hyprmuxctl sendkey MODS, key` | Presses a key through the focused real path (binds, then the surface). Works in the background. |
 | `hyprmuxctl senddrag` / `sendmouse` | Mouse input, paced like a hand. `sendmouse down` … `up` for holds. |
+| `hyprmuxctl sendscroll MODS, LINES, x y` | A notched mouse-wheel scroll, built as a real line-unit event (positive scrolls up). App tiles get it with its raw notch count, like hardware. |
 | `hyprmuxctl hittest x y` | Which views a click reaches. This found the dim overlay that swallowed every click. |
 | `hyprmuxctl debug` | App active, key window, first responder, `keyboardClient`, the frames of HUD panels on screen, and the open picker (query, rows, selection). Use it for any "wrong window" bug, and to find where to click a notification. |
 | `hyprmuxctl surfaces` | References, capabilities, workspaces, frames, focus, groups, URLs, and terminal directories. |

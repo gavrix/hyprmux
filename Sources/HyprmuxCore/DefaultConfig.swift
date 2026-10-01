@@ -89,6 +89,16 @@ input {
     follow_mouse = 1
 }
 
+# App tiles: macOS apps opened with new-surface --type app (VS Code, Cursor, ...).
+app {
+    # Who gets a chord that is also a bind while an app tile has the keyboard:
+    #   hyprmux  the bind runs, as in terminals and web tiles
+    #   app      the app gets it (Cmd+P, Cmd+S, Cmd+arrows, ...); binds marked p
+    #            still run, so keep a way out, e.g. bindp = $mod, 1, workspace, 1
+    # Inside a submap (say $mod R for resize), binds always run.
+    shortcuts = hyprmux
+}
+
 dwindle {
     preserve_split = true
     # 0 = split toward the mouse, 1 = new window left/top, 2 = right/bottom

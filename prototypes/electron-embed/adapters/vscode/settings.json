@@ -1,0 +1,7 @@
+{
+  // Draw VS Code's own system UI inside the page, so it shows up in the tile.
+  "window.dialogStyle": "custom",
+  "files.simpleDialog.enable": true,
+  "window.menuStyle": "custom",
+  "window.titleBarStyle": "custom"
+}

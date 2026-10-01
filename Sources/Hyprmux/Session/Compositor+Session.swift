@@ -107,6 +107,10 @@ extension Compositor {
         case let android as AndroidSurface:
             return SessionTile(kind: "android", title: title,
                                avd: android.endpoint.avdID, avdName: android.endpoint.name)
+        case let app as ClientSurface:
+            // Only launched apps can be relaunched; a client that connected on its own can't.
+            guard let launch = app.launchArgument else { return nil }
+            return SessionTile(kind: "app", title: title, app: launch, restoreToken: forLayout ? nil : app.restoreToken)
         default:
             return nil
         }
@@ -179,6 +183,10 @@ extension Compositor {
             }
             adopt(android)
             return android.clientID
+        case "app":
+            guard let app = restoreAppTile(t) else { return nil }
+            adopt(app)
+            return app.clientID
         default:
             // Terminals, and anything unknown: a shell, in its directory, maybe running something.
             var opts = SurfaceOptions()

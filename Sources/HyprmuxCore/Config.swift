@@ -86,7 +86,8 @@ public struct KeyBind: Equatable, Sendable {
     public var mods: Modifiers
     public var trigger: BindTrigger
     public var dispatcher: Dispatcher
-    /// Hyprland bind flags: e (repeat), l (locked), r (release), n (non-consuming), m (mouse).
+    /// Hyprland bind flags: e (repeat), l (locked), r (release), n (non-consuming), m (mouse),
+    /// p (fires even while an app tile has the keyboard, see `appShortcuts`).
     public var flags: Set<Character>
     public var submap: String
     /// From `bindd = MODS, key, description, dispatcher, args`. Shown by the keycast.
@@ -128,6 +129,9 @@ public struct HyprmuxConfig: Sendable {
     public var animations: [String: AnimationSpec] = [:]
     /// 0 = click to focus, 1 = focus follows mouse.
     public var followMouse = 1
+    /// Who gets a chord that is also a bind while an app tile has the keyboard: "hyprmux"
+    /// (the bind runs) or "app" (the app gets it; binds with the p flag still run).
+    public var appShortcuts = "hyprmux"
     public var binds: [KeyBind] = []
     public var execOnce: [String] = []
     public var exec: [String] = []
@@ -409,6 +413,9 @@ public enum ConfigParser {
                 break  // Hyprland blur tuning; macOS blur has no equivalent knobs.
             case "animations:enabled": if let v = bool() { config.animationsEnabled = v }
             case "input:follow_mouse": if let v = num() { config.followMouse = Int(v) }
+            case "app:shortcuts":
+                if ["hyprmux", "app"].contains(value) { config.appShortcuts = value }
+                else { error(file, line, "app:shortcuts: expected hyprmux or app") }
             case "dwindle:preserve_split": if let v = bool() { config.wm.dwindle.preserveSplit = v }
             case "dwindle:force_split": if let v = num() { config.wm.dwindle.forceSplit = Int(v) }
             case "dwindle:split_width_multiplier": if let v = num() { config.wm.dwindle.splitWidthMultiplier = v }
@@ -491,7 +498,7 @@ public enum ConfigParser {
         mutating func parseBind(_ key: String, _ value: String, file: String, line: Int) {
             if key == "unbind" { return }
             let flags = Set(key.dropFirst(4))
-            let allowed: Set<Character> = ["e", "l", "r", "n", "m", "d", "i", "o", "t"]
+            let allowed: Set<Character> = ["e", "l", "r", "n", "m", "d", "i", "o", "t", "p"]
             guard flags.isSubset(of: allowed) else { error(file, line, "unknown bind flags '\(key)'"); return }
             let hasDescription = flags.contains("d")
             let maxParts = hasDescription ? 5 : 4

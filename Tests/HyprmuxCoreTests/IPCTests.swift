@@ -106,6 +106,11 @@ final class IPCTests: XCTestCase {
             try IPCRequest.parse("new-surface -- htop --focus").get(),
             .newSurface(NewSurfaceRequest(argument: "htop --focus"))
         )
+        XCTAssertEqual(
+            try IPCRequest.parse("new-surface --type app --workspace 3 -- /tmp/demo --flag x").get(),
+            .newSurface(NewSurfaceRequest(kind: .app, workspace: .id(3), argument: "/tmp/demo --flag x"))
+        )
+        XCTAssertThrowsError(try IPCRequest.parse("new-surface --type app --cwd /tmp /tmp/demo").get(), "--cwd is for terminals")
         XCTAssertThrowsError(try IPCRequest.parse("new-surface --type tv").get())
         XCTAssertThrowsError(try IPCRequest.parse("new-surface --workspace nowhere").get())
         XCTAssertThrowsError(try IPCRequest.parse("new-surface --type web --cwd /tmp").get())

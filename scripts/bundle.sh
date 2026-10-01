@@ -34,9 +34,13 @@ sign() {
 
 swift build -c "$CONFIG" --product Hyprmux
 swift build -c "$CONFIG" --product hyprmuxctl
+swift build -c "$CONFIG" --product hyprmux-broker
+swift build -c "$CONFIG" --product hyprmux-electron-bridge
 BIN_DIR="$(swift build -c "$CONFIG" --show-bin-path)"
 BIN="$BIN_DIR/Hyprmux"
 CTL_BIN="$BIN_DIR/hyprmuxctl"
+BROKER_BIN="$BIN_DIR/hyprmux-broker"
+EBRIDGE_BIN="$BIN_DIR/hyprmux-electron-bridge"
 
 # HYPRMUX_APP builds the bundle somewhere else (test copies, demo recordings).
 APP="${HYPRMUX_APP:-$ROOT/build/Hyprmux.app}"
@@ -44,6 +48,14 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/Hyprmux"
 cp "$CTL_BIN" "$APP/Contents/MacOS/hyprmuxctl"
+# Client-protocol broker and its launchd job (docs/CLIENT_PROTOCOL.md, section 3).
+cp "$BROKER_BIN" "$APP/Contents/MacOS/hyprmux-broker"
+cp "$EBRIDGE_BIN" "$APP/Contents/MacOS/hyprmux-electron-bridge"
+cp "$ROOT/Resources/electron-hook.js" "$APP/Contents/Resources/electron-hook.js"
+rm -rf "$APP/Contents/Resources/adapters"
+cp -R "$ROOT/Resources/adapters" "$APP/Contents/Resources/adapters"
+mkdir -p "$APP/Contents/Library/LaunchAgents"
+cp "$ROOT/Resources/LaunchAgents/dev.gavrix.hyprmux.broker.plist" "$APP/Contents/Library/LaunchAgents/"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
 # App icon, rendered from Resources/AppIcon/*.svg by scripts/make-icon.sh.
 cp "$ROOT/Resources/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
@@ -118,6 +130,8 @@ fi
 
 # A second Mach-O executable inside Contents/MacOS must be signed before the outer bundle.
 sign "$APP/Contents/MacOS/hyprmuxctl"
+sign "$APP/Contents/MacOS/hyprmux-broker"
+sign "$APP/Contents/MacOS/hyprmux-electron-bridge"
 sign "$APP"
 if [[ "$SIGN" == "-" ]]; then
   echo "signed ad hoc: permissions reset on every build (see docs/DEVELOPMENT.md, Signing)" >&2

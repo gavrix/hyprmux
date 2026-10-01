@@ -120,6 +120,17 @@ A command after `--` replaces the shell, and the terminal closes when it exits.
 Without `--cwd`, a terminal starts in the focused terminal's directory, not the caller's.
 `--workspace` takes `3`, `name:NAME`, `special:NAME`, or `empty`; a new `name:` creates the workspace.
 
+Open a macOS app in a tile with `--type app`.
+Apps that aren't Hyprmux clients go through an adapter, such as the Electron bridge:
+
+```sh
+hyprmuxctl new-surface --type app "/Applications/Visual Studio Code.app"
+hyprmuxctl adapters match com.tinyspeck.slackmacgap   # which adapter, and can it lift the app?
+hyprmuxctl adapters                                  # adapters, launched instances, manifest errors
+```
+
+Run `adapters match` before opening an unfamiliar app: a failed probe means the tile won't fill.
+
 Move, focus, or close a surface by its reference:
 
 ```sh
@@ -163,6 +174,7 @@ Do not silently choose another surface when a target closes.
 
 `capabilities` lists the content operations a surface supports.
 Terminal surfaces expose `read_text`, `send_text`, and `send_key`.
+App tiles with text input (such as VS Code) expose `send_text`: `send` types into the focused field there.
 Browser and device surfaces do not support `read-screen`, `send`, or `send-key` yet.
 Opening, moving, focusing, closing, and dispatching work for every surface kind.
 

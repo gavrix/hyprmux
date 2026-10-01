@@ -103,7 +103,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         compositor = Compositor(runtime: runtime, config: config)
         ipc = IPCServer(path: IPCPath.default) { [weak self] line in
-            self?.compositor.handleIPC(line) ?? "error: not ready"
+            self?.compositor.handleIPCReply(line) ?? .text("error: not ready")
         }
         compositor.ipcPath = ipc?.path
         compositor.start()

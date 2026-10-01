@@ -1,0 +1,104 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>electron-embed</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #1e1e1e; overflow: hidden; }
+  canvas { display: block; width: 100vw; height: 100vh; outline: none; }
+  #hud { position: fixed; right: 6px; bottom: 4px; font: 11px monospace; color: #8f8; background: #0008; padding: 2px 5px; pointer-events: none; }
+  #pick { color: #ddd; font: 14px system-ui; padding: 20px; }
+  #pick a { color: #8cf; display: block; margin: 6px 0; }
+</style></head>
+<body>
+<canvas id="c" tabindex="0"></canvas><div id="hud"></div>
+<script>
+const params = new URLSearchParams(location.search);
+const cv = document.getElementById('c'), ctx = cv.getContext('2d'), hud = document.getElementById('hud');
+let ws, fullW = 1, fullH = 1, frames = 0, bytes = 0, chain = Promise.resolve();
+
+async function start() {
+  let w = params.get('w');
+  if (!w) {
+    const list = await (await fetch('/windows')).json();
+    if (list.length === 1) w = list[0].id;
+    else {
+      document.body.innerHTML = '<div id="pick">' + (list.length ? list.map(x => `<a href="?w=${x.id}">#${x.id} ${x.title || '(untitled)'} ${x.size} ${x.offscreen ? '' : '(not offscreen)'}</a>`).join('') : 'no windows yet — reload') + '</div>';
+      return;
+    }
+  }
+  ws = new WebSocket(`ws://${params.get('ws') || location.host}/ws?w=${w}`);
+  ws.binaryType = 'arraybuffer';
+  ws.onopen = () => { sendResize(); send({ t: 'focus' }); };
+  ws.onclose = () => { hud.textContent = 'disconnected'; };
+  ws.onmessage = (m) => {
+    if (typeof m.data === 'string') {
+      const d = JSON.parse(m.data);
+      if (d.t === 'cursor') cv.style.cursor = cursorMap(d.type);
+      if (d.t === 'title' || d.t === 'hello') document.title = d.title || 'electron-embed';
+      return;
+    }
+    const h = new Int32Array(m.data, 0, 6);
+    const [x, y, w, hh, fw, fh] = h;
+    fullW = fw; fullH = fh; frames++; bytes += m.data.byteLength;
+    const blob = new Blob([new Uint8Array(m.data, 24)], { type: 'image/jpeg' });
+    chain = chain.then(async () => {
+      const bmp = await createImageBitmap(blob);
+      const sx = cv.width / fullW, sy = cv.height / fullH;
+      ctx.drawImage(bmp, x * sx, y * sy, w * sx, hh * sy);
+      bmp.close();
+    }).catch(e => console.error(e));
+  };
+}
+function send(o) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(o)); }
+function sendResize() {
+  const dpr = devicePixelRatio;
+  cv.width = Math.round(innerWidth * dpr); cv.height = Math.round(innerHeight * dpr);
+  send({ t: 'resize', w: innerWidth, h: innerHeight });
+}
+let rt; addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(sendResize, 60); });
+setInterval(() => { hud.textContent = `${frames} fps  ${(bytes / 1048576).toFixed(1)} MB/s  ${fullW}x${fullH}`; frames = 0; bytes = 0; }, 1000);
+
+function cursorMap(t) {
+  return ({ pointer: 'default', hand: 'pointer', text: 'text', 'ew-resize': 'ew-resize', 'ns-resize': 'ns-resize', 'col-resize': 'col-resize', 'row-resize': 'row-resize', move: 'move', grab: 'grab', grabbing: 'grabbing', 'not-allowed': 'not-allowed', crosshair: 'crosshair', wait: 'wait', progress: 'progress', copy: 'copy', 'e-resize': 'e-resize', 'w-resize': 'w-resize', 'n-resize': 'n-resize', 's-resize': 's-resize', 'nesw-resize': 'nesw-resize', 'nwse-resize': 'nwse-resize', none: 'none' })[t] || 'default';
+}
+function mods(e) {
+  const m = [];
+  if (e.shiftKey) m.push('shift'); if (e.ctrlKey) m.push('control'); if (e.altKey) m.push('alt'); if (e.metaKey) m.push('meta');
+  if (e.buttons & 1) m.push('leftButtonDown'); if (e.buttons & 2) m.push('rightButtonDown'); if (e.buttons & 4) m.push('middleButtonDown');
+  return m;
+}
+const BTN = ['left', 'middle', 'right'];
+cv.addEventListener('mousedown', e => { cv.focus(); send({ t: 'focus' }); send({ t: 'mouse', ev: { type: 'mouseDown', x: e.offsetX, y: e.offsetY, button: BTN[e.button], clickCount: e.detail || 1, modifiers: mods(e) } }); e.preventDefault(); });
+addEventListener('mouseup', e => send({ t: 'mouse', ev: { type: 'mouseUp', x: e.clientX, y: e.clientY, button: BTN[e.button], clickCount: e.detail || 1, modifiers: mods(e) } }));
+addEventListener('mousemove', e => send({ t: 'mouse', ev: { type: 'mouseMove', x: e.clientX, y: e.clientY, modifiers: mods(e) } }));
+cv.addEventListener('mouseleave', e => { if (!e.buttons) send({ t: 'mouse', ev: { type: 'mouseLeave', x: e.offsetX, y: e.offsetY } }); });
+cv.addEventListener('contextmenu', e => e.preventDefault());
+cv.addEventListener('wheel', e => {
+  const k = e.deltaMode === 1 ? 16 : 1;
+  const dx = -e.deltaX * k, dy = -e.deltaY * k;
+  // Chromium derives the legacy wheelDelta* from wheelTicks (x120). VS Code and other
+  // apps read wheelDeltaY first, so without ticks they scroll by zero. macOS Chromium
+  // uses 40 px per tick; fractional ticks are fine.
+  send({ t: 'mouse', ev: { type: 'mouseWheel', x: e.offsetX, y: e.offsetY, deltaX: dx, deltaY: dy, wheelTicksX: dx / 40, wheelTicksY: dy / 40, canScroll: true, hasPreciseScrollingDeltas: e.deltaMode === 0, modifiers: mods(e) } });
+  e.preventDefault();
+}, { passive: false });
+
+const KEYMAP = { ArrowUp: 'Up', ArrowDown: 'Down', ArrowLeft: 'Left', ArrowRight: 'Right', Enter: 'Return', Backspace: 'Backspace', Tab: 'Tab', Escape: 'Escape', Delete: 'Delete', Home: 'Home', End: 'End', PageUp: 'PageUp', PageDown: 'PageDown', ' ': 'Space', Insert: 'Insert' };
+function keyCode(e) {
+  if (KEYMAP[e.key]) return KEYMAP[e.key];
+  if (/^F\d{1,2}$/.test(e.key)) return e.key;
+  if (e.key.length === 1) return e.key;
+  return null;
+}
+cv.addEventListener('keydown', e => {
+  if (['Shift', 'Control', 'Alt', 'Meta', 'CapsLock'].includes(e.key)) return;
+  const kc = keyCode(e); if (!kc) return;
+  const m = mods(e); const evs = [{ type: 'keyDown', keyCode: kc, modifiers: m }];
+  const printable = e.key.length === 1 && !e.ctrlKey && !e.metaKey;
+  if (printable) evs.push({ type: 'char', keyCode: e.key, modifiers: m });
+  else if (e.key === 'Enter') evs.push({ type: 'char', keyCode: '\r', modifiers: m });
+  send({ t: 'key', evs }); e.preventDefault();
+});
+cv.addEventListener('keyup', e => { const kc = keyCode(e); if (kc) send({ t: 'key', evs: [{ type: 'keyUp', keyCode: kc, modifiers: mods(e) }] }); e.preventDefault(); });
+cv.addEventListener('focus', () => send({ t: 'focus' }));
+cv.addEventListener('blur', () => send({ t: 'blur' }));
+start();
+</script></body></html>

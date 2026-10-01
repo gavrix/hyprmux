@@ -1,5 +1,6 @@
 import AndroidEmulatorBridge
 import AppKit
+import Carbon
 import HyprmuxCore
 import ChromiumBridge
 import SimulatorBridge
@@ -20,6 +21,11 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
     let hud: HUD
 
     var views: [ClientID: ClientView] = [:]
+    /// Serves client apps (docs/CLIENT_PROTOCOL.md).
+    let clientServer = ClientServer()
+    /// Restored app tiles waiting to be relaunched together.
+    var pendingAppRestores: [ClientSurface] = []
+    let adapters = AdapterRuntime()
     /// Agents' resume reports, by terminal (see `hyprmuxctl resume`).
     var resumeReports: [ClientID: ResumeReport] = [:]
     /// Pending debounced session save.
@@ -133,6 +139,9 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
     }
 
     func start() {
+        ClientSurface.shortcutsFirst = config.appShortcuts == "app"
+        loadAdapters()
+        startClientServer()
         window.makeKeyAndOrderFront(nil)
         if config.fullscreenStyle == "fill", MonitorWindow.wasFilledAtQuit, Self.fixedWindowSize == nil { setMonitorFullscreen(true) }
         startSessionSaving()
@@ -151,6 +160,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
     func reload(_ newConfig: HyprmuxConfig) {
         let ghosttyChanged = newConfig.ghostty != config.ghostty
         config = newConfig
+        ClientSurface.shortcutsFirst = newConfig.appShortcuts == "app"
         wm.settings = newConfig.wm
         window.collectionBehavior = newConfig.fullscreenStyle == "native" ? [.fullScreenPrimary] : [.fullScreenNone]
         if newConfig.fullscreenStyle == "native", window.isFilled { window.exitFill() }
@@ -160,6 +170,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         hud.reload(config: newConfig, theme: HUDTheme(config: newConfig, terminal: runtime.style, background: runtime.backgroundColor))
         syncConfigErrors()
         for c in newConfig.exec { spawn(command: c, inheritFrom: nil) }
+        loadAdapters()
         monitorChanged(animated: true)
     }
 
@@ -505,7 +516,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         hud.notifications.post(.warning, message)
     }
 
-    private func manage(_ surface: Surface) {
+    func manage(_ surface: Surface) {
         adopt(surface)
         wm.addClient(surface.clientID)
         apply(animated: true)
@@ -526,7 +537,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
     /// Focused client as of the last updateFocus, to tell focus changes from re-applies.
     private var lastFocusApplied: ClientID?
 
-    private func removeClient(_ id: ClientID) {
+    func removeClient(_ id: ClientID) {
         guard let v = views.removeValue(forKey: id) else { return }
         resumeReports[id] = nil
         wm.removeClient(id)
@@ -857,6 +868,14 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         } as Any)
     }
 
+    /// With `app:shortcuts = app`, a focused app tile gets chords before binds, except
+    /// binds with the p flag. Submaps are Hyprmux's own modes, so they keep their keys.
+    private var appTileHasKeyboard: Bool {
+        guard config.appShortcuts == "app", submap == "reset", let f = wm.focused,
+              let tile = views[f]?.surface as? ClientSurface else { return false }
+        return tile.connection != nil && window.firstResponder === tile
+    }
+
     private func handleKey(_ e: NSEvent) -> NSEvent? {
         guard e.window === window else { return e }
         if e.type == .keyUp {
@@ -873,8 +892,10 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
             return nil
         }
         let mods = modifiers(e.modifierFlags)
+        let appHasKeyboard = appTileHasKeyboard
         guard let bind = config.binds.first(where: {
             $0.submap == submap && !$0.flags.contains("m") && $0.mods == mods && $0.trigger == .key(e.keyCode)
+                && (!appHasKeyboard || $0.flags.contains("p"))
         }) else { return e }
         consumedKeyUps.insert(e.keyCode)
         if e.isARepeat && !bind.flags.contains("e") { return nil }
@@ -997,6 +1018,12 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
 
     // MARK: IPC
 
+    /// `adapters match` probes off the main thread; everything else replies here.
+    func handleIPCReply(_ line: String) -> IPCReply {
+        if case .success(.adaptersMatch(let target)) = IPCRequest.parse(line) { return adaptersMatch(target) }
+        return .text(handleIPC(line))
+    }
+
     func handleIPC(_ line: String) -> String {
         switch IPCRequest.parse(line) {
         case .failure(let e):
@@ -1060,6 +1087,13 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
             case .reload:
                 handle(.reload)
                 return "ok"
+            case .adapters:
+                return json(adaptersJSON())
+            case .adaptersReload:
+                loadAdapters()
+                return json(adaptersJSON())
+            case .adaptersMatch:
+                return "error: adapters match runs through handleIPCReply"
             case .caption(let text):
                 hud.caption.show(text)
                 return "ok"
@@ -1113,6 +1147,10 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
                 return text
             case .sendSurfaceText(let reference, let text):
                 guard let (id, surface) = automationTarget(reference) else { return "error: surface not found" }
+                if let app = surface as? ClientSurface {
+                    // App tiles type through text input, the path dictation uses.
+                    return app.commitText(text) ? "ok" : "error: surface \(id.raw) doesn't accept text input"
+                }
                 guard let term = surface as? TerminalView else { return "error: surface \(id.raw) is not a terminal" }
                 term.sendText(text)
                 return "ok"
@@ -1132,6 +1170,21 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
                 return json(["hit": chain])
             case .sendDrag(let mods, let button, let from, let to):
                 injectDrag(mods, button: button, from: from, to: to)
+                return "ok"
+            case .sendScroll(let mods, let lines, let at):
+                // A line-unit CGEvent, like a notched wheel: AppKit derives deltaY and the
+                // raw notch count from it, as for real hardware.
+                guard let cg = CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 1,
+                                       wheel1: Int32(lines), wheel2: 0, wheel3: 0) else { return "error: scroll event" }
+                // A scroll event made from a CGEvent has no window, and AppKit reads its
+                // location as window coordinates. So place it at the window point and
+                // hand it to the window, which routes it to the view under that point.
+                let inWindow = root.convert(at, to: nil)
+                let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
+                cg.location = CGPoint(x: inWindow.x, y: primaryHeight - inWindow.y)
+                cg.flags = CGEventFlags(rawValue: UInt64(nsFlags(mods).rawValue))
+                guard let e = NSEvent(cgEvent: cg) else { return "error: scroll event" }
+                window.sendEvent(e)
                 return "ok"
             case .sendMouse(let phase, let mods, let button, let at):
                 let right = button == 273, middle = button == 274
@@ -1169,6 +1222,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
             "capabilities": s?.automationCapabilities ?? [],
         ]
         for (k, v) in s?.info ?? [:] { info[k] = v }
+        if let c = s as? ClientSurface, let pid = c.connection?.pid, let a = adapterName(forPid: pid) { info["adapter"] = a }
         if let g = p.group {
             info["group"] = ["id": g.id.raw, "members": g.members.map(\.raw), "active": g.active.raw]
         }
@@ -1220,6 +1274,12 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
                 surface = try makeAndroid(endpoint)
             } catch {
                 return "error: Android Emulator: \(error.localizedDescription)"
+            }
+        case .app:
+            do {
+                surface = try makeApp(r.argument)
+            } catch {
+                return "error: \(error.localizedDescription)"
             }
         }
         adopt(surface)
@@ -1278,6 +1338,27 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(16 * (steps + 1))) { post(types.2, to) }
     }
 
+    /// What an Option chord types on the current keyboard layout, like a real key event:
+    /// "ß" for ⌥S, and "" for a dead key such as ⌥E, which input methods turn into a
+    /// composition. Nil when the layout can't be read.
+    static func layoutCharacters(_ code: UInt16, shift: Bool) -> String? {
+        guard let source = TISCopyCurrentKeyboardLayoutInputSource()?.takeRetainedValue(),
+              let raw = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData) else { return nil }
+        let data = Unmanaged<CFData>.fromOpaque(raw).takeUnretainedValue() as Data
+        return data.withUnsafeBytes { bytes -> String? in
+            guard let layout = bytes.baseAddress?.assumingMemoryBound(to: UCKeyboardLayout.self) else { return nil }
+            var dead: UInt32 = 0
+            var length = 0
+            var chars = [UniChar](repeating: 0, count: 8)
+            // Carbon modifier bits, shifted right by 8: optionKey (0x800) and shiftKey (0x200).
+            let mods = UInt32((0x800 | (shift ? 0x200 : 0)) >> 8)
+            let status = UCKeyTranslate(layout, code, UInt16(kUCKeyActionDown), mods, UInt32(LMGetKbdType()),
+                                        0, &dead, chars.count, &length, &chars)
+            guard status == noErr else { return nil }
+            return String(utf16CodeUnits: chars, count: length)
+        }
+    }
+
     /// Posts a synthetic key press through the normal event path (monitors, then responders).
     private func injectKey(_ mods: Modifiers, _ code: UInt16) {
         let flags = nsFlags(mods)
@@ -1294,7 +1375,8 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
                 "1": "!", "2": "@", "3": "#", "4": "$", "5": "%", "6": "^", "7": "&", "8": "*", "9": "(", "0": ")",
                 "-": "_", "=": "+", "[": "{", "]": "}", "\\": "|", ";": ":", "'": "\"", ",": "<", ".": ">", "/": "?", "`": "~",
             ]
-            chars = mods.contains(.shift) ? (shifted[name] ?? name.uppercased()) : name
+            chars = mods.contains(.alt) ? (Self.layoutCharacters(code, shift: mods.contains(.shift)) ?? name)
+                : mods.contains(.shift) ? (shifted[name] ?? name.uppercased()) : name
         }
         for type in [NSEvent.EventType.keyDown, .keyUp] {
             guard let e = NSEvent.keyEvent(
@@ -1396,6 +1478,11 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
     }
 
     func browserSurfaceTitleDidChange(_ s: BrowserSurface) {
+        surfaceTitleDidChange(s)
+    }
+
+    /// Refreshes the bar and tab strips after a surface's title changed.
+    func surfaceTitleDidChange(_ s: Surface) {
         refreshGroupBars()
         if s.clientID == wm.focused { bar.title = s.title }
     }

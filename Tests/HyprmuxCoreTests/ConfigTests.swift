@@ -18,6 +18,17 @@ final class ConfigTests: XCTestCase {
         XCTAssertTrue(c.ghostty.contains("window-padding-x = 8"))
     }
 
+    func testAppShortcuts() {
+        XCTAssertEqual(ConfigParser.parse(defaultConfig).appShortcuts, "hyprmux")
+        XCTAssertEqual(ConfigParser.parse("app {\n shortcuts = app\n}").appShortcuts, "app")
+        let bad = ConfigParser.parse("app:shortcuts = sometimes")
+        XCTAssertEqual(bad.appShortcuts, "hyprmux")
+        XCTAssertEqual(bad.errors.count, 1)
+        let c = ConfigParser.parse("bindp = SUPER, 1, workspace, 1\nbind = SUPER, 2, workspace, 2")
+        XCTAssertTrue(c.errors.isEmpty, "\(c.errors)")
+        XCTAssertEqual(c.binds.map { $0.flags.contains("p") }, [true, false])
+    }
+
     func testConfirmQuit() {
         XCTAssertTrue(ConfigParser.parse(defaultConfig).confirmQuit)
         XCTAssertTrue(HyprmuxConfig().confirmQuit)

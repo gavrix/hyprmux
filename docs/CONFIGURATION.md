@@ -11,6 +11,9 @@ replaces the file. ⇧⌘R or `hyprmuxctl reload` force a reload. Mistakes show 
 a red bar at the top of the screen; the rest of the file still applies. The one
 setting that needs a restart is `web:engine`.
 
+Adapter manifests, which decide how apps that aren't Hyprmux clients open in
+tiles, live in `adapters/` next to the config file. See [Adapters](ADAPTERS.md).
+
 ## Syntax
 
 The syntax follows Hyprland's `hyprland.conf` (hyprlang):
@@ -121,6 +124,26 @@ global
 | Option | Default | Meaning |
 |---|---|---|
 | `follow_mouse` | 1 | 1 = focus follows the pointer (only while Hyprmux is active), 0 = click to focus. |
+
+### `app`
+
+App tiles are macOS apps opened with `new-surface --type app`, such as VS Code
+through its [adapter](ADAPTERS.md).
+
+| Option | Default | Meaning |
+|---|---|---|
+| `shortcuts` | hyprmux | Who gets a chord that is also a bind while an app tile has the keyboard. `hyprmux`: the bind runs, as in terminals and web tiles. `app`: the app gets it, so Cmd+P, Cmd+S, and Cmd+arrows reach VS Code. Binds marked `p` still run, and so do binds inside a submap. Cmd+Q always quits Hyprmux. |
+
+With `shortcuts = app`, mark the binds you want everywhere with `p`. Without
+any, the keyboard can't leave an app tile; clicking another tile still works.
+
+```ini
+app {
+    shortcuts = app
+}
+bindp = $mod, 1, workspace, 1
+bindp = $mod, grave, focuscurrentorlast
+```
 
 ### `dwindle`
 
@@ -392,6 +415,7 @@ bind  = MODS, key, dispatcher, args
 binde = $mod CTRL, L, resizeactive, 40 0      # e = repeats while held
 bindm = $mod, mouse:272, movewindow           # m = mouse drag (272 left, 273 right)
 bindn = ...                                   # n = the key also reaches the app
+bindp = $mod, 1, workspace, 1                 # p = runs even while an app tile has the keyboard
 bindd = $mod, Return, Open a shell, exec,     # d = with a description (the keycast shows it)
 ```
 
@@ -506,10 +530,12 @@ See [Terminal automation](AUTOMATION.md) for workflows, limits, and agent skill 
 | `send-key [--surface ID] KEY` | Sends a terminal key such as `ctrl+c`, `enter`, `tab`, or `escape`. |
 | `workspaces`, `activewindow`, `version` | JSON or text. |
 | `reload` | Reloads the config. |
+| `adapters [list\|match APP\|reload] [--json]` | The adapter registry: loaded adapters, manifest errors, and launched instances. `match` shows which adapter would lift an `.app` or bundle id, and runs its probe. See [Adapters](ADAPTERS.md). |
 | `sendtext <text>` | Legacy command that types into the focused terminal (`\n` = Enter). |
 | `sendkey <MODS>, <key>` | Legacy test command that injects a key through the normal application path. |
 | `sendmouse down\|drag\|up\|move <MODS>, <button>, <x y>` | Injects one mouse event (holds, hand-timed gestures). Buttons: 272 left, 273 right, 274 middle. |
 | `senddrag <MODS>, <button>, <x1 y1>, <x2 y2>` | Injects a paced drag (about 16 ms per step). |
+| `sendscroll <MODS>, <lines>, <x y>` | Injects a notched mouse-wheel scroll. Positive lines scroll up. |
 | `hittest <x y>` | Which views a click at that point reaches. |
 | `debug` | Focus internals: app active, key window, first responder, and which window holds the keyboard. |
 | `resume {json}` | An agent reports how to bring its terminal back. See [Session restore](#session-restore). |

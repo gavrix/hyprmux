@@ -1,0 +1,13 @@
+{
+  "id": "electron.cursor",
+  "name": "Cursor",
+  "description": "The Electron bridge with Cursor's profile (VS Code based): its own user-data and extensions directories.",
+  "match": {
+    "bundleIds": ["com.todesktop.230313mzl4w4u92"],
+    "bundleFiles": ["Contents/Frameworks/Electron Framework.framework"]
+  },
+  "exec": "hyprmux-electron-bridge",
+  "args": ["--adapter", "cursor", "{app}", "{args}"],
+  "probe": ["probe", "{app}", "--adapter", "cursor"],
+  "priority": 10
+}

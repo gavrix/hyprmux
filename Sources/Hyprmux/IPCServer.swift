@@ -1,13 +1,20 @@
 import Foundation
 import HyprmuxCore
 
+/// A reply to one control-socket line. `background` work runs on the connection's
+/// thread, not main, for requests that wait on something slow (an adapter probe).
+enum IPCReply {
+    case text(String)
+    case background(() -> String)
+}
+
 /// Serves the control socket. Each connection sends one line and gets one reply.
 final class IPCServer {
     let path: String
     private var fd: Int32 = -1
-    private let handler: (String) -> String
+    private let handler: (String) -> IPCReply
 
-    init?(path: String, handler: @escaping (String) -> String) {
+    init?(path: String, handler: @escaping (String) -> IPCReply) {
         self.path = path
         self.handler = handler
         let dir = (path as NSString).deletingLastPathComponent
@@ -71,8 +78,12 @@ final class IPCServer {
                 reply = "error: request exceeds \(maximumRequestBytes) bytes"
             } else {
                 let line = String(data: data, encoding: .utf8) ?? ""
-                reply = ""
-                DispatchQueue.main.sync { reply = self.handler(line) }
+                var result = IPCReply.text("")
+                DispatchQueue.main.sync { result = self.handler(line) }
+                switch result {
+                case .text(let text): reply = text
+                case .background(let work): reply = work()
+                }
             }
             reply += "\n"
             Self.writeAll(Data(reply.utf8), to: c)

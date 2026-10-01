@@ -23,7 +23,9 @@ Hyprmux owns, positions, and animates itself.
 │                                            ├ WebKitSurface (WKWebView)
 │                                            ├ ChromiumSurface (CEF)  │
 │                                            ├ SimulatorSurface       │
-│                                            └ AndroidSurface         │
+│                                            ├ AndroidSurface         │
+│                                            └ ClientSurface (apps)   │
+│    ClientServer (XPC) ◄── client apps, found through hyprmux-broker │
 │    HUD: overlay layer, theme, NotificationStack, PickerPresenter    │
 │    IPCServer (Unix socket) ◄── hyprmuxctl                          │
 │                                                                     │
@@ -47,6 +49,10 @@ Hyprmux owns, positions, and animates itself.
 | `AndroidEmulatorBridge` | Swift 5 | Running-AVD discovery and the Android Emulator's authenticated gRPC screenshot, touch, and key calls. Generated protobuf code stays inside this target. |
 | `GhosttyKit` | binary | Prebuilt libghostty xcframework (terminal emulation and rendering). |
 | `hyprmuxctl` | Swift | The bundled IPC client and local agent-skill installer. |
+| `HyprmuxClientProtocol` | Swift 5 | Client-protocol service names, message ops, and XPC helpers. |
+| `hyprmux-broker` | Swift 5 | The launchd job that owns the client-protocol mach service names. See [Client apps](#client-apps). |
+| `HyprmuxClientKit` | Swift 5 | The Swift client kit: connection, toplevels, swapchain, events. |
+| `hyprmux-demo-client` | Swift 5 | A small client that draws with CoreGraphics. It's for testing, not bundled. |
 
 ## The model: `WindowManager`
 
@@ -160,6 +166,8 @@ handles occlusion, close, and destroy.
   keys. See [Simulator](#ios-simulator).
 - **`AndroidSurface`:** a running AVD's raw screenshot stream, with touch and
   physical Mac key input. See [Android Emulator](#android-emulator).
+- **`ClientSurface`:** a tile drawn by another process through the client
+  protocol. See [Client apps](#client-apps).
 
 ### Input
 
@@ -356,12 +364,47 @@ stops an emulator.
 The source proto subset mirrors the installed Android Emulator definitions.
 Generated Swift is checked in, so normal builds do not need `protoc`.
 
+## Client apps
+
+Other processes can draw tiles through the client protocol. The protocol is
+specified in [CLIENT_PROTOCOL.md](CLIENT_PROTOCOL.md).
+
+- **Finding Hyprmux:** only a job launchd started can own a mach service name,
+  so `hyprmux-broker` owns the names. `ClientServer` creates an anonymous XPC
+  listener and registers its endpoint with the broker, under
+  `HYPRMUX_INSTANCE`. Clients look it up there. The broker accepts
+  registrations only from processes signed like itself.
+- **`ClientConnection`:** one per client. It keeps the client's buffers,
+  surfaces, and toplevels, and checks every message. A bad message ends the
+  connection with an `error`.
+- **`ClientSurface`:** the tile.
+  - It shows the committed IOSurface as a layer's contents, with no copy.
+  - It sends `toplevel.configure` when its size, scale, focus, or occlusion
+    changes.
+  - Its view's display link drives frame callbacks. Occluded tiles get none.
+  - It turns AppKit mouse, scroll, and key events into protocol events, in
+    top-left points.
+  - A replaced buffer is released once `IOSurfaceIsInUse` says the render
+    server let go of it.
+- **Launching:** `new-surface --type app -- TARGET ARGS` reserves a tile
+  with a launch token and starts the target. TARGET is an executable, an
+  `.app`, or a bundle id. The client's first toplevel with that token fills
+  the tile. After 20 seconds without one, the tile shows a notice and closes.
+  A client that connects on its own gets a new tile.
+- **Adapters:** an `.app` that isn't a client runs through an adapter, an
+  executable that is a client and translates the app. Manifests choose the
+  adapter by bundle id and bundle contents. `AdapterRegistry` in HyprmuxCore
+  loads and matches them. `AdapterRuntime` in `Compositor+Adapters` tracks
+  every process it launched for `hyprmuxctl adapters`. Hyprmux itself has no
+  app-specific code. See [ADAPTERS.md](ADAPTERS.md).
+
 ## Rendering pipeline notes
 
 - **Terminals:** libghostty draws terminals on its own Metal layer.
 - **Chromium:** composites into its child view through its own layer tree.
 - **Simulator:** its `IOSurface` is a layer's contents.
 - **Android Emulator:** raw RGBA frames wrap in `CGImage` values and become a layer's contents.
+- **Client apps:** the client's committed IOSurface is a layer's contents.
 - **Everything else** is Core Animation: borders, masks, shadow, the blur
   view, and the tab strip.
 - **Opacity:** the clip's group opacity applies to all of them, which is how

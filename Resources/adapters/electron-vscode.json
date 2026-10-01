@@ -1,0 +1,13 @@
+{
+  "id": "electron.vscode",
+  "name": "VS Code",
+  "description": "The Electron bridge with VS Code's profile: its own user-data and extensions directories, so it runs next to your own VS Code.",
+  "match": {
+    "bundleIds": ["com.microsoft.VSCode", "com.microsoft.VSCodeInsiders", "com.vscodium"],
+    "bundleFiles": ["Contents/Frameworks/Electron Framework.framework"]
+  },
+  "exec": "hyprmux-electron-bridge",
+  "args": ["--adapter", "vscode", "{app}", "{args}"],
+  "probe": ["probe", "{app}", "--adapter", "vscode"],
+  "priority": 10
+}

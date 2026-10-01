@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- The client-protocol broker (docs/CLIENT_PROTOCOL.md, section 3). launchd owns the
+     two mach service names and starts the broker when a client or Hyprmux connects.
+     SMAppService registers this file from the app bundle; scripts/dev-broker.sh loads
+     a copy with an absolute path for development. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>dev.gavrix.hyprmux.broker</string>
+  <key>BundleProgram</key><string>Contents/MacOS/hyprmux-broker</string>
+  <key>MachServices</key>
+  <dict>
+    <key>dev.gavrix.hyprmux.compositor</key><true/>
+    <key>dev.gavrix.hyprmux.registrar</key><true/>
+  </dict>
+  <key>AssociatedBundleIdentifiers</key><array><string>dev.gavrix.hyprmux</string></array>
+</dict>
+</plist>

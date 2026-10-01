@@ -112,8 +112,9 @@ public enum IPCText {
 }
 
 /// Surface kinds `new-surface` opens. The names match the `kind` field of `surfaces`.
+/// `app` launches a client app (docs/CLIENT_PROTOCOL.md) into a reserved tile.
 public enum SurfaceKind: String, Equatable, Sendable, CaseIterable {
-    case terminal, web, sim, android
+    case terminal, web, sim, android, app
 }
 
 /// `new-surface`: what to open, where, and whether it takes focus.
@@ -127,6 +128,7 @@ public struct NewSurfaceRequest: Equatable, Sendable {
     /// Terminal: a command to run instead of the login shell (empty: the shell).
     /// Web: a URL or search terms (empty: the start page).
     /// Sim and Android: the device (empty: the only running one).
+    /// App: an executable, an `.app`, or a bundle id, then its arguments.
     public var argument: String
     /// Terminal only. Nil: the focused terminal's directory, as a bind does.
     public var cwd: String?
@@ -177,10 +179,18 @@ public enum IPCRequest: Equatable {
     case sendDrag(Modifiers, button: Int, from: CGPoint, to: CGPoint)
     /// One mouse event (down / drag / up), for holds and hand-timed gestures.
     case sendMouse(phase: String, Modifiers, button: Int, at: CGPoint)
+    /// A notched mouse-wheel scroll of `lines` (positive scrolls up) at a point, for tests.
+    case sendScroll(Modifiers, lines: Int, at: CGPoint)
     /// An agent says how to bring its terminal back: `resume {"client":…, ...}`.
     case resume(ResumeReport)
     /// Demo recordings: a caption at the top of the window. Empty clears it.
     case caption(String)
+    /// The adapter registry: adapters, launched instances, and manifest errors.
+    case adapters
+    /// Rescans the adapter directories.
+    case adaptersReload
+    /// Which adapter would lift an app (`.app` path or bundle id), with its probe.
+    case adaptersMatch(String)
 
     public static func parse(_ line: String) -> Result<IPCRequest, ParseError> {
         let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -296,6 +306,30 @@ public enum IPCRequest: Equatable {
         case "workspaces": return .success(.workspaces)
         case "activewindow": return .success(.activeWindow)
         case "reload": return .success(.reload)
+        case "adapters":
+            var args = words(rest)
+            guard let sub = args.first else { return .success(.adapters) }
+            args.removeFirst()
+            switch sub {
+            case "list":
+                guard args.isEmpty else { return .failure(ParseError("adapters list: unexpected arguments")) }
+                return .success(.adapters)
+            case "reload":
+                guard args.isEmpty else { return .failure(ParseError("adapters reload: unexpected arguments")) }
+                return .success(.adaptersReload)
+            case "match":
+                // The target may hold spaces, so it travels as --base64.
+                if args.count == 2, args[0] == "--base64" {
+                    guard let target = decodeBase64(args[1]), !target.isEmpty else {
+                        return .failure(ParseError("adapters match: invalid base64 target"))
+                    }
+                    return .success(.adaptersMatch(target))
+                }
+                guard args.count == 1 else { return .failure(ParseError("adapters match: expected one app")) }
+                return .success(.adaptersMatch(args[0]))
+            default:
+                return .failure(ParseError("adapters: expected list, match, or reload"))
+            }
         case "version": return .success(.version)
         case "debug": return .success(.debug)
         case "caption": return .success(.caption(rest))
@@ -329,6 +363,14 @@ public enum IPCRequest: Equatable {
                 return .failure(ParseError("sendmouse: expected 'down|drag|up MODS, button, x y'"))
             }
             return .success(.sendMouse(phase: phase, m, button: b, at: CGPoint(x: xy[0], y: xy[1])))
+        case "sendscroll":
+            // sendscroll MODS, LINES, x y
+            let p = rest.split(separator: ",", omittingEmptySubsequences: false).map { $0.trimmingCharacters(in: .whitespaces) }
+            let xy = p.count == 3 ? p[2].split(separator: " ").compactMap { Double($0) } : []
+            guard p.count == 3, case .success(let m) = Modifiers.parse(p[0]), let lines = Int(p[1]), xy.count == 2 else {
+                return .failure(ParseError("sendscroll: expected 'MODS, lines, x y'"))
+            }
+            return .success(.sendScroll(m, lines: lines, at: CGPoint(x: xy[0], y: xy[1])))
         case "senddrag":
             // senddrag MODS, 273, x1 y1, x2 y2
             let p = rest.split(separator: ",", omittingEmptySubsequences: false).map { $0.trimmingCharacters(in: .whitespaces) }

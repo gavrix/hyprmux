@@ -213,7 +213,10 @@ Targeted input works for terminals on inactive workspaces and hidden group tabs.
 4. Send text or one key with an explicit target.
 5. Read the target again and verify the result.
 
-Only terminals currently advertise `read_text`, `send_text`, and `send_key`.
+Terminals advertise `read_text`, `send_text`, and `send_key`. App tiles whose
+client has text input on (such as VS Code through its adapter) advertise
+`send_text`: `send` types into the app's focused field, through the same path
+as dictation.
 Treat missing capabilities as unsupported operations.
 A closed surface returns an error instead of retargeting another surface.
 

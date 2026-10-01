@@ -8,6 +8,10 @@ let package = Package(
         .executable(name: "Hyprmux", targets: ["Hyprmux"]),
         .executable(name: "hyprmuxctl", targets: ["hyprmuxctl"]),
         .executable(name: "HyprmuxHelper", targets: ["HyprmuxHelper"]),
+        .executable(name: "hyprmux-broker", targets: ["hyprmux-broker"]),
+        .executable(name: "hyprmux-demo-client", targets: ["hyprmux-demo-client"]),
+        .executable(name: "hyprmux-electron-bridge", targets: ["hyprmux-electron-bridge"]),
+        .library(name: "HyprmuxClientKit", targets: ["HyprmuxClientKit"]),
     ],
     dependencies: [
         .package(url: "https://github.com/grpc/grpc-swift.git", exact: "1.27.6"),
@@ -26,7 +30,8 @@ let package = Package(
         // AppKit shell: window, compositor views, animations, libghostty surfaces.
         .executableTarget(
             name: "Hyprmux",
-            dependencies: ["HyprmuxCore", "GhosttyKit", "ChromiumBridge", "SimulatorBridge", "AndroidEmulatorBridge"],
+            dependencies: ["HyprmuxCore", "GhosttyKit", "ChromiumBridge", "SimulatorBridge", "AndroidEmulatorBridge",
+                           "HyprmuxClientProtocol"],
             swiftSettings: [.swiftLanguageMode(.v5)],
             linkerSettings: [
                 .linkedLibrary("c++"),
@@ -36,6 +41,34 @@ let package = Package(
                 .linkedFramework("UniformTypeIdentifiers"),
                 .linkedFramework("Carbon"),
             ]
+        ),
+        // Client protocol (docs/CLIENT_PROTOCOL.md): shared names, the broker, the Swift
+        // client kit, and a demo client.
+        .target(
+            name: "HyprmuxClientProtocol",
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
+        .executableTarget(
+            name: "hyprmux-broker",
+            dependencies: ["HyprmuxClientProtocol"],
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
+        .target(
+            name: "HyprmuxClientKit",
+            dependencies: ["HyprmuxClientProtocol"],
+            swiftSettings: [.swiftLanguageMode(.v5)],
+            linkerSettings: [.linkedFramework("IOSurface")]
+        ),
+        .executableTarget(
+            name: "hyprmux-electron-bridge",
+            dependencies: ["HyprmuxClientKit"],
+            swiftSettings: [.swiftLanguageMode(.v5)],
+            linkerSettings: [.linkedFramework("IOSurface")]
+        ),
+        .executableTarget(
+            name: "hyprmux-demo-client",
+            dependencies: ["HyprmuxClientKit"],
+            swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .executableTarget(
             name: "hyprmuxctl",

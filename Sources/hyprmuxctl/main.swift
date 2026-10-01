@@ -17,8 +17,8 @@ guard !args.isEmpty, args[0] != "-h", args[0] != "--help" else {
                                       dispatchers act on --surface instead of the focused one
       clients | surfaces             list every managed surface as JSON
       identify [--surface <id>]      describe the caller, target, or focused surface
-      new-surface [--type terminal|web|sim|android] [--workspace <ws>] [--focus] [--floating]
-                  [--cwd <dir>] [--input <text>] [[--] <command | url | device>]
+      new-surface [--type terminal|web|sim|android|app] [--workspace <ws>] [--focus] [--floating]
+                  [--cwd <dir>] [--input <text>] [[--] <command | url | device | app>]
                                       open a surface and print it as JSON; it takes focus
                                       only with --focus
       close-surface [--surface <id>]  close a surface
@@ -30,11 +30,15 @@ guard !args.isEmpty, args[0] != "-h", args[0] != "--help" else {
       send-key [--surface <id>] <key>  send a terminal key, e.g. ctrl+c or enter
       skill install|status|path|source|uninstall [--force]
                                       manage the bundled agent skill locally
+      adapters [list | match <app> | reload] [--json]
+                                      the adapter registry: what Hyprmux loaded, which adapter
+                                      would lift an app (with its probe), and running instances
       workspaces | activewindow | version
       reload                         reload the config
       sendtext <text>                legacy: type into the focused terminal (\\n = enter)
       sendkey <MODS>, <key>          legacy: inject through the app input path
       senddrag <MODS>, <button>, <x1 y1>, <x2 y2>   inject a mouse drag
+      sendscroll <MODS>, <lines>, <x y>    inject a notched mouse-wheel scroll (positive = up)
     """)
     exit(args.isEmpty ? 1 : 0)
 }
@@ -229,6 +233,7 @@ func absolutePath(_ path: String) -> String {
 func newSurfaceLine(_ arguments: [String]) throws -> String {
     var wire = ["new-surface"]
     var positional: [String] = []
+    var kind = "terminal"
     var index = 0
     while index < arguments.count {
         let argument = arguments[index]
@@ -239,7 +244,8 @@ func newSurfaceLine(_ arguments: [String]) throws -> String {
         let (name, inline) = splitOption(argument)
         switch name {
         case "--type":
-            wire += ["--type", try optionValue(name, inline: inline, in: arguments, at: &index)]
+            kind = try optionValue(name, inline: inline, in: arguments, at: &index)
+            wire += ["--type", kind]
         case "--workspace":
             wire += ["--workspace-base64", encodedText(try optionValue(name, inline: inline, in: arguments, at: &index))]
         case "--cwd":
@@ -258,7 +264,9 @@ func newSurfaceLine(_ arguments: [String]) throws -> String {
             index = arguments.count
         }
     }
-    let text = positional.joined(separator: " ")
+    // App tiles take argv, like exec: quote each word so paths with spaces survive the
+    // compositor's shell-word split. Other kinds keep taking a joined command line.
+    let text = kind == "app" ? positional.map(shellQuote).joined(separator: " ") : positional.joined(separator: " ")
     if !text.isEmpty { wire += ["--base64", encodedText(text)] }
     return wire.joined(separator: " ")
 }
@@ -301,6 +309,129 @@ func dispatchLine(_ arguments: [String]) throws -> String {
 }
 
 var unwrapReadScreenResponse = false
+/// `adapters` prints tables unless --json; the reply is always JSON.
+var adaptersView: String?
+
+func adaptersLine(_ arguments: [String]) throws -> String {
+    var rest = arguments
+    let json = rest.contains("--json")
+    rest.removeAll { $0 == "--json" }
+    let sub = rest.first ?? "list"
+    if !rest.isEmpty { rest.removeFirst() }
+    if !json { adaptersView = sub }
+    switch sub {
+    case "list", "reload":
+        guard rest.isEmpty else { throw CLIError(message: "adapters \(sub) takes no arguments") }
+        return "adapters \(sub)"
+    case "match":
+        guard rest.count == 1 else { throw CLIError(message: "adapters match needs one app: a .app path or a bundle id") }
+        var target = rest[0]
+        // A relative .app path means the caller's directory, not Hyprmux's.
+        if FileManager.default.fileExists(atPath: target) { target = absolutePath(target) }
+        return "adapters match --base64 \(encodedText(target))"
+    default:
+        throw CLIError(message: "adapters: expected list, match, or reload")
+    }
+}
+
+/// Human-readable `adapters` output.
+func renderAdapters(_ view: String, _ data: Data) -> String? {
+    guard let o = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return nil }
+    func s(_ v: Any?) -> String {
+        switch v {
+        case let x as String: return x
+        case let x as Int: return String(x)
+        case let x as Bool: return x ? "yes" : "no"
+        case nil, is NSNull: return "-"
+        default: return "\(v!)"
+        }
+    }
+    func table(_ rows: [[String]]) -> String {
+        guard let first = rows.first else { return "" }
+        var widths = first.map(\.count)
+        for r in rows { for (i, c) in r.enumerated() where i < widths.count { widths[i] = max(widths[i], c.count) } }
+        return rows.map { r in
+            r.enumerated().map { i, c in i == r.count - 1 ? c : c.padding(toLength: widths[i], withPad: " ", startingAt: 0) }
+                .joined(separator: "  ")
+        }.joined(separator: "\n")
+    }
+    func shortPath(_ p: String) -> String {
+        let home = NSHomeDirectory()
+        return p.hasPrefix(home) ? "~" + p.dropFirst(home.count) : p
+    }
+    var out: [String] = []
+    if view == "match" {
+        out.append("app        \(s(o["app"]))")
+        out.append("bundle id  \(s(o["bundleId"]))")
+        let selected = o["selected"] as? String
+        out.append("adapter    \(selected ?? "none")")
+        if let reason = o["reason"] as? String { out.append("           \(reason)") }
+        if let cmd = o["command"] as? [String] {
+            out.append("command    \(cmd.map { $0.contains(" ") ? "'\($0)'" : $0 }.joined(separator: " "))")
+        }
+        if let p = o["probe"] as? [String: Any] {
+            let ok = (p["ok"] as? Bool) == true
+            let extra = p.filter { $0.key != "ok" && $0.key != "reason" }.sorted { $0.key < $1.key }
+                .map { "\($0.key)=\(s($0.value))" }.joined(separator: " ")
+            out.append("probe      \(ok ? "ok" : "FAILED")\(p["reason"].map { ": \(s($0))" } ?? "")\(extra.isEmpty ? "" : "  (\(extra))")")
+        }
+        let candidates = o["candidates"] as? [[String: Any]] ?? []
+        if !candidates.isEmpty {
+            out.append("")
+            var rows = [["", "ADAPTER", "PRIORITY", "STATE", "WHY"]]
+            for c in candidates {
+                let mark = (c["id"] as? String) == selected ? "→" : (c["matched"] as? Bool) == true ? "·" : " "
+                rows.append([mark, s(c["id"]), s(c["priority"]), s(c["state"]), s(c["reason"])])
+            }
+            out.append(table(rows))
+        }
+        return out.joined(separator: "\n") + "\n"
+    }
+    let adapters = o["adapters"] as? [[String: Any]] ?? []
+    var rows = [["ADAPTER", "STATE", "SOURCE", "PRIO", "MATCH", "EXECUTABLE"]]
+    for a in adapters {
+        let m = a["match"] as? [String: Any] ?? [:]
+        var match: [String] = []
+        if let ids = m["bundleIds"] as? [String] { match.append(ids.joined(separator: ",")) }
+        if let files = m["bundleFiles"] as? [String] { match.append(files.map { ($0 as NSString).lastPathComponent }.joined(separator: ",")) }
+        let exe = (a["executable"] as? String).map(shortPath) ?? s(a["problem"])
+        rows.append([s(a["id"]), s(a["state"]), s(a["source"]) + (a["overrides"] != nil ? "*" : ""), s(a["priority"]),
+                     match.joined(separator: " + "), exe])
+    }
+    out.append(adapters.isEmpty ? "No adapters loaded." : table(rows))
+    if adapters.contains(where: { $0["overrides"] != nil }) { out.append("* overrides a built-in manifest") }
+    let errors = o["errors"] as? [[String: Any]] ?? []
+    if !errors.isEmpty {
+        out.append("")
+        out.append("Manifest errors:")
+        for e in errors { out.append("  \(shortPath(s(e["path"]))): \(s(e["message"]))") }
+    }
+    let instances = o["instances"] as? [[String: Any]] ?? []
+    out.append("")
+    if instances.isEmpty {
+        out.append("No adapter processes launched yet.")
+    } else {
+        var rows = [["#", "ADAPTER", "APP", "PID", "STATE", "TILES", "UPTIME", "NOTE"]]
+        for i in instances {
+            let tiles = (i["tiles"] as? [Int] ?? []).map(String.init).joined(separator: ",")
+            let up = (i["uptime"] as? Int).map { t in t >= 3600 ? "\(t / 3600)h\(t % 3600 / 60)m" : t >= 60 ? "\(t / 60)m\(t % 60)s" : "\(t)s" } ?? "-"
+            var note = s(i["failure"] ?? i["lastError"])
+            if note == "-", let st = i["exitStatus"] { note = "exit \(s(st))" }
+            rows.append([s(i["instance"]), s(i["adapter"]), s(i["label"]), s(i["pid"]), s(i["state"]),
+                         tiles.isEmpty ? "-" : tiles, up, note])
+        }
+        out.append(table(rows))
+    }
+    if let latest = instances.last, let log = latest["log"] as? String {
+        out.append("log of #\(s(latest["instance"])): \(shortPath(log))")
+    }
+    let dirs = o["directories"] as? [[String: Any]] ?? []
+    out.append("")
+    for d in dirs {
+        out.append("\(s(d["source"])) adapters: \(shortPath(s(d["path"])))\((d["exists"] as? Bool) == true ? "" : " (missing)")")
+    }
+    return out.joined(separator: "\n") + "\n"
+}
 
 func commandLine() throws -> String {
     let command = args[0]
@@ -348,6 +479,8 @@ func commandLine() throws -> String {
     case "surfaces":
         guard commandArgs.isEmpty else { throw CLIError(message: "surfaces takes no arguments") }
         return command
+    case "adapters":
+        return try adaptersLine(commandArgs)
     case "dispatch":
         return try dispatchLine(commandArgs)
     case "new-surface":
@@ -440,6 +573,8 @@ if failed {
         FileHandle.standardError.write("hyprmuxctl: invalid read-screen response\n".data(using: .utf8)!)
         exit(1)
     }
+    FileHandle.standardOutput.write(Data(text.utf8))
+} else if let view = adaptersView, let text = renderAdapters(view, output) {
     FileHandle.standardOutput.write(Data(text.utf8))
 } else {
     FileHandle.standardOutput.write(output)

@@ -73,14 +73,23 @@ for helper in "$APP"/Contents/Frameworks/Hyprmux\ Helper*.app; do
   sign_runtime --entitlements "$ENTITLEMENTS" "$helper"
 done
 
-sign_runtime "$APP/Contents/MacOS/hyprmuxctl"
+# Every extra executable next to the app's own (hyprmuxctl, hyprmux-broker,
+# hyprmux-electron-bridge, ...) needs the hardened runtime and a secure timestamp,
+# or notarization rejects the DMG. Sign them before the outer bundle.
+MAIN_EXE="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP/Contents/Info.plist")"
+for exe in "$APP"/Contents/MacOS/*; do
+  [[ -f "$exe" && "$(basename "$exe")" != "$MAIN_EXE" ]] || continue
+  sign_runtime "$exe"
+done
 sign_runtime --entitlements "$ENTITLEMENTS" "$APP"
 
 codesign --verify --deep --strict --verbose=2 "$APP"
-if ! codesign -d --verbose=4 "$APP" 2>&1 | grep 'flags=.*runtime' >/dev/null; then
-  echo "error: the app signature does not enable the hardened runtime" >&2
-  exit 1
-fi
+for code in "$APP" "$APP"/Contents/MacOS/*; do
+  if ! codesign -d --verbose=4 "$code" 2>&1 | grep 'flags=.*runtime' >/dev/null; then
+    echo "error: $(basename "$code") is signed without the hardened runtime" >&2
+    exit 1
+  fi
+done
 
 ARCHES="$(lipo -archs "$APP/Contents/MacOS/Hyprmux")"
 case "$ARCHES" in

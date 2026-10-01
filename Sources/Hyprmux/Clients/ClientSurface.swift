@@ -27,6 +27,10 @@ final class ClientSurface: FlippedView, Surface {
     var launchArgument: String?
     /// The client's restore token, or the saved one while a restored tile waits.
     var restoreToken: String?
+    /// The `.hmapp` this tile was launched from, with the user's arguments (docs/APPS.md).
+    /// The session restores it by id.
+    var appEntry: String?
+    var entryArgs: [String] = []
 
     private let screen = PassthroughView()
     private let placeholder = NSTextField(labelWithString: "")
@@ -41,6 +45,9 @@ final class ClientSurface: FlippedView, Surface {
     // Buffers replaced by a newer commit; released once Core Animation stops using them.
     private var retiring: [ClientConnection.Buffer] = []
     private var link: CADisplayLink?
+    private var lastTick: CFTimeInterval = 0
+    private var watchdogScheduled = false
+    private var observingDisplays = false
 
     // Configure state.
     private var serial: UInt64 = 0
@@ -97,12 +104,43 @@ final class ClientSurface: FlippedView, Surface {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        if window != nil, link == nil {
-            link = displayLink(target: self, selector: #selector(tick(_:)))
-            link?.add(to: .main, forMode: .common)
-            link?.isPaused = true
+        if window != nil, link == nil { makeLink() }
+        NotificationCenter.default.removeObserver(self, name: NSWindow.didChangeScreenNotification, object: nil)
+        if let window {
+            NotificationCenter.default.addObserver(self, selector: #selector(displaysChanged), name: NSWindow.didChangeScreenNotification, object: window)
+        }
+        if !observingDisplays {
+            observingDisplays = true
+            NotificationCenter.default.addObserver(self, selector: #selector(displaysChanged),
+                                                   name: NSApplication.didChangeScreenParametersNotification, object: nil)
         }
         sendConfigureIfNeeded()
+    }
+
+    private func makeLink() {
+        link?.invalidate()
+        link = displayLink(target: self, selector: #selector(tick(_:)))
+        link?.add(to: .main, forMode: .common)
+        link?.isPaused = true
+        lastTick = CACurrentMediaTime()
+        updateLink()
+    }
+
+    /// A view's display link can stop for good when displays change (sleep, wake, a
+    /// monitor plugged in), while still reporting itself unpaused. Rebuild it.
+    @objc private func displaysChanged() {
+        guard window != nil, !closed else { return }
+        makeLink()
+    }
+
+    /// Callbacks that wait well past a refresh with no tick: the link died. Rebuild it,
+    /// so a client's frame request is never lost (a lost one froze Zed).
+    private func checkLinkAlive() {
+        guard !closed, window != nil, !occluded, !frameCallbacks.isEmpty || !retiring.isEmpty else { return }
+        if CACurrentMediaTime() - lastTick > 0.25 {
+            log.warning("client tile \(self.clientID.raw): display link stalled, rebuilding")
+            makeLink()
+        }
     }
 
     override func viewDidChangeBackingProperties() {
@@ -155,8 +193,12 @@ final class ClientSurface: FlippedView, Surface {
                                      "framesShown": framesShown]
         if let c = connection { result["pid"] = Int(c.pid) }
         if let launchArgument { result["launch"] = launchArgument }
+        if let appEntry { result["entry"] = appEntry }
         if let restoreToken { result["restoreToken"] = restoreToken }
         if let b = currentBuffer { result["pixels"] = [b.width, b.height]; result["scale"] = Double(currentScale) }
+        // Frame pacing, for stalls: callbacks waiting for a display-link tick.
+        result["frames"] = ["pendingCallbacks": frameCallbacks.count, "linkPaused": link?.isPaused ?? true,
+                            "occluded": occluded, "retiring": retiring.count]
         if textInput.enabled {
             var t: [String: Any] = ["preedit": textInput.compositorPreedit ? "compositor" : "client",
                                     "inputContext": inputContext != nil]
@@ -166,6 +208,20 @@ final class ClientSurface: FlippedView, Surface {
             result["textInput"] = t
         }
         return result
+    }
+
+    /// Writes the frame on screen to a PNG: the client's own pixels, straight from
+    /// its IOSurface, so it needs no screen-recording permission.
+    func writeSnapshot(to url: URL) throws {
+        guard let surface = currentBuffer?.surface else { throw SnapshotError.noFrame }
+        let image = CIImage(ioSurface: surface)
+        let space = CGColorSpace(name: CGColorSpace.sRGB)!
+        try CIContext().writePNGRepresentation(of: image, to: url, format: .RGBA8, colorSpace: space)
+    }
+
+    enum SnapshotError: LocalizedError {
+        case noFrame
+        var errorDescription: String? { "the tile has no frame yet" }
     }
 
     func setOccluded(_ occluded: Bool) {
@@ -231,10 +287,19 @@ final class ClientSurface: FlippedView, Surface {
     // MARK: Frame pacing
 
     private func updateLink() {
-        link?.isPaused = (frameCallbacks.isEmpty || occluded) && retiring.isEmpty
+        let paused = (frameCallbacks.isEmpty || occluded) && retiring.isEmpty
+        if link?.isPaused == true, !paused { lastTick = CACurrentMediaTime() }
+        link?.isPaused = paused
+        guard !paused, !watchdogScheduled else { return }
+        watchdogScheduled = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            self?.watchdogScheduled = false
+            self?.checkLinkAlive()
+        }
     }
 
     @objc private func tick(_ link: CADisplayLink) {
+        lastTick = CACurrentMediaTime()
         releaseRetired()
         if !occluded, !frameCallbacks.isEmpty, let connection {
             let now = CACurrentMediaTime()
@@ -399,18 +464,16 @@ final class ClientSurface: FlippedView, Surface {
         ])
     }
 
-    /// `app:shortcuts = app`: focused app tiles get chords before Hyprmux (set by the compositor).
-    static var shortcutsFirst = false
+    /// Whether the focused app's `pass` list claims a chord (set by the compositor).
+    static var passes: ((ClientSurface, NSEvent) -> Bool)?
 
-    /// AppKit offers Cmd chords to the main menu before keyDown, so Open Config would
-    /// eat the app's Cmd+, and Minimize its Cmd+M. Under `app:shortcuts = app` the tile
-    /// takes them first; Cmd+Q still quits Hyprmux.
+    /// AppKit offers Cmd chords to the main menu before keyDown. A chord the app's pass
+    /// list claims must reach the app, not Hyprmux's menu (Open Config is ⌘,).
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        guard Self.shortcutsFirst, event.type == .keyDown, connection != nil, window?.firstResponder === self else {
+        guard event.type == .keyDown, connection != nil, window?.firstResponder === self,
+              Self.passes?(self, event) == true else {
             return super.performKeyEquivalent(with: event)
         }
-        let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        if mods == .command, event.charactersIgnoringModifiers == "q" { return false }
         keyDown(with: event)
         return true
     }

@@ -1,18 +1,21 @@
 // Injects the hook into the app's main process through its Node inspector:
 // launch with --inspect-brk, break on the app's first script under
 // Contents/Resources/app, and `require` the hook there. Proven in
-// prototypes/electron-embed; this is the same flow in Swift.
+// prototypes/electron-embed; this is the same flow in Swift. The hook closes the
+// inspector as it loads (docs/ADAPTERS.md, "Security").
 import Foundation
 
-final class Injector {
+final class Injector: @unchecked Sendable {
     enum InjectionError: Error, LocalizedError {
         case inspectorDidNotAnswer
+        case connectionClosed
         case noScriptMatched(String)
         case evaluateFailed(String)
 
         var errorDescription: String? {
             switch self {
             case .inspectorDidNotAnswer: "the app's inspector didn't answer"
+            case .connectionClosed: "the app's inspector closed the connection"
             case .noScriptMatched(let r): "no app script matched \(r)"
             case .evaluateFailed(let m): "injection failed: \(m)"
             }
@@ -21,16 +24,28 @@ final class Injector {
 
     private var ws: URLSessionWebSocketTask?
     private var nextID = 0
+    /// The state below is shared with URLSession's delegate queue.
+    private let lock = NSLock()
+    private var closed = false
     private var replies: [Int: CheckedContinuation<[String: Any], Error>] = [:]
     private var scriptURLs: [String: String] = [:]   // scriptId -> url
-    private var paused: CheckedContinuation<(String, String, String)?, Never>?  // (callFrameId, url, scriptId)
+    private typealias Pause = (frameID: String, url: String, scriptID: String)
+    private var paused: CheckedContinuation<Pause?, Never>?
+    /// Pauses that arrived while nobody waited.
+    private var pauses: [Pause] = []
 
-    /// Injects `hookPath` into the app listening on `port`. Returns after the hook is
-    /// loaded; the app then closes the inspector itself.
-    func inject(port: Int, hookPath: String, entryRegex: String, timeout: TimeInterval = 30) async throws {
-        let targets = try await waitForInspector(port: port, deadline: timeout)
-        guard let page = targets.first, let wsURL = page["webSocketDebuggerUrl"] as? String,
-              let url = URL(string: wsURL) else { throw InjectionError.inspectorDidNotAnswer }
+    /// How the bridge found the inspector's WebSocket URL.
+    enum URLSource { case stderr, http }
+
+    /// Injects `hookPath` into the app listening on `port`. `stderrURL` returns the
+    /// WebSocket URL once the app printed it; apps that publish it over HTTP too are
+    /// found there as a fallback. Returns once the hook is loaded and has closed the
+    /// inspector.
+    @discardableResult
+    func inject(port: Int, stderrURL: @escaping () -> String?, hookPath: String, entryRegex: String,
+                timeout: TimeInterval = 30) async throws -> URLSource {
+        let (wsURL, source) = try await waitForInspector(port: port, stderrURL: stderrURL, deadline: timeout)
+        guard let url = URL(string: wsURL) else { throw InjectionError.inspectorDidNotAnswer }
         let task = URLSession(configuration: .default).webSocketTask(with: url)
         ws = task
         task.resume()
@@ -61,35 +76,65 @@ final class Injector {
                 _ = try await call("Debugger.resume")
                 continue
             }
-            let result = try await evaluateOn(frameID, expr)
+            // The hook closes the inspector before it returns, which ends this
+            // connection with no reply. That is the normal outcome.
+            let result: String
+            do { result = try await evaluateOn(frameID, expr) } catch InjectionError.connectionClosed { return source }
             guard result == "injected" else { throw InjectionError.evaluateFailed(result) }
-            _ = try await call("Debugger.resume")
+            // The hook loaded but left the inspector open. Resume; the bridge checks the port.
+            _ = try? await call("Debugger.resume")
             ws?.cancel(with: .normalClosure, reason: nil)
-            return
+            return source
         }
         throw InjectionError.noScriptMatched(entryRegex)
     }
 
-    private func waitForInspector(port: Int, deadline: TimeInterval) async throws -> [[String: Any]] {
+    /// The URL from the app's stderr. An app whose inspector ignored
+    /// --inspect-publish-uid also lists it on /json/list, as before the flag.
+    private func waitForInspector(port: Int, stderrURL: () -> String?, deadline: TimeInterval) async throws -> (String, URLSource) {
         let end = Date().addingTimeInterval(deadline)
         while Date() < end {
+            if let url = stderrURL() { return (url, .stderr) }
             if let url = URL(string: "http://127.0.0.1:\(port)/json/list"),
                let (data, _) = try? await URLSession.shared.data(from: url),
-               let list = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]], !list.isEmpty {
-                return list
+               let list = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
+               let ws = list.first?["webSocketDebuggerUrl"] as? String {
+                return (ws, .http)
             }
-            try? await Task.sleep(nanoseconds: 50_000_000)
+            try? await Task.sleep(nanoseconds: 20_000_000)
         }
         throw InjectionError.inspectorDidNotAnswer
     }
 
+    /// Whether the inspector's HTTP endpoint lists the WebSocket URL. With
+    /// --inspect-publish-uid=stderr it answers 404.
+    static func publishesOverHTTP(port: Int) async -> Bool {
+        guard let url = URL(string: "http://127.0.0.1:\(port)/json/list"),
+              let (data, response) = try? await URLSession.shared.data(from: url),
+              (response as? HTTPURLResponse)?.statusCode == 200 else { return false }
+        return String(decoding: data, as: UTF8.self).contains("webSocketDebuggerUrl")
+    }
+
+    /// Sends a command and waits for its reply. The continuation is in place before the
+    /// message goes out, so a reply or a close can't arrive before anyone waits.
     private func call(_ method: String, _ params: [String: Any] = [:]) async throws -> [String: Any] {
         nextID += 1
         let id = nextID
         let message: [String: Any] = ["id": id, "method": method, "params": params]
-        let data = try JSONSerialization.data(withJSONObject: message)
-        try await ws?.send(.string(String(decoding: data, as: UTF8.self)))
-        return try await withCheckedThrowingContinuation { c in replies[id] = c }
+        let text = String(decoding: try JSONSerialization.data(withJSONObject: message), as: UTF8.self)
+        return try await withCheckedThrowingContinuation { c in
+            let isClosed = lock.withLock {
+                if !closed { replies[id] = c }
+                return closed
+            }
+            if isClosed { c.resume(throwing: InjectionError.connectionClosed); return }
+            ws?.send(.string(text)) { [weak self] error in
+                guard error != nil, let self else { return }
+                if let c = self.lock.withLock({ self.replies.removeValue(forKey: id) }) {
+                    c.resume(throwing: InjectionError.connectionClosed)
+                }
+            }
+        }
     }
 
     private func evaluateOn(_ frameID: String, _ expression: String) async throws -> String {
@@ -104,7 +149,16 @@ final class Injector {
     }
 
     private func waitForPaused() async -> (String, String, String)? {
-        await withCheckedContinuation { c in paused = c }
+        let pause: Pause? = await withCheckedContinuation { c in
+            let ready: Pause?? = lock.withLock {
+                if !pauses.isEmpty { return .some(pauses.removeFirst()) }
+                if closed { return .some(nil) }
+                paused = c
+                return nil
+            }
+            if let ready { c.resume(returning: ready) }
+        }
+        return pause.map { ($0.frameID, $0.url, $0.scriptID) }
     }
 
     private func receiveLoop() {
@@ -119,24 +173,29 @@ final class Injector {
                 self.receiveLoop()
             case .success: self.receiveLoop()
             case .failure:
-                self.paused?.resume(returning: nil)
-                self.paused = nil
-                for (_, c) in self.replies { c.resume(throwing: InjectionError.inspectorDidNotAnswer) }
-                self.replies.removeAll()
+                let (waiter, waiting) = self.lock.withLock {
+                    self.closed = true
+                    defer { self.paused = nil; self.replies.removeAll() }
+                    return (self.paused, Array(self.replies.values))
+                }
+                waiter?.resume(returning: nil)
+                for c in waiting { c.resume(throwing: InjectionError.connectionClosed) }
             }
         }
     }
 
     private func dispatch(_ m: [String: Any]) {
-        if let id = m["id"] as? Int, let c = replies.removeValue(forKey: id) {
-            c.resume(returning: m["result"] as? [String: Any] ?? [:])
+        if let id = m["id"] as? Int {
+            if let c = lock.withLock({ replies.removeValue(forKey: id) }) {
+                c.resume(returning: m["result"] as? [String: Any] ?? [:])
+            }
             return
         }
         guard let method = m["method"] as? String else { return }
         switch method {
         case "Debugger.scriptParsed":
             if let p = m["params"] as? [String: Any], let sid = p["scriptId"] as? String {
-                scriptURLs[sid] = p["url"] as? String ?? ""
+                lock.withLock { scriptURLs[sid] = p["url"] as? String ?? "" }
             }
         case "Debugger.paused":
             guard let p = m["params"] as? [String: Any],
@@ -144,9 +203,15 @@ final class Injector {
                   let frameID = f["callFrameId"] as? String,
                   let location = f["location"] as? [String: Any],
                   let scriptID = location["scriptId"] as? String else { return }
-            let url = (f["url"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? scriptURLs[scriptID] ?? ""
-            paused?.resume(returning: (frameID, url, scriptID))
-            paused = nil
+            let (waiter, pause): (CheckedContinuation<Pause?, Never>?, Pause) = lock.withLock {
+                let url = (f["url"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? scriptURLs[scriptID] ?? ""
+                let pause = (frameID: frameID, url: url, scriptID: scriptID)
+                let waiter = paused
+                paused = nil
+                if waiter == nil { pauses.append(pause) }
+                return (waiter, pause)
+            }
+            waiter?.resume(returning: pause)
         default:
             break
         }

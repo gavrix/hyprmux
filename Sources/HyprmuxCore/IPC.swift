@@ -147,6 +147,11 @@ public struct NewSurfaceRequest: Equatable, Sendable {
     }
 }
 
+/// `broker` subcommands: the client-protocol broker's launch agent (docs/CLIENT_PROTOCOL.md).
+public enum BrokerAction: String, Equatable, Sendable, CaseIterable {
+    case status, register, unregister
+}
+
 /// Minimal line protocol, modeled on hyprctl. Replies are JSON, plain text,
 /// `ok`, or `error: ...`. New surface commands accept explicit surface handles.
 /// Free text that may contain spaces travels as `--NAME-base64` (or `--base64` for
@@ -181,16 +186,30 @@ public enum IPCRequest: Equatable {
     case sendMouse(phase: String, Modifiers, button: Int, at: CGPoint)
     /// A notched mouse-wheel scroll of `lines` (positive scrolls up) at a point, for tests.
     case sendScroll(Modifiers, lines: Int, at: CGPoint)
+    /// Writes an app tile's current frame to a PNG at `path`, for tests and bug reports.
+    case snapshot(surface: SurfaceReference?, path: String)
     /// An agent says how to bring its terminal back: `resume {"client":…, ...}`.
     case resume(ResumeReport)
     /// Demo recordings: a caption at the top of the window. Empty clears it.
     case caption(String)
+    /// Tests: performs a main-menu item by title, as a click on it would.
+    case sendMenu(String)
     /// The adapter registry: adapters, launched instances, and manifest errors.
     case adapters
     /// Rescans the adapter directories.
     case adaptersReload
     /// Which adapter would lift an app (`.app` path or bundle id), with its probe.
     case adaptersMatch(String)
+    /// The broker agent: its status, or register / unregister it with macOS.
+    case broker(BrokerAction)
+    /// The app catalog (docs/APPS.md): every `.hmapp`, load errors, and the folders.
+    case apps
+    /// Regenerates the generated apps; the reply waits for it.
+    case appsRefresh
+    /// Writes an installed `.hmapp`: NAME, PATH, then default arguments.
+    case appsAdd([String])
+    /// Opens a catalog app in a new tile: NAME or ID, then arguments.
+    case launch([String], focus: Bool)
 
     public static func parse(_ line: String) -> Result<IPCRequest, ParseError> {
         let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -231,6 +250,18 @@ public enum IPCRequest: Equatable {
             return .success(.moveSurface(surface: surface, workspace: workspace, focus: focus))
         case "clients": return .success(.clients)
         case "surfaces": return .success(.surfaces)
+        case "snapshot":
+            // snapshot [--surface S] --base64 PATH
+            var args = words(rest)
+            let surface: SurfaceReference?
+            switch takeOption("--surface", from: &args).flatMap(parseSurface) {
+            case .failure(let error): return .failure(error)
+            case .success(let value): surface = value
+            }
+            guard args.count == 2, args[0] == "--base64", let path = decodeBase64(args[1]), path.hasPrefix("/") else {
+                return .failure(ParseError("snapshot: expected an absolute PNG path"))
+            }
+            return .success(.snapshot(surface: surface, path: path))
         case "identify":
             var args = words(rest)
             switch takeOption("--surface", from: &args) {
@@ -330,9 +361,61 @@ public enum IPCRequest: Equatable {
             default:
                 return .failure(ParseError("adapters: expected list, match, or reload"))
             }
+        case "broker":
+            let args = words(rest)
+            guard let sub = args.first else { return .success(.broker(.status)) }
+            guard let action = BrokerAction(rawValue: sub) else {
+                return .failure(ParseError("broker: expected status, register, or unregister"))
+            }
+            guard args.count == 1 else { return .failure(ParseError("broker \(sub): unexpected arguments")) }
+            return .success(.broker(action))
+        case "apps":
+            var args = words(rest)
+            guard let sub = args.first else { return .success(.apps) }
+            args.removeFirst()
+            switch sub {
+            case "list":
+                guard args.isEmpty else { return .failure(ParseError("apps list: unexpected arguments")) }
+                return .success(.apps)
+            case "refresh":
+                guard args.isEmpty else { return .failure(ParseError("apps refresh: unexpected arguments")) }
+                return .success(.appsRefresh)
+            case "add":
+                // NAME PATH [ARGS...], shell-quoted, as --base64: names and paths hold spaces.
+                guard args.count == 2, args[0] == "--base64", let text = decodeBase64(args[1]),
+                      let parts = shellWords(text) else {
+                    return .failure(ParseError("apps add: expected --base64 with NAME PATH [ARGS...]"))
+                }
+                guard parts.count >= 2 else { return .failure(ParseError("apps add: expected NAME PATH [ARGS...]")) }
+                return .success(.appsAdd(parts))
+            default:
+                return .failure(ParseError("apps: expected list, refresh, or add"))
+            }
+        case "launch":
+            // launch [--focus] (--base64 B64 | NAME [ARGS...]), shell-quoted words.
+            var args = words(rest)
+            let focus = removeFlag("--focus", from: &args)
+            let text: String
+            switch takeOption("--base64", from: &args) {
+            case .failure(let error): return .failure(error)
+            case .success(let encoded?):
+                guard args.isEmpty, let decoded = decodeBase64(encoded) else {
+                    return .failure(ParseError("launch: invalid base64 text"))
+                }
+                text = decoded
+            case .success(nil):
+                text = args.joined(separator: " ")
+            }
+            guard let parts = shellWords(text) else { return .failure(ParseError("launch: unbalanced quotes")) }
+            guard !parts.isEmpty else { return .failure(ParseError("launch: name an app")) }
+            return .success(.launch(parts, focus: focus))
         case "version": return .success(.version)
         case "debug": return .success(.debug)
         case "caption": return .success(.caption(rest))
+        case "sendmenu":
+            let title = rest.trimmingCharacters(in: .whitespaces)
+            guard !title.isEmpty else { return .failure(ParseError("sendmenu: name a menu item")) }
+            return .success(.sendMenu(title))
         case "resume":
             guard let r = try? JSONDecoder().decode(ResumeReport.self, from: Data(rest.utf8)) else {
                 return .failure(ParseError("resume: expected JSON with client, pid, kind, session"))

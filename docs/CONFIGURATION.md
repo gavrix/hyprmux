@@ -11,8 +11,9 @@ replaces the file. ⇧⌘R or `hyprmuxctl reload` force a reload. Mistakes show 
 a red bar at the top of the screen; the rest of the file still applies. The one
 setting that needs a restart is `web:engine`.
 
-Adapter manifests, which decide how apps that aren't Hyprmux clients open in
-tiles, live in `adapters/` next to the config file. See [Adapters](ADAPTERS.md).
+Apps you install for the launcher live in `apps/` next to the config file. See
+[Apps](APPS.md). Adapter manifests, which decide how apps that aren't Hyprmux
+clients open in tiles, live in `adapters/`. See [Adapters](ADAPTERS.md).
 
 ## Syntax
 
@@ -127,23 +128,22 @@ global
 
 ### `app`
 
-App tiles are macOS apps opened with `new-surface --type app`, such as VS Code
-through its [adapter](ADAPTERS.md).
-
-| Option | Default | Meaning |
-|---|---|---|
-| `shortcuts` | hyprmux | Who gets a chord that is also a bind while an app tile has the keyboard. `hyprmux`: the bind runs, as in terminals and web tiles. `app`: the app gets it, so Cmd+P, Cmd+S, and Cmd+arrows reach VS Code. Binds marked `p` still run, and so do binds inside a submap. Cmd+Q always quits Hyprmux. |
-
-With `shortcuts = app`, mark the binds you want everywhere with `p`. Without
-any, the keyboard can't leave an app tile; clicking another tile still works.
+App tiles are macOS apps opened in Hyprmux, such as VS Code or Zed (see
+[Apps](APPS.md)). Hyprmux's binds win in every tile, so tiles can always be
+closed, moved, and resized from the keyboard. Apps get every chord Hyprmux
+doesn't bind. When an app shortcut clashes with a bind, rebind it inside the app
+(VS Code: `keybindings.json`; Zed: the keymap), or hand the chord to that one
+app with its pass list:
 
 ```ini
-app {
-    shortcuts = app
+app:com.microsoft.VSCode {
+    pass = SUPER P, SUPER SHIFT P
 }
-bindp = $mod, 1, workspace, 1
-bindp = $mod, grave, focuscurrentorlast
 ```
+
+The app id is the one `hyprmuxctl apps` shows. While that app's tile has the
+keyboard, the listed chords go to the app; everywhere else, and inside a submap,
+they stay binds.
 
 ### `dwindle`
 
@@ -181,6 +181,7 @@ Groups hold several windows as tabs in one tile.
 |---|---|---|
 | `background_color` | transparent | Behind the windows. An alpha below 1 makes Hyprmux see-through; `rgba(00000000)` shows the desktop in the gaps. |
 | `fullscreen_style` | `fill` | `fill`: full screen on the normal desktop, so the wallpaper stays visible. `native`: macOS full screen on its own Space. |
+| `register_broker` | `true` | App tiles connect through `hyprmux-broker`, a small helper macOS runs for Hyprmux. `true`: Hyprmux registers it on launch, and macOS may ask you to allow Hyprmux in Login Items. `false`: Hyprmux leaves it alone, for people who load the broker themselves. Turning it off doesn't remove a registered helper; `hyprmuxctl broker unregister` does. |
 
 ### `web`
 
@@ -415,7 +416,6 @@ bind  = MODS, key, dispatcher, args
 binde = $mod CTRL, L, resizeactive, 40 0      # e = repeats while held
 bindm = $mod, mouse:272, movewindow           # m = mouse drag (272 left, 273 right)
 bindn = ...                                   # n = the key also reaches the app
-bindp = $mod, 1, workspace, 1                 # p = runs even while an app tile has the keyboard
 bindd = $mod, Return, Open a shell, exec,     # d = with a description (the keycast shows it)
 ```
 
@@ -451,6 +451,7 @@ These names work in `bind` lines and with `hyprmuxctl dispatch`.
 | `webnav` | `back` `forward` `reload` `stop` `home` `focusurl` `inspect` | Navigation in the focused web tile. |
 | `sim` / `simulator` | [udid, name, or `booted`] | Show an iOS Simulator. Empty: attach the only running iOS or Android device, or show a combined picker. |
 | `android` / `avd` | [AVD id or name] | Attach a running Android AVD. Empty: the sole running AVD, or a picker when several are running. Never boots an AVD. |
+| `launch` | [name or id, then arguments] | Open an [app](APPS.md) in a new tile. The text names an app whole, or its first word does and the rest are arguments. Empty: the launcher. |
 | `simbutton` | `home` `lock` | Press a simulator hardware button. |
 | `killactive` | | Close the focused window. |
 | `movefocus` | `l` `r` `u` `d` | Focus the neighbor in that direction. |
@@ -461,7 +462,7 @@ These names work in `bind` lines and with `hyprmuxctl dispatch`.
 | `workspace` | `N`, `+1`/`-1`, `e+1`/`e-1`, `previous`, `empty`, `special[:name]`, `name:NAME` | Switch workspace. `e±1` skips empty workspaces. `name:` finds the workspace with that name, or names the first free number. |
 | `movetoworkspace` / `movetoworkspacesilent` | same | Move the focused window there (and follow it, or stay). |
 | `renameworkspace` | `N [name]` | Name workspace N. No name clears it. |
-| `picker` | `workspace`, `movetoworkspace`, `movetoworkspacesilent`, `renameworkspace`, `layout`, `savelayout` | Hyprmux's own pickers: go to a workspace, move the window to one, name the current one, or summon or save a layout. See [Workspaces](#workspaces) and [Layouts](#layouts). |
+| `picker` | `workspace`, `movetoworkspace`, `movetoworkspacesilent`, `renameworkspace`, `layout`, `savelayout`, `apps` | Hyprmux's own pickers: go to a workspace, move the window to one, name the current one, summon or save a layout, or open an app (the launcher). See [Workspaces](#workspaces), [Layouts](#layouts), and [Apps](APPS.md). |
 | `togglespecialworkspace` | [name] | Show or hide a scratchpad. |
 | `togglefloating` | | Float or re-tile. A first float centers the window; re-tiling returns it to its old slot. |
 | `fullscreen` | `0` or `1` | 0 = cover the screen, 1 = maximize within gaps. |
@@ -530,13 +531,19 @@ See [Terminal automation](AUTOMATION.md) for workflows, limits, and agent skill 
 | `send-key [--surface ID] KEY` | Sends a terminal key such as `ctrl+c`, `enter`, `tab`, or `escape`. |
 | `workspaces`, `activewindow`, `version` | JSON or text. |
 | `reload` | Reloads the config. |
+| `apps [list\|refresh] [--json]` | The [apps](APPS.md) Hyprmux can open: id, name, kind, source, adapter, and target, plus load errors and both folders. `refresh` regenerates the generated apps and replies when done. |
+| `apps add NAME PATH [ARGS...]` | Writes an installed `.hmapp` for an `.app` (checked like a generated one) or an executable, and replies with it. |
+| `launch [--focus] NAME\|ID [ARGS...]` | Opens an app in a new tile and replies with its JSON entry, like `new-surface`. |
 | `adapters [list\|match APP\|reload] [--json]` | The adapter registry: loaded adapters, manifest errors, and launched instances. `match` shows which adapter would lift an `.app` or bundle id, and runs its probe. See [Adapters](ADAPTERS.md). |
+| `broker [status\|register\|unregister] [--json]` | The helper app tiles connect through. `status`: whether macOS runs this copy's agent or waits for approval, what Hyprmux did on launch, whether the lookup service answers, which program launchd runs and who loaded it, and this instance's registration. `register` and `unregister` change the agent with macOS, for testing and support. See [Client protocol](CLIENT_PROTOCOL.md#3-transport). |
 | `sendtext <text>` | Legacy command that types into the focused terminal (`\n` = Enter). |
 | `sendkey <MODS>, <key>` | Legacy test command that injects a key through the normal application path. |
 | `sendmouse down\|drag\|up\|move <MODS>, <button>, <x y>` | Injects one mouse event (holds, hand-timed gestures). Buttons: 272 left, 273 right, 274 middle. |
 | `senddrag <MODS>, <button>, <x1 y1>, <x2 y2>` | Injects a paced drag (about 16 ms per step). |
+| `snapshot [--surface ID] FILE.png` | Writes an app tile's current frame to a PNG. |
 | `sendscroll <MODS>, <lines>, <x y>` | Injects a notched mouse-wheel scroll. Positive lines scroll up. |
 | `hittest <x y>` | Which views a click at that point reaches. |
+| `sendmenu <title>` | Performs a menu bar item by title, as a click would (`sendmenu Open App...`). Case doesn't matter, and `...` matches `…`. |
 | `debug` | Focus internals: app active, key window, first responder, and which window holds the keyboard. |
 | `resume {json}` | An agent reports how to bring its terminal back. See [Session restore](#session-restore). |
 | `caption [Title \| subtitle]` | A caption panel at the top of the window, for demo recordings. No text hides it. |

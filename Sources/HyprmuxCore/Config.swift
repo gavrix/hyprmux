@@ -86,8 +86,7 @@ public struct KeyBind: Equatable, Sendable {
     public var mods: Modifiers
     public var trigger: BindTrigger
     public var dispatcher: Dispatcher
-    /// Hyprland bind flags: e (repeat), l (locked), r (release), n (non-consuming), m (mouse),
-    /// p (fires even while an app tile has the keyboard, see `appShortcuts`).
+    /// Hyprland bind flags: e (repeat), l (locked), r (release), n (non-consuming), m (mouse).
     public var flags: Set<Character>
     public var submap: String
     /// From `bindd = MODS, key, description, dispatcher, args`. Shown by the keycast.
@@ -129,9 +128,9 @@ public struct HyprmuxConfig: Sendable {
     public var animations: [String: AnimationSpec] = [:]
     /// 0 = click to focus, 1 = focus follows mouse.
     public var followMouse = 1
-    /// Who gets a chord that is also a bind while an app tile has the keyboard: "hyprmux"
-    /// (the bind runs) or "app" (the app gets it; binds with the p flag still run).
-    public var appShortcuts = "hyprmux"
+    /// Bound chords an app gets instead of Hyprmux while its tile has the keyboard, by
+    /// app id (`app:<id> { pass = SUPER P, SUPER SHIFT P }`). Binds win everywhere else.
+    public var appPass: [String: Set<AppChord>] = [:]
     public var binds: [KeyBind] = []
     public var execOnce: [String] = []
     public var exec: [String] = []
@@ -139,6 +138,9 @@ public struct HyprmuxConfig: Sendable {
     /// "fill": cover the display on the normal desktop (wallpaper stays visible behind
     /// a transparent window). "native": macOS full screen on its own Space.
     public var fullscreenStyle = "fill"
+    /// Register the bundled hyprmux-broker launch agent with macOS on launch, so app tiles
+    /// work without developer steps. Off for people who load the broker themselves.
+    public var registerBroker = true
 
     // Groups (tabbed windows).
     public var groupActiveBorder = Gradient([Color(r: 1, g: 0.67, b: 0.2, a: 0.93), Color(r: 1, g: 0.37, b: 0.37, a: 0.93)], angle: 45)
@@ -413,9 +415,19 @@ public enum ConfigParser {
                 break  // Hyprland blur tuning; macOS blur has no equivalent knobs.
             case "animations:enabled": if let v = bool() { config.animationsEnabled = v }
             case "input:follow_mouse": if let v = num() { config.followMouse = Int(v) }
-            case "app:shortcuts":
-                if ["hyprmux", "app"].contains(value) { config.appShortcuts = value }
-                else { error(file, line, "app:shortcuts: expected hyprmux or app") }
+            case let k where k.hasPrefix("app:") && k.hasSuffix(":pass") && k.count > "app::pass".count:
+                let id = String(k.dropFirst("app:".count).dropLast(":pass".count))
+                var chords = config.appPass[id] ?? []
+                for item in value.split(separator: ",") {
+                    var words = item.split(separator: " ").map(String.init)
+                    guard let keyName = words.popLast(), case .success(let mods) = Modifiers.parse(words.joined(separator: " ")),
+                          case .key(let code)? = KeyCodes.parse(keyName) else {
+                        error(file, line, "\(k): bad chord '\(item.trimmingCharacters(in: .whitespaces))', expected like SUPER SHIFT P")
+                        continue
+                    }
+                    chords.insert(AppChord(mods: mods, key: code))
+                }
+                config.appPass[id] = chords
             case "dwindle:preserve_split": if let v = bool() { config.wm.dwindle.preserveSplit = v }
             case "dwindle:force_split": if let v = num() { config.wm.dwindle.forceSplit = Int(v) }
             case "dwindle:split_width_multiplier": if let v = num() { config.wm.dwindle.splitWidthMultiplier = v }
@@ -437,6 +449,7 @@ public enum ConfigParser {
             case "web:engine":
                 let v = value.lowercased()
                 if v == "webkit" || v == "chromium" { config.webEngine = v } else { error(file, line, "web:engine: expected webkit or chromium") }
+            case "misc:register_broker": if let v = bool() { config.registerBroker = v }
             case "misc:fullscreen_style":
                 let v = value.lowercased()
                 if v == "fill" || v == "native" { config.fullscreenStyle = v } else { error(file, line, "misc:fullscreen_style: expected fill or native") }
@@ -498,7 +511,7 @@ public enum ConfigParser {
         mutating func parseBind(_ key: String, _ value: String, file: String, line: Int) {
             if key == "unbind" { return }
             let flags = Set(key.dropFirst(4))
-            let allowed: Set<Character> = ["e", "l", "r", "n", "m", "d", "i", "o", "t", "p"]
+            let allowed: Set<Character> = ["e", "l", "r", "n", "m", "d", "i", "o", "t"]
             guard flags.isSubset(of: allowed) else { error(file, line, "unknown bind flags '\(key)'"); return }
             let hasDescription = flags.contains("d")
             let maxParts = hasDescription ? 5 : 4
@@ -531,4 +544,11 @@ public enum ConfigParser {
                                         submap: submap, description: description))
         }
     }
+}
+
+/// A chord an app's `pass` list hands to it instead of a bind.
+public struct AppChord: Hashable, Sendable {
+    public let mods: Modifiers
+    public let key: UInt16
+    public init(mods: Modifiers, key: UInt16) { self.mods = mods; self.key = key }
 }

@@ -62,6 +62,7 @@ extension Dispatcher {
             }
         case .sim(let q): return q.isEmpty ? "Show device" : "Show simulator \(q)"
         case .android(let q): return q.isEmpty ? "Show Android emulator" : "Show Android emulator \(q)"
+        case .launch(let a): return a.isEmpty ? "Apps" : "Open \(a)"
         case .simButton(let b): return b == "lock" ? "Simulator lock" : "Simulator home"
         case .killActive: return "Close window"
         case .moveFocus(let d): return "Focus \(dir(d))"
@@ -93,6 +94,7 @@ extension Dispatcher {
             case .renameWorkspace: return "Name workspace"
             case .layout: return "Layouts"
             case .saveLayout: return "Save layout"
+            case .apps: return "Apps"
             }
         case .monitorFullscreen: return "Full-screen Hyprmux"
         case .toggleGroup: return "Group"

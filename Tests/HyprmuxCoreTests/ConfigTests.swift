@@ -18,15 +18,15 @@ final class ConfigTests: XCTestCase {
         XCTAssertTrue(c.ghostty.contains("window-padding-x = 8"))
     }
 
-    func testAppShortcuts() {
-        XCTAssertEqual(ConfigParser.parse(defaultConfig).appShortcuts, "hyprmux")
-        XCTAssertEqual(ConfigParser.parse("app {\n shortcuts = app\n}").appShortcuts, "app")
-        let bad = ConfigParser.parse("app:shortcuts = sometimes")
-        XCTAssertEqual(bad.appShortcuts, "hyprmux")
-        XCTAssertEqual(bad.errors.count, 1)
-        let c = ConfigParser.parse("bindp = SUPER, 1, workspace, 1\nbind = SUPER, 2, workspace, 2")
+    func testAppPassLists() {
+        XCTAssertTrue(ConfigParser.parse(defaultConfig).appPass.isEmpty)
+        let c = ConfigParser.parse("app:com.microsoft.VSCode {\n    pass = SUPER P, SUPER SHIFT P\n}\napp:user.zed-dev {\n    pass = CTRL Tab\n}")
         XCTAssertTrue(c.errors.isEmpty, "\(c.errors)")
-        XCTAssertEqual(c.binds.map { $0.flags.contains("p") }, [true, false])
+        XCTAssertEqual(c.appPass["com.microsoft.VSCode"], [AppChord(mods: [.super], key: 0x23), AppChord(mods: [.super, .shift], key: 0x23)])
+        XCTAssertEqual(c.appPass["user.zed-dev"], [AppChord(mods: [.ctrl], key: 0x30)])
+        let bad = ConfigParser.parse("app:x {\n    pass = SUPER NOSUCHKEY\n}")
+        XCTAssertEqual(bad.errors.count, 1)
+        XCTAssertFalse(ConfigParser.parse("bindp = SUPER, 1, workspace, 1").errors.isEmpty, "the p flag is gone")
     }
 
     func testConfirmQuit() {
@@ -167,6 +167,15 @@ final class ConfigTests: XCTestCase {
         XCTAssertEqual(ConfigParser.parse("").fullscreenStyle, "fill")
         XCTAssertEqual(ConfigParser.parse("misc {\n    fullscreen_style = native\n}").fullscreenStyle, "native")
         XCTAssertEqual(try? Dispatcher.parse("monitorfullscreen", "").get(), .monitorFullscreen)
+    }
+
+    func testRegisterBroker() {
+        XCTAssertTrue(ConfigParser.parse("").registerBroker)
+        let off = ConfigParser.parse("misc {\n    register_broker = false\n}")
+        XCTAssertEqual(off.errors, [])
+        XCTAssertFalse(off.registerBroker)
+        XCTAssertTrue(ConfigParser.parse("misc:register_broker = yes").registerBroker)
+        XCTAssertEqual(ConfigParser.parse("misc:register_broker = maybe").errors.count, 1)
     }
 
     func testSimDispatcher() {

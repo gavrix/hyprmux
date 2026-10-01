@@ -11,7 +11,9 @@ protocol ClientServerHost: AnyObject {
     /// A toplevel no tile was reserved for: make and manage a new tile.
     func clientServer(_ server: ClientServer, newSurfaceFor appID: String, name: String) -> ClientSurface
     func clientServer(_ server: ClientServer, titleChanged surface: ClientSurface)
-    func clientServer(_ server: ClientServer, notice message: String)
+    /// An app tile waits for a client, but Hyprmux isn't registered with the broker.
+    /// Called once per launch; the host explains what the user can do.
+    func clientServerUnavailable(_ server: ClientServer)
 }
 
 /// Accepts client connections (docs/CLIENT_PROTOCOL.md) and registers them with the broker.
@@ -26,10 +28,24 @@ final class ClientServer {
     /// Tiles waiting for a launched client, by launch token. A fresh launch reserves one
     /// tile; a restored session may reserve several, each with its restore token.
     private var reserved: [String: [ClientSurface]] = [:]
-    /// What each launch ran (`new-surface --type app` text), for the session.
-    private var launches: [String: String] = [:]
+    /// What each launch ran, for the session: `new-surface --type app` text, or a `.hmapp`
+    /// id and its arguments.
+    private var launches: [String: Launch] = [:]
 
-    func reserve(_ tiles: [ClientSurface], token: String, launch: String) {
+    struct Launch {
+        var argument: String
+        var entry: String?
+        var entryArgs: [String] = []
+
+        /// Marks a tile as coming from this launch, so the session can relaunch it.
+        func stamp(_ tile: ClientSurface) {
+            tile.appEntry = entry
+            tile.entryArgs = entryArgs
+            tile.launchArgument = entry == nil ? argument : nil
+        }
+    }
+
+    func reserve(_ tiles: [ClientSurface], token: String, launch: Launch) {
         reserved[token, default: []] += tiles
         launches[token] = launch
     }
@@ -40,7 +56,7 @@ final class ClientServer {
 
     func reservedTiles(_ token: String) -> [ClientSurface] { reserved[token] ?? [] }
 
-    func launchArgument(for token: String?) -> String? { token.flatMap { launches[$0] } }
+    func launch(for token: String?) -> Launch? { token.flatMap { launches[$0] } }
 
     /// The tile a launched client's toplevel fills: the one saved with the same restore
     /// token, else the first one still waiting.
@@ -100,18 +116,24 @@ final class ClientServer {
 
     private func brokerUnavailable() {
         clientLog.info("hyprmux-broker is not loaded; client apps can't connect")
-        // Retry quietly: scripts/dev-broker.sh may load it later.
+        // Retry quietly: the agent may be approved, or scripts/dev-broker.sh load it, later.
         DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
             guard let self, self.registrar == nil else { return }
             self.register()
         }
     }
 
+    /// Tries the broker now instead of at the next retry (the agent was just enabled).
+    func retryNow() {
+        guard listener != nil, registrar == nil else { return }
+        register()
+    }
+
     /// Explains why an app tile can't connect, once.
     func warnIfUnavailable() {
         guard !registered, !warned else { return }
         warned = true
-        host?.clientServer(self, notice: "Client apps need hyprmux-broker. Run scripts/dev-broker.sh load.")
+        host?.clientServerUnavailable(self)
     }
 
     private func accept(_ peer: xpc_connection_t) {
@@ -154,7 +176,7 @@ final class ClientConnection {
     private var name = ""
     /// Every toplevel of a launched client may fill a tile reserved for its launch.
     private var launchToken: String?
-    private var launchArgument: String?
+    private var launch: ClientServer.Launch?
     private var buffers: [UInt64: Buffer] = [:]
     private var surfaces: [UInt64: SurfaceState] = [:]
     /// Toplevel id → the tile showing it.
@@ -283,7 +305,11 @@ final class ClientConnection {
             s.toplevel = id
             toplevels[id] = tile
             tile.bind(connection: self, toplevel: id, surface: sid, appID: appID)
-            tile.launchArgument = launchArgument
+            if let launch {
+                launch.stamp(tile)
+            } else {
+                tile.launchArgument = nil
+            }
             tile.restoreToken = restore
 
         case HMOp.toplevelSetRestoreToken:
@@ -350,7 +376,7 @@ final class ClientConnection {
         name = m.string("name") ?? appID
         let token = m.string("launch_token") ?? ""
         launchToken = token.isEmpty ? nil : token
-        launchArgument = server?.launchArgument(for: launchToken)
+        launch = server?.launch(for: launchToken)
         greeted = true
         clientLog.info("client \(self.pid) connected: \(self.appID, privacy: .public)")
         if let reply = xpc_dictionary_create_reply(m) {

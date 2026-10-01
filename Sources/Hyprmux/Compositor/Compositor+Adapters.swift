@@ -45,8 +45,8 @@ final class AdapterRuntime {
         for e in registry.errors { log.warning("adapter \(e.path, privacy: .public): \(e.message, privacy: .public)") }
     }
 
-    func started(adapter: AdapterEntry, app: String, label: String, pid: Int32, token: String) -> AdapterInstance {
-        let i = AdapterInstance(number: nextInstance, adapter: adapter.id, app: app, label: label, pid: pid, token: token)
+    func started(adapter: String, app: String, label: String, pid: Int32, token: String) -> AdapterInstance {
+        let i = AdapterInstance(number: nextInstance, adapter: adapter, app: app, label: label, pid: pid, token: token)
         nextInstance += 1
         instances.append(i)
         return i

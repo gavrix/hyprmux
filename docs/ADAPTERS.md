@@ -10,13 +10,20 @@ Hyprmux has no app-specific code. When `new-surface --type app` names an
 adapter's command. Apps that speak the protocol themselves (`HyprmuxClient` in
 their Info.plist) never get an adapter.
 
+Users don't see adapters. They see [apps](APPS.md): Hyprmux scans the app
+folders, and each app an adapter lifts (whose probe passes) gets a generated
+`.hmapp` in the launcher. Adapters are the rules that generate those apps.
+
 Today's adapters all use `hyprmux-electron-bridge`:
 
 | Adapter | Matches | Profile |
 |---|---|---|
 | `electron.vscode` | VS Code, Insiders, VSCodium | Own `--user-data-dir` and `--extensions-dir`, so it runs next to your own VS Code |
 | `electron.cursor` | Cursor | Same, for Cursor |
-| `electron` | Any app with `Electron Framework.framework` | None |
+| `electron` | Any app with `Electron Framework.framework` | Own user data folder |
+
+Every lifted app runs with its own profile, apart from your normal copy. See
+[Profiles](APPS.md#profiles) for what that means and how to use your real one.
 
 ## Where manifests live
 
@@ -94,6 +101,44 @@ details. The Electron bridge's probe checks the bundle, reads the Electron
 version, and checks the `EnableNodeCliInspectArguments` fuse. Without that
 fuse, the bridge can't inject its hook. Slack is one such app.
 
+## Security
+
+The Electron bridge gets its hook into the app through Node's main-process
+inspector. The inspector runs any code in the app's main process, with the
+app's permissions: its files, its keychain items, its entitlements. So the
+bridge keeps it open as briefly as it can, and lets nobody else in.
+
+- **What is exposed:** the bridge starts the app with
+  `--inspect-brk=PORT --inspect-publish-uid=stderr`. The inspector listens
+  on `127.0.0.1:PORT`, a free port picked at random. Any local process can
+  connect to the port, but attaching needs the WebSocket URL, which ends in
+  a random UUID. With `--inspect-publish-uid=stderr`, the inspector prints
+  that URL only to the app's stderr. Its HTTP endpoints (`/json/list`,
+  `/json/version`) answer 404 instead of listing it.
+- **Who sees the URL:** the app's stderr is a pipe that only the bridge
+  reads. The bridge forwards every line to its own log, with the UUID
+  replaced by `(hidden)`.
+- **For how long:** from the launch until the hook loads. `--inspect-brk`
+  holds the app at its first line until the bridge attaches. The bridge
+  stops at the app's entry script and loads the hook there. The hook's last
+  step closes the inspector (`require('inspector').close()`), before the
+  app's own code runs. Measured from launch to a closed port: Logseq 281 ms,
+  VS Code 304 ms, Reactotron 315 ms, Cursor 743 ms. Most of that is the app
+  starting up before the inspector listens.
+- **Only one session:** Node prints `Debugger attached.` on stderr for each
+  session. The hook writes a marker to stderr right after it closes the
+  inspector, so the bridge sees every session report first. A second session,
+  before or after the bridge's, stops the app and fails the launch. So do an
+  inspector that still accepts connections 2 seconds after injection, and a
+  hook that hasn't loaded 45 seconds after launch.
+- **Apps that ignore the flag:** the bridge also checks `/json/list`. An app
+  whose inspector ignored `--inspect-publish-uid` is found there, as before
+  the flag, and the log says so. Every Electron app tested accepts it: Electron
+  27 (Reactotron, Graphite), 38 (Logseq), 42 (Cursor), and 43 (VS Code).
+
+The failure reason goes to the adapter log and `hyprmuxctl adapters`. Users
+see only that the app couldn't open.
+
 ## Writing an adapter
 
 The executable gets the expanded `args`, plus `HYPRMUX_LAUNCH_TOKEN` and
@@ -105,8 +150,33 @@ The executable gets the expanded `args`, plus `HYPRMUX_LAUNCH_TOKEN` and
 - Create one toplevel per app window, and destroy it when the window closes.
 - Exit when the app exits, and stop the app when Hyprmux disconnects or the
   adapter gets SIGTERM.
-- Write a one-line reason to stderr before exiting on failure. Hyprmux shows
-  the last stderr line when a launch fails before connecting.
+- Write a one-line reason to stderr before exiting on failure. Hyprmux keeps
+  the last stderr line as the instance's note in `hyprmuxctl adapters`, and
+  the whole stderr in the adapter log. Users only see that the app couldn't
+  open.
+
+## Apps that don't appear
+
+The launcher lists only apps that can open, and never says why one is missing.
+That's for developers, here. An app found in the scanned folders (see
+[Generated apps](APPS.md#generated-apps)) gets no `.hmapp` when:
+
+- **No adapter matches it,** or every match is disabled or broken. Most native
+  macOS apps are in this group.
+- **The selected adapter's probe fails.** Slack is one: its Electron build turns
+  off the `EnableNodeCliInspectArguments` fuse, so the bridge can't inject its hook.
+- **Another app has the same bundle id.** The first one found wins.
+- **It isn't in a scanned folder.** Add it with `hyprmuxctl apps add NAME PATH`.
+
+To see which case applies:
+
+```sh
+hyprmuxctl adapters match "/Applications/Slack.app"   # the choice, every candidate, and the probe
+hyprmuxctl apps refresh                                # regenerate after changing an adapter
+```
+
+A probe runs once per app version, and its result is cached in `probes.json` in
+the generated apps folder. Delete that file to probe every app again.
 
 ## Runtime state
 

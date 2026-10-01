@@ -109,6 +109,11 @@ extension Compositor {
                                avd: android.endpoint.avdID, avdName: android.endpoint.name)
         case let app as ClientSurface:
             // Only launched apps can be relaunched; a client that connected on its own can't.
+            // Apps from the catalog come back by id.
+            if let entry = app.appEntry {
+                return SessionTile(kind: "app", title: title, restoreToken: forLayout ? nil : app.restoreToken,
+                                   appEntry: entry, appArgs: app.entryArgs.isEmpty ? nil : app.entryArgs)
+            }
             guard let launch = app.launchArgument else { return nil }
             return SessionTile(kind: "app", title: title, app: launch, restoreToken: forLayout ? nil : app.restoreToken)
         default:

@@ -120,16 +120,27 @@ A command after `--` replaces the shell, and the terminal closes when it exits.
 Without `--cwd`, a terminal starts in the focused terminal's directory, not the caller's.
 `--workspace` takes `3`, `name:NAME`, `special:NAME`, or `empty`; a new `name:` creates the workspace.
 
-Open a macOS app in a tile with `--type app`.
-Apps that aren't Hyprmux clients go through an adapter, such as the Electron bridge:
+Open a macOS app in a tile with `launch`, by the name or id `apps` lists.
+It replies with the tile's JSON, like `new-surface`, and takes focus only with `--focus`:
 
 ```sh
-hyprmuxctl new-surface --type app "/Applications/Visual Studio Code.app"
-hyprmuxctl adapters match com.tinyspeck.slackmacgap   # which adapter, and can it lift the app?
-hyprmuxctl adapters                                  # adapters, launched instances, manifest errors
+hyprmuxctl apps                                      # the apps Hyprmux can open (.hmapp bundles)
+hyprmuxctl launch Cursor ~/src/project               # name or id, then the app's arguments
+hyprmuxctl apps add "Zed (dev)" ~/src/zed/target/release-fast/zed   # install an app (.app or executable)
+hyprmuxctl apps refresh                              # rescan the app folders now
 ```
 
-Run `adapters match` before opening an unfamiliar app: a failed probe means the tile won't fill.
+An app missing from `apps` can't open in a tile. `adapters match` says why:
+
+```sh
+hyprmuxctl adapters match com.tinyspeck.slackmacgap   # which adapter, and can it lift the app?
+hyprmuxctl adapters                                  # adapters, launched instances, manifest errors
+hyprmuxctl new-surface --type app "/Applications/Visual Studio Code.app"   # by path, without the catalog
+```
+
+If every app tile times out, check the broker they connect through:
+`hyprmuxctl broker status` says whether macOS runs it, and whether it waits for
+approval in Login Items.
 
 Move, focus, or close a surface by its reference:
 

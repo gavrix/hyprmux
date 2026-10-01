@@ -76,6 +76,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var ipc: IPCServer?
     /// Problems found before launch, shown in the config error banner.
     var startupNotes: [String] = []
+    /// `.hmapp`s opened before the compositor started.
+    private var pendingOpens: [URL] = []
 
     static let configPath: String = {
         if let p = ProcessInfo.processInfo.environment["HYPRMUX_CONFIG"], !p.isEmpty {
@@ -107,6 +109,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         compositor.ipcPath = ipc?.path
         compositor.start()
+        let opens = pendingOpens
+        pendingOpens.removeAll()
+        if !opens.isEmpty { DispatchQueue.main.async { [weak self] in self?.application(NSApp, open: opens) } }
         watcher = ConfigWatcher(path: Self.configPath) { [weak self] in self?.reloadConfig() }
         NotificationCenter.default.addObserver(forName: .hyprmuxReloadConfig, object: nil, queue: .main) { [weak self] _ in
             self?.reloadConfig()
@@ -115,6 +120,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func toggleMonitorFullscreen() { compositor.toggleMonitorFullscreen() }
+
+    /// The launcher, for configs that have no bind for it (docs/APPS.md, "The launcher").
+    @objc func openAppLauncher() { compositor?.presentAppLauncher() }
+
+    /// Finder (or `open`) opened `.hmapp`s: each launches into a tile (docs/APPS.md).
+    func application(_ application: NSApplication, open urls: [URL]) {
+        let bundles = urls.filter { $0.isFileURL && $0.pathExtension == HMApp.pathExtension }
+        guard let compositor else {
+            pendingOpens += bundles
+            return
+        }
+        for url in bundles { compositor.openHMApp(at: url.path) }
+    }
 
     /// Until when a second ⌘Q quits.
     private var quitArmedUntil: Date?
@@ -175,6 +193,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         main.addItem(appItem)
         let app = NSMenu()
         app.addItem(withTitle: "About Hyprmux", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        app.addItem(.separator())
+        // No key equivalent: binds own the keyboard (`picker, apps`, ⌘D by default).
+        app.addItem(withTitle: "Open App…", action: #selector(openAppLauncher), keyEquivalent: "")
         app.addItem(.separator())
         app.addItem(withTitle: "Open Config…", action: #selector(openConfig), keyEquivalent: ",")
         app.addItem(withTitle: "Reload Config", action: #selector(reloadConfig), keyEquivalent: "")

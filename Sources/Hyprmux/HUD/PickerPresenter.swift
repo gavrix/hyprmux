@@ -27,11 +27,12 @@ final class PickerPresenter {
 
     /// Opens `picker`, replacing (cancelling) one that's already open. `completion` gets
     /// the choice, or nil when cancelled.
-    func present(_ picker: Picker, anchor: HUDAnchor = .monitor(.center), completion: @escaping (PickerResult?) -> Void) {
+    func present(_ picker: Picker, anchor: HUDAnchor = .monitor(.center), icons: [String: NSImage] = [:],
+                 completion: @escaping (PickerResult?) -> Void) {
         if isOpen { finish(nil) }
         self.anchor = anchor
         self.completion = completion
-        let v = PickerView(picker: picker, theme: hud.theme)
+        let v = PickerView(picker: picker, theme: hud.theme, icons: icons)
         v.onPick = { [weak self, weak v] row in
             guard let self, let v else { return }
             v.select(row)

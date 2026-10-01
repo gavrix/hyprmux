@@ -67,16 +67,33 @@ Hyprmux.app/Contents/Library/LaunchAgents/dev.gavrix.hyprmux.broker.plist
   BundleProgram: Contents/MacOS/hyprmux-broker
 ```
 
-1. Hyprmux registers the agent with `SMAppService.agent(plistName:)` on first
-   launch. For development, `scripts/dev-broker.sh load` loads it with
-   `launchctl` instead.
+1. On every launch, Hyprmux registers the agent with
+   `SMAppService.agent(plistName:)`. Registering again does nothing.
+   - macOS may ask the user to allow Hyprmux in System Settings → General →
+     Login Items & Extensions. Hyprmux then shows a notice that opens that
+     pane. It checks again each time it becomes the active app, and connects
+     once the agent is allowed.
+   - Hyprmux skips registration when it doesn't run from an app bundle (a
+     SwiftPM build in `.build`), or when `misc:register_broker = false`.
+   - It also skips when another job already holds the broker label: the dev
+     broker (`scripts/dev-broker.sh load`), or another Hyprmux copy's agent.
+     It tells by pinging the lookup service while its own agent isn't
+     enabled. The broker that is already running wins, so development keeps
+     working.
+   - Every copy of Hyprmux uses the same label and service names. One broker
+     per login session serves them all. Instances keep their registrations
+     apart.
+   - `hyprmuxctl broker status` shows the agent's status, which program
+     launchd runs, and who loaded it.
 2. At startup, Hyprmux creates an anonymous XPC listener. It sends
    `register { instance, endpoint }` to `dev.gavrix.hyprmux.registrar`.
    - The broker sets a peer code-signing requirement on every registrar
      connection: identifier `dev.gavrix.hyprmux`, signed with the same
-     certificate as the broker. The broker derives that from its own designated
-     requirement. An ad-hoc broker has no certificate, so it checks only the
-     identifier.
+     certificate as the broker, and by the same team when the signature has
+     one. The broker derives that from its own designated requirement and logs
+     it at startup. An ad-hoc broker has no certificate, so it checks only the
+     identifier. That is fine for local builds, and nothing a release should
+     ship.
    - A registration lives as long as the connection that made it.
 3. A client connects to `dev.gavrix.hyprmux.compositor` and sends
    `lookup { instance }`. The broker returns the endpoint, or `not_running`.
@@ -341,8 +358,9 @@ AccessKit trees, and Chromium has its own accessibility tree to translate.
 
 ## 10. Launch and restore
 
-- **Launching a client:** `hyprmuxctl new-surface --type app -- <bundle id or
-  path> [args]` and a matching `app` dispatcher.
+- **Launching a client:** the launcher and `hyprmuxctl launch` (an app's
+  `.hmapp`, see [APPS.md](APPS.md)), the `launch` dispatcher, or
+  `hyprmuxctl new-surface --type app -- <bundle id or path> [args]`.
   1. Hyprmux reserves a tile slot and makes a one-time `launch_token`.
   2. It starts the client with `HYPRMUX_LAUNCH_TOKEN` in the environment.
   3. The first toplevel that arrives with that token fills the slot.
@@ -374,11 +392,35 @@ AccessKit trees, and Chromium has its own accessibility tree to translate.
     pixel size, registers them, and gives the client a free one that's been
     released.
   - **Metal helper:** wraps an IOSurface as an `MTLTexture`.
+- **Rust client:** `clients/rust/hyprmux-client`, at the same level as the
+  Swift kit: broker lookup and hello, requests, typed events on the main
+  queue, and IOSurface allocation. It calls libxpc directly, so its only
+  dependency is `block2`.
+- **GPUI (Zed):** a `hyprmux` module in `gpui_macos` (on a Zed branch) turns
+  GPUI windows into tiles when Hyprmux launched the process. It keeps
+  `MacPlatform` for everything else.
+  - GPUI's Metal renderer draws into a three-buffer IOSurface swapchain,
+    through `MetalRenderer::new_offscreen` and `draw_to_texture`.
+  - Frames are demand-driven. GPUI's `schedule_frame` asks for one frame
+    callback, so idle and hidden tiles draw nothing.
+  - Keys become NSEvents parsed by `gpui_macos`'s own keystroke code, and
+    text input goes to GPUI's input handler. GPUI draws its own compositions,
+    so it enables text input with `preedit = client`.
+  - Prompts and file panels go through `dialog.open`. GPUI draws its own
+    menus and popovers, so it needs no `menu.popup` or popup role.
 - **Electron bridge:** the injected hook from `prototypes/electron-embed`
   plus a signed helper.
   - Node in an Electron app can't speak XPC. Hardened Electron apps also
     refuse our native addons (checked: Cursor, VS Code, Logseq, Reactotron,
     and Slack).
+  - **Injection:** the helper starts the app with
+    `--inspect-brk=PORT --inspect-publish-uid=stderr`, reads the inspector's
+    WebSocket URL from the app's stderr, stops at the app's entry script, and
+    loads the hook there. The hook closes the inspector as its last step,
+    before the app's code runs: about 300 ms after launch (740 ms for
+    Cursor). The inspector's HTTP endpoints never list the URL, and a second
+    debugger session stops the app. See
+    [ADAPTERS.md, Security](ADAPTERS.md#security) for the model.
   - So the hook writes each window's `paint` dirty rects into a per-window
     pixel file with `writeSync`, which takes about 2 ms for a full 13 MB frame.
     The helper maps the file and copies from it into its own IOSurface
@@ -452,10 +494,21 @@ AccessKit trees, and Chromium has its own accessibility tree to translate.
      back, takes 12 µs p50 and 55 µs p99. The pixel matched 300 out of 300
      times.
 
-   Still unchecked: registering the agent through `SMAppService` from an
-   ad-hoc build, and the approval the user sees. Also unchecked: a peer
-   code-signing requirement on the broker's `register` for ad-hoc builds
-   (`xpc_connection_set_peer_code_signing_requirement`).
+   `SMAppService`, checked later with an Apple Development build on macOS 26:
+   - `register()` enabled the agent at once, with no approval step. macOS
+     posted its own notification: "“HyprmuxTest” can run in the
+     background. You can manage this in Login Items & Extensions settings."
+     It names the app after the bundle's file name.
+   - Before the first registration, `status` reports `.notFound`, not
+     `.notRegistered`. After `unregister()`, it reports `.notRegistered`.
+   - launchd lists the job as `type = Submitted`,
+     `managed_by = com.apple.xpc.ServiceManagement`, with a program path
+     relative to the app.
+   - An app tile connected through the registered broker.
+   - Still unchecked: an ad-hoc build, and the approval path. macOS asks for
+     approval only when the user has turned Hyprmux off in Login Items.
+   The peer code-signing requirement on `register` works for ad-hoc and
+   signed brokers (section 3).
 2. **Chromium passkeys in windowless CEF:** Chrome's WebAuthn dialog and the
    macOS passkey UI want a window in the requesting process. If passkeys
    break, the Chromium client keeps an in-process fallback for sign-in.
@@ -522,15 +575,16 @@ Differences from the text above:
   - Dead keys and IME compositions need Hyprmux to be the active app. Commits
     from outside a key press (the emoji picker, dictation) and
     `hyprmuxctl send --surface ID TEXT` don't.
-- **Shortcuts:** with `app:shortcuts = app`, a focused app tile gets chords
-  before binds, except binds with the `p` flag. See
-  [CONFIGURATION.md](CONFIGURATION.md).
+- **Shortcuts:** Hyprmux's binds win over app tiles, except chords an app's
+  `pass` list claims (`app:<id> { pass = … }`, see
+  [CONFIGURATION.md](CONFIGURATION.md)). Those reach the app even when they're
+  Hyprmux menu shortcuts.
 - **Launching:** `new-surface --type app -- TARGET ARGS...` takes argv.
   `hyprmuxctl` quotes each argument, and Hyprmux splits them with shell
   quoting rules, so paths with spaces work. An `.app` that doesn't speak the
   protocol goes through the adapter that matches it. See
   [ADAPTERS.md](ADAPTERS.md).
-- **`SMAppService` registration** isn't wired up. The broker loads through
-  `scripts/dev-broker.sh`, and Hyprmux retries every 5 seconds until it can
-  register.
+- **Broker loading:** Hyprmux registers the bundled agent with
+  `SMAppService` on launch (section 3). While no broker answers, it retries
+  every 5 seconds, so a broker loaded later is picked up.
 

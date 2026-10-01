@@ -142,4 +142,19 @@ final class IPCTests: XCTestCase {
         )
         XCTAssertThrowsError(try IPCRequest.parse("send-key --surface 4 ctrl+c enter").get())
     }
+
+    func testBrokerRequest() throws {
+        XCTAssertEqual(try IPCRequest.parse("broker").get(), .broker(.status))
+        XCTAssertEqual(try IPCRequest.parse("broker status").get(), .broker(.status))
+        XCTAssertEqual(try IPCRequest.parse("broker register").get(), .broker(.register))
+        XCTAssertEqual(try IPCRequest.parse("broker unregister").get(), .broker(.unregister))
+        XCTAssertThrowsError(try IPCRequest.parse("broker load").get())
+        XCTAssertThrowsError(try IPCRequest.parse("broker status now").get())
+    }
+
+    func testSendMenuRequest() throws {
+        XCTAssertEqual(try IPCRequest.parse("sendmenu Open App…").get(), .sendMenu("Open App…"))
+        XCTAssertEqual(try IPCRequest.parse("sendmenu  Reload Config ").get(), .sendMenu("Reload Config"))
+        XCTAssertThrowsError(try IPCRequest.parse("sendmenu").get())
+    }
 }

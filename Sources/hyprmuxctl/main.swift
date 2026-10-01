@@ -30,15 +30,27 @@ guard !args.isEmpty, args[0] != "-h", args[0] != "--help" else {
       send-key [--surface <id>] <key>  send a terminal key, e.g. ctrl+c or enter
       skill install|status|path|source|uninstall [--force]
                                       manage the bundled agent skill locally
+      apps [list | refresh] [--json]  the apps Hyprmux can open (.hmapp bundles), load errors,
+                                      and their folders; refresh regenerates the generated ones
+      apps add <name> <path> [args]  install an app: an .app (checked like generated ones) or
+                                      an executable, with default arguments
+      launch [--focus] <name | id> [args]
+                                      open an app in a new tile and print it as JSON
       adapters [list | match <app> | reload] [--json]
                                       the adapter registry: what Hyprmux loaded, which adapter
                                       would lift an app (with its probe), and running instances
+      broker [status | register | unregister] [--json]
+                                      the helper app tiles connect through: whether macOS runs it,
+                                      which program launchd starts, and this instance's registration;
+                                      register / unregister its launch agent with macOS
       workspaces | activewindow | version
       reload                         reload the config
       sendtext <text>                legacy: type into the focused terminal (\\n = enter)
       sendkey <MODS>, <key>          legacy: inject through the app input path
       senddrag <MODS>, <button>, <x1 y1>, <x2 y2>   inject a mouse drag
       sendscroll <MODS>, <lines>, <x y>    inject a notched mouse-wheel scroll (positive = up)
+      snapshot [--surface <id>] <file.png>  write an app tile's current frame to a PNG
+      sendmenu <title>               perform a menu item by title, e.g. "Open App..."
     """)
     exit(args.isEmpty ? 1 : 0)
 }
@@ -433,6 +445,162 @@ func renderAdapters(_ view: String, _ data: Data) -> String? {
     return out.joined(separator: "\n") + "\n"
 }
 
+/// `broker` prints a summary unless --json; the reply is always JSON.
+var brokerView = false
+
+func brokerLine(_ arguments: [String]) throws -> String {
+    var rest = arguments
+    let json = rest.contains("--json")
+    rest.removeAll { $0 == "--json" }
+    let sub = rest.first ?? "status"
+    guard ["status", "register", "unregister"].contains(sub) else {
+        throw CLIError(message: "broker: expected status, register, or unregister")
+    }
+    guard rest.count <= 1 else { throw CLIError(message: "broker \(sub) takes no arguments") }
+    brokerView = !json
+    return "broker \(sub)"
+}
+
+/// Human-readable `broker` output.
+func renderBroker(_ data: Data) -> String? {
+    guard let o = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return nil }
+    let home = NSHomeDirectory()
+    func short(_ p: String) -> String { p.hasPrefix(home) ? "~" + p.dropFirst(home.count) : p }
+    var rows: [(String, String)] = []
+    let agent = o["agent"] as? String ?? "-"
+    let agentText: String
+    switch agent {
+    case "enabled": agentText = "enabled: macOS runs the broker for this copy of Hyprmux"
+    case "requires-approval": agentText = "waiting for approval: allow Hyprmux in System Settings → General → Login Items & Extensions"
+    case "not-registered": agentText = "not registered"
+    case "not-found": agentText = "not registered: macOS doesn't know this copy's agent"
+    case "not-bundled": agentText = "not available: Hyprmux isn't running from an app bundle"
+    default: agentText = agent
+    }
+    rows.append(("agent", agentText))
+    let outcome = o["outcome"] as? String ?? "-"
+    let outcomeText: String
+    switch outcome {
+    case "other-broker": outcomeText = "skipped: another broker holds the label (dev-broker.sh or another copy)"
+    case "disabled": outcomeText = "skipped: misc:register_broker = false"
+    case "not-bundled": outcomeText = "skipped: not an app bundle"
+    case "failed": outcomeText = "failed: \(o["failure"] as? String ?? "?")"
+    case "not-found": outcomeText = "failed: the bundle has no broker launch agent"
+    case "not-checked": outcomeText = "not checked yet"
+    default: outcomeText = outcome
+    }
+    rows.append(("on launch", outcomeText))
+    rows.append(("lookup", (o["lookup"] as? Bool) == true ? "answers (a broker holds the service name)" : "no broker holds the service name"))
+    if let job = o["launchd"] as? [String: Any] {
+        var state = job["state"] as? String ?? "?"
+        if let pid = job["pid"] { state += ", pid \(pid)" }
+        switch job["loadedBy"] as? String {
+        case "dev-broker.sh": state += ", loaded by scripts/dev-broker.sh"
+        case "app": state += ", registered by an app with SMAppService"
+        default: break
+        }
+        rows.append(("launchd job", state))
+        if let exe = job["executable"] as? String {
+            rows.append(("program", short(exe)))
+        } else if let program = job["program"] as? String {
+            rows.append(("program", short(program)))
+        }
+        if let path = job["path"] as? String, path.hasPrefix("/") { rows.append(("job plist", short(path))) }
+        if let parent = job["parentBundle"] as? String { rows.append(("app", parent)) }
+    } else {
+        rows.append(("launchd job", "none"))
+    }
+    let instance = o["instance"] as? String ?? "-"
+    let registered = (o["registered"] as? Bool) == true
+    rows.append(("instance", "\(instance), \(registered ? "registered with the broker" : "not registered with the broker")"))
+    rows.append(("clients", "\(o["clients"] as? Int ?? 0) connected"))
+    rows.append(("setting", "misc:register_broker = \((o["setting"] as? Bool) == false ? "false" : "true")"))
+    let width = rows.map(\.0.count).max() ?? 0
+    return rows.map { $0.0.padding(toLength: width, withPad: " ", startingAt: 0) + "  " + $0.1 }.joined(separator: "\n") + "\n"
+}
+
+/// `apps` prints tables unless --json; the reply is always JSON.
+var appsView: String?
+
+func appsLine(_ arguments: [String]) throws -> String {
+    var rest = arguments
+    let json = rest.contains("--json")
+    rest.removeAll { $0 == "--json" }
+    let sub = rest.first ?? "list"
+    if !rest.isEmpty { rest.removeFirst() }
+    if !json { appsView = sub }
+    switch sub {
+    case "list", "refresh":
+        guard rest.isEmpty else { throw CLIError(message: "apps \(sub) takes no arguments") }
+        return "apps \(sub)"
+    case "add":
+        guard rest.count >= 2 else { throw CLIError(message: "apps add needs a name and a path: an .app or an executable") }
+        // A relative path means the caller's directory, not Hyprmux's.
+        rest[1] = absolutePath(rest[1])
+        return "apps add --base64 \(encodedText(rest.map(shellQuote).joined(separator: " ")))"
+    default:
+        throw CLIError(message: "apps: expected list, refresh, or add")
+    }
+}
+
+func launchLine(_ arguments: [String]) throws -> String {
+    var rest = arguments
+    var wire = ["launch"]
+    if rest.first == "--focus" {
+        rest.removeFirst()
+        wire.append("--focus")
+    }
+    if rest.first == "--" { rest.removeFirst() }
+    guard !rest.isEmpty else { throw CLIError(message: "launch needs an app name or id (hyprmuxctl apps lists them)") }
+    return (wire + ["--base64", encodedText(rest.map(shellQuote).joined(separator: " "))]).joined(separator: " ")
+}
+
+/// Human-readable `apps` output.
+func renderApps(_ view: String, _ data: Data) -> String? {
+    guard let o = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return nil }
+    func s(_ v: Any?) -> String { (v as? String) ?? "-" }
+    func shortPath(_ p: String) -> String {
+        let home = NSHomeDirectory()
+        return p.hasPrefix(home) ? "~" + p.dropFirst(home.count) : p
+    }
+    func table(_ rows: [[String]]) -> String {
+        var widths = rows[0].map(\.count)
+        for r in rows { for (i, c) in r.enumerated() { widths[i] = max(widths[i], c.count) } }
+        return rows.map { r in
+            r.enumerated().map { i, c in i == r.count - 1 ? c : c.padding(toLength: widths[i], withPad: " ", startingAt: 0) }
+                .joined(separator: "  ")
+        }.joined(separator: "\n")
+    }
+    if view == "add" {
+        return "installed \(s(o["name"])) (\(s(o["id"]))): \(s(o["kind"]))\(o["adapter"].map { " (\(s($0)))" } ?? ""), \(shortPath(s(o["path"])))\n"
+    }
+    var out: [String] = []
+    let apps = o["apps"] as? [[String: Any]] ?? []
+    if apps.isEmpty {
+        out.append((o["generating"] as? Bool) == true ? "No apps yet: Hyprmux is still looking." : "No apps.")
+    } else {
+        var rows = [["ID", "NAME", "KIND", "SOURCE", "ADAPTER", "APP/EXEC"]]
+        for a in apps {
+            let target = (a["app"] as? String).map(shortPath) ?? (a["exec"] as? String).map(shortPath) ?? "-"
+            rows.append([s(a["id"]), s(a["name"]), s(a["kind"]), s(a["source"]) + (a["overrides"] != nil ? "*" : ""),
+                         s(a["adapter"]), target])
+        }
+        out.append(table(rows))
+        if apps.contains(where: { $0["overrides"] != nil }) { out.append("* replaces a generated app") }
+    }
+    let errors = o["errors"] as? [[String: Any]] ?? []
+    if !errors.isEmpty {
+        out.append("")
+        out.append("Load errors:")
+        for e in errors { out.append("  \(shortPath(s(e["path"]))): \(s(e["message"]))") }
+    }
+    out.append("")
+    for d in o["directories"] as? [[String: Any]] ?? [] {
+        out.append("\(s(d["source"])) apps: \(shortPath(s(d["path"])))\((d["exists"] as? Bool) == true ? "" : " (missing)")")
+    }
+    return out.joined(separator: "\n") + "\n"
+}
+
 func commandLine() throws -> String {
     let command = args[0]
     let commandArgs = Array(args.dropFirst())
@@ -472,6 +640,10 @@ func commandLine() throws -> String {
             unwrapReadScreenResponse = true
         }
         return ([command] + targetArguments(parsed.surface) + options).joined(separator: " ")
+    case "snapshot":
+        let parsed = try takeSurface(from: commandArgs)
+        guard parsed.remaining.count == 1 else { throw CLIError(message: "snapshot needs one PNG path") }
+        return ([command] + targetArguments(parsed.surface) + ["--base64", encodedText(absolutePath(parsed.remaining[0]))]).joined(separator: " ")
     case "identify":
         let parsed = try takeSurface(from: commandArgs)
         guard parsed.remaining.isEmpty else { throw CLIError(message: "identify takes only --surface") }
@@ -481,6 +653,12 @@ func commandLine() throws -> String {
         return command
     case "adapters":
         return try adaptersLine(commandArgs)
+    case "apps":
+        return try appsLine(commandArgs)
+    case "broker":
+        return try brokerLine(commandArgs)
+    case "launch":
+        return try launchLine(commandArgs)
     case "dispatch":
         return try dispatchLine(commandArgs)
     case "new-surface":
@@ -575,6 +753,10 @@ if failed {
     }
     FileHandle.standardOutput.write(Data(text.utf8))
 } else if let view = adaptersView, let text = renderAdapters(view, output) {
+    FileHandle.standardOutput.write(Data(text.utf8))
+} else if let view = appsView, let text = renderApps(view, output) {
+    FileHandle.standardOutput.write(Data(text.utf8))
+} else if brokerView, let text = renderBroker(output) {
     FileHandle.standardOutput.write(Data(text.utf8))
 } else {
     FileHandle.standardOutput.write(output)

@@ -18,5 +18,27 @@
     <key>NSSupportsAutomaticGraphicsSwitching</key><true/>
     <key>NSBluetoothAlwaysUsageDescription</key><string>Chromium uses Bluetooth to sign in with a passkey on your phone.</string>
     <key>LSEnvironment</key><dict><key>MallocNanoZone</key><string>0</string></dict>
+    <!-- .hmapp: an app bundle only Hyprmux opens (docs/APPS.md). A package, so Finder
+         shows it as one item; double-clicking it opens the app in a tile. -->
+    <key>UTExportedTypeDeclarations</key>
+    <array>
+        <dict>
+            <key>UTTypeIdentifier</key><string>dev.gavrix.hyprmux.hmapp</string>
+            <key>UTTypeDescription</key><string>Hyprmux App</string>
+            <key>UTTypeConformsTo</key><array><string>com.apple.package</string></array>
+            <key>UTTypeTagSpecification</key>
+            <dict><key>public.filename-extension</key><array><string>hmapp</string></array></dict>
+        </dict>
+    </array>
+    <key>CFBundleDocumentTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleTypeName</key><string>Hyprmux App</string>
+            <key>CFBundleTypeRole</key><string>Viewer</string>
+            <key>LSHandlerRank</key><string>Owner</string>
+            <key>LSTypeIsPackage</key><true/>
+            <key>LSItemContentTypes</key><array><string>dev.gavrix.hyprmux.hmapp</string></array>
+        </dict>
+    </array>
 </dict>
 </plist>

@@ -15,23 +15,41 @@ var owners: [String: xpc_connection_t] = [:]
 let queue = DispatchQueue(label: "dev.gavrix.hyprmux.broker")
 
 /// The requirement a registering peer must meet: Hyprmux's bundle identifier,
-/// signed the way this broker is signed. An ad-hoc signature has no certificate to
-/// compare, so ad-hoc builds only check the identifier.
+/// signed the way this broker is signed. The broker's designated requirement says how
+/// it is signed; we swap its identifier for the app's:
+/// - Apple Development: `anchor apple generic`, the leaf certificate's name (one
+///   developer's certificate), and the team (leaf `subject.OU`, added when missing).
+/// - Developer ID: `anchor apple generic`, the Developer ID markers, and the team.
+/// - A self-signed certificate ("Hyprmux Local Signing"): that certificate's hash.
+/// - Ad hoc: no certificate to compare, so only the identifier. Local builds only.
 func registrarRequirement() -> String {
-    let app = "identifier \"dev.gavrix.hyprmux\""
+    let appID = "dev.gavrix.hyprmux"
+    let app = "identifier \"\(appID)\""
     var me: SecCode?
     guard SecCodeCopySelf([], &me) == errSecSuccess, let me else { return app }
     var staticMe: SecStaticCode?
     guard SecCodeCopyStaticCode(me, [], &staticMe) == errSecSuccess, let staticMe else { return app }
+    var infoRef: CFDictionary?
+    guard SecCodeCopySigningInformation(staticMe, SecCSFlags(rawValue: kSecCSSigningInformation), &infoRef) == errSecSuccess,
+          let info = infoRef as? [String: Any] else { return app }
+    let flags = (info[kSecCodeInfoFlags as String] as? UInt32) ?? 0
+    if flags & SecCodeSignatureFlags.adhoc.rawValue != 0 { return app }
     var dr: SecRequirement?
     guard SecCodeCopyDesignatedRequirement(staticMe, [], &dr) == errSecSuccess, let dr else { return app }
-    var text: CFString?
-    guard SecRequirementCopyString(dr, [], &text) == errSecSuccess, let text = text as String? else { return app }
-    // A certificate-based designated requirement starts with our own identifier:
-    // `identifier "hyprmux-broker" and anchor apple generic and ...`. Swap in the app's.
-    guard text.hasPrefix("identifier \""),
-          let close = text.dropFirst("identifier \"".count).firstIndex(of: "\"") else { return app }
-    return app + String(text[text.index(after: close)...])
+    var textRef: CFString?
+    guard SecRequirementCopyString(dr, [], &textRef) == errSecSuccess, let text = textRef as String? else { return app }
+    // The requirement quotes the identifier only when it needs to (`identifier dev` vs
+    // `identifier "hyprmux-broker"`).
+    let id = info[kSecCodeInfoIdentifier as String] as? String ?? ""
+    let clause = ["identifier \"\(id)\"", "identifier \(id) "].first { !id.isEmpty && text.contains($0) }
+    // Certificate-signed but the requirement names no identifier we can swap: the app
+    // must still meet the certificate part.
+    var requirement = clause.map { text.replacingOccurrences(of: $0, with: $0.hasSuffix(" ") ? app + " " : app) }
+        ?? "\(app) and (\(text))"
+    if let team = info[kSecCodeInfoTeamIdentifier as String] as? String, !requirement.contains("subject.OU") {
+        requirement = "(\(requirement)) and certificate leaf[subject.OU] = \"\(team)\""
+    }
+    return requirement
 }
 
 func reply(to message: xpc_object_t, _ fields: [String: Any], on peer: xpc_connection_t) {

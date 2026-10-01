@@ -276,6 +276,64 @@ The demo echoes typed text into its title, so `hyprmuxctl surfaces` shows
 whether keys made the round trip. Build it with `-c release` to measure
 frame rates. A debug build spends most of each frame drawing.
 
+#### Dev broker or registered agent
+
+There are two ways the broker gets loaded:
+
+- **Dev broker:** `scripts/dev-broker.sh load APP` boots a copy of the
+  bundled plist with an absolute path, from
+  `~/Library/Caches/dev.gavrix.hyprmux/`.
+- **Registered agent:** a Hyprmux app bundle registers its own agent with
+  `SMAppService` on launch. This is what users get. macOS lists it under
+  System Settings → General → Login Items & Extensions, and may ask the user to allow it.
+
+Both use one label, `dev.gavrix.hyprmux.broker`, and the same mach service
+names. Only one job can hold them. So Hyprmux registers its agent only when
+nobody holds the label: if the lookup service answers and its own agent isn't
+enabled, it leaves the running broker alone. The dev broker wins, and a test
+copy never takes over the broker your own Hyprmux uses. A SwiftPM build run
+from `.build` never registers. `misc:register_broker = false` turns
+registration off.
+
+`hyprmuxctl broker status` shows which case you're in:
+
+```sh
+hyprmuxctl broker status      # the agent's status, the launchd job, who loaded it
+hyprmuxctl broker unregister  # remove this bundle's agent
+hyprmuxctl broker register    # register it now, skipping the checks above
+```
+
+To test the registered agent with a test copy, unload the dev broker first,
+so nothing holds the label:
+
+1. Record `scripts/dev-broker.sh status` and `hyprmuxctl broker status`.
+2. `scripts/dev-broker.sh unload`.
+3. Restart the test instance. It registers its agent. `broker status`
+   shows `enabled`, or `waiting for approval` with a notice in the test
+   window.
+4. Open an app tile (`hyprmuxctl launch Reactotron`) to prove clients
+   connect through the registered broker, then close it.
+5. `hyprmuxctl broker unregister`, then
+   `scripts/dev-broker.sh load /tmp/HyprmuxTest.app`, and restart the test
+   instance.
+
+What macOS does along the way:
+
+- `register()` enables the agent at once, and macOS posts a notification:
+  "“HyprmuxTest” can run in the background…". It names the app after the
+  bundle's file name.
+- Before the first registration, `broker status` says `not registered`
+  (`SMAppService` reports `.notFound` then). The test bundle never needed
+  approval. Approval comes up only after the user turns Hyprmux off in Login
+  Items.
+- `unregister()` removes the launchd job, but macOS keeps a disabled record
+  of the item. `sfltool dumpbtm` lists it. That's harmless. Don't run
+  `sfltool resetbtm`: it resets every app's background items.
+
+Your own Hyprmux loses the broker between steps 2 and 5. Tiles that are
+already open keep working, since they talk to Hyprmux directly. New app tiles
+connect once a broker is back: Hyprmux retries every 5 seconds.
+
 Electron apps go through `hyprmux-electron-bridge`, picked by the adapter
 manifests in `Resources/adapters/` ([ADAPTERS.md](ADAPTERS.md)). Start the test
 instance with `--env HYPRMUX_ADAPTER_BIN="$(swift build --show-bin-path)"`, so
@@ -283,6 +341,22 @@ adapters resolve to debug builds without rebundling. A debug bridge finds
 `Resources/electron-hook.js` in the repo by itself. `hyprmuxctl adapters` shows
 which executable each adapter resolved to. `hyprmuxctl adapters match APP`
 shows the choice for one app.
+
+Generated apps are per instance too: a test instance with
+`HYPRMUX_INSTANCE=test` writes them to
+`~/Library/Application Support/Hyprmux/Apps/test/`, and its installed apps come
+from `apps/` next to its config file. Your own Hyprmux's apps stay untouched.
+To test the launcher in the background, press its bind with `sendkey` and read
+the open picker from `hyprmuxctl debug` (query, rows, selection):
+
+```sh
+hyprmuxctl apps                        # what the test instance generated
+hyprmuxctl sendkey SUPER, D            # open the launcher (bind = $mod, D, picker, apps)
+hyprmuxctl sendkey , R                 # type a filter
+hyprmuxctl debug                       # "picker": {"title": "apps", "rows": [...], ...}
+hyprmuxctl sendkey , Return            # open the selected app; Escape closes instead
+hyprmuxctl snapshot --surface N /tmp/app.png   # see the tile
+```
 
 Each adapter process logs its stderr to
 `~/Library/Logs/Hyprmux/adapters/` (a subdirectory per `HYPRMUX_INSTANCE`), and
@@ -326,7 +400,9 @@ Testing app tiles from a background instance has limits:
 | `hyprmuxctl send --surface ID` / `send-key --surface ID` | Sends terminal input directly without focusing the target or running Hyprmux binds. |
 | `hyprmuxctl sendkey MODS, key` | Presses a key through the focused real path (binds, then the surface). Works in the background. |
 | `hyprmuxctl senddrag` / `sendmouse` | Mouse input, paced like a hand. `sendmouse down` … `up` for holds. |
+| `hyprmuxctl snapshot [--surface ID] FILE.png` | Writes an app tile's current frame to a PNG, straight from the client's IOSurface. Needs no screen-recording permission, so it works where `screencapture` doesn't. |
 | `hyprmuxctl sendscroll MODS, LINES, x y` | A notched mouse-wheel scroll, built as a real line-unit event (positive scrolls up). App tiles get it with its raw notch count, like hardware. |
+| `hyprmuxctl sendmenu TITLE` | Performs a menu bar item, as a click would (`sendmenu "Open App..."`). Works in the background. |
 | `hyprmuxctl hittest x y` | Which views a click reaches. This found the dim overlay that swallowed every click. |
 | `hyprmuxctl debug` | App active, key window, first responder, `keyboardClient`, the frames of HUD panels on screen, and the open picker (query, rows, selection). Use it for any "wrong window" bug, and to find where to click a notification. |
 | `hyprmuxctl surfaces` | References, capabilities, workspaces, frames, focus, groups, URLs, and terminal directories. |

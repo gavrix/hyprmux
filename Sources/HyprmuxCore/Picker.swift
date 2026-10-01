@@ -141,6 +141,8 @@ public struct Picker: Sendable {
     public let searchesDetail: Bool
     /// Hint shown in the empty query field.
     public var placeholder: String?
+    /// The one disabled row shown when the picker has no items at all ("No apps").
+    public var emptyText: String?
 
     public private(set) var query = ""
     public private(set) var rows: [Row] = []

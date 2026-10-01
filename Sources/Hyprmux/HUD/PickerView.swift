@@ -17,6 +17,8 @@ final class PickerField: NSTextField {
 final class PickerListView: FlippedView {
     var picker: Picker
     var theme: HUDTheme
+    /// Row icons by item id (the launcher's app icons). Empty: rows have none.
+    var icons: [String: NSImage] = [:]
     var rowHeight: CGFloat = 24
     var sidePadding: CGFloat = 14
     var onClick: ((Int) -> Void)?
@@ -40,7 +42,8 @@ final class PickerListView: FlippedView {
         let lineH = ceil(font.ascender - font.descender)
         guard !picker.rows.isEmpty else {
             let q = picker.query.trimmingCharacters(in: .whitespaces)
-            let text = picker.allowsCustom && !q.isEmpty ? "↩  use “\(q)”" : "No matches"
+            let text = picker.allowsCustom && !q.isEmpty ? "↩  use “\(q)”"
+                : picker.items.isEmpty ? picker.emptyText ?? "No matches" : "No matches"
             let s = NSAttributedString(string: text, attributes: [.font: font, .foregroundColor: theme.secondary])
             s.draw(at: CGPoint(x: sidePadding + pointerWidth, y: (rowHeight - lineH) / 2))
             return
@@ -62,7 +65,13 @@ final class PickerListView: FlippedView {
                 line.append(NSAttributedString(string: "  ", attributes: [.font: font]))
                 line.append(highlighted(item.detail, row.detailMatches, color: theme.secondary))
             }
-            let x = sidePadding + pointerWidth
+            var x = sidePadding + pointerWidth
+            if !icons.isEmpty {
+                let side = max(12, rowHeight - 6)
+                icons[item.id]?.draw(in: CGRect(x: x, y: y + (rowHeight - side) / 2, width: side, height: side),
+                                     from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+                x += side + 8
+            }
             line.draw(with: CGRect(x: x, y: y + (rowHeight - lineH) / 2, width: bounds.width - x - sidePadding, height: lineH),
                       options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
         }
@@ -130,10 +139,11 @@ final class PickerView: DecoratedView, NSTextFieldDelegate {
     /// A row was clicked.
     var onPick: ((Int) -> Void)?
 
-    init(picker: Picker, theme: HUDTheme) {
+    init(picker: Picker, theme: HUDTheme, icons: [String: NSImage] = [:]) {
         self.picker = picker
         self.theme = theme
         list = PickerListView(picker: picker, theme: theme)
+        list.icons = icons
         super.init(decoration: theme.decoration, active: true, blurBlending: .withinWindow)
         clip.addSubview(content)
         for l in [promptLabel, counter] {

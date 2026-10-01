@@ -164,6 +164,15 @@ final class AdapterTests: XCTestCase {
 
     // MARK: IPC
 
+    func testParsesSnapshot() {
+        let path = "/tmp/a tile.png"
+        let encoded = Data(path.utf8).base64EncodedString()
+        XCTAssertEqual(try IPCRequest.parse("snapshot --surface 3 --base64 \(encoded)").get(), .snapshot(surface: SurfaceReference(3), path: path))
+        XCTAssertEqual(try IPCRequest.parse("snapshot --base64 \(encoded)").get(), .snapshot(surface: nil, path: path))
+        let relative = Data("a.png".utf8).base64EncodedString()
+        XCTAssertThrowsError(try IPCRequest.parse("snapshot --base64 \(relative)").get())
+    }
+
     func testParsesSendScroll() {
         XCTAssertEqual(try IPCRequest.parse("sendscroll , -3, 100 200").get(), .sendScroll([], lines: -3, at: CGPoint(x: 100, y: 200)))
         XCTAssertThrowsError(try IPCRequest.parse("sendscroll , lots, 100 200").get())

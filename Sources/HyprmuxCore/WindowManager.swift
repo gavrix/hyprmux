@@ -33,6 +33,8 @@ public enum Effect: Equatable, Sendable {
     case spawnWeb(url: String)
     case spawnSim(query: String)
     case spawnAndroid(query: String)
+    /// Open a catalog app (docs/APPS.md): a name or id, then arguments.
+    case launch(String)
     case simButton(ClientID, String)
     case webNav(ClientID, WebNav)
     case close(ClientID)
@@ -230,6 +232,7 @@ public final class WindowManager {
         case .web(let url): perform(.spawnWeb(url: url))
         case .sim(let q): perform(.spawnSim(query: q))
         case .android(let q): perform(.spawnAndroid(query: q))
+        case .launch(let app): perform(.launch(app))
         case .simButton(let b): if let f = subject { perform(.simButton(f, b)) }
         case .webNav(let n): if let f = subject { perform(.webNav(f, n)) }
         case .killActive: if let f = subject { perform(.close(f)) }

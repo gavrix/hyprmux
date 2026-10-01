@@ -58,6 +58,8 @@ public enum PickerKind: String, Equatable, Sendable, CaseIterable {
     case layout
     /// Save the active workspace as a layout.
     case saveLayout = "savelayout"
+    /// The launcher: every app Hyprmux can open (docs/APPS.md).
+    case apps
 }
 
 public enum FullscreenMode: Int, Equatable, Sendable {
@@ -79,6 +81,9 @@ public enum Dispatcher: Equatable, Sendable {
     case android(String)
     /// Press a simulator hardware button: home, lock.
     case simButton(String)
+    /// Open an app from the catalog in a new tile: its name or id, then arguments.
+    /// Empty opens the launcher.
+    case launch(String)
     case killActive
     case moveFocus(Direction)
     case moveWindow(Direction)
@@ -132,6 +137,7 @@ public enum Dispatcher: Equatable, Sendable {
         case "web", "openurl": return .success(.web(a))
         case "sim", "simulator": return .success(.sim(a))
         case "android", "avd": return .success(.android(a))
+        case "launch": return .success(.launch(a))
         case "simbutton":
             guard ["home", "lock"].contains(a.lowercased()) else { return .failure(.init("simbutton: expected home or lock")) }
             return .success(.simButton(a.lowercased()))
@@ -213,7 +219,7 @@ extension Dispatcher {
              .toggleSplit, .swapSplit, .splitRatio, .cycleNext, .centerWindow,
              .toggleGroup, .changeGroupActive, .moveIntoGroup, .moveOutOfGroup, .moveGroupWindow:
             return true
-        case .exec, .web, .sim, .android, .workspace, .toggleSpecialWorkspace, .focusCurrentOrLast,
+        case .exec, .web, .sim, .android, .launch, .workspace, .toggleSpecialWorkspace, .focusCurrentOrLast,
              .submap, .renameWorkspace, .picker, .monitorFullscreen, .reload, .exit:
             return false
         }

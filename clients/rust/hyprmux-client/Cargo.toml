@@ -1,0 +1,13 @@
+[package]
+name = "hyprmux-client"
+version = "0.1.0"
+edition = "2021"
+description = "Client for the Hyprmux client protocol (docs/CLIENT_PROTOCOL.md): XPC through the broker, IOSurface buffers, typed events."
+license = "MIT"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+block2 = "0.6"

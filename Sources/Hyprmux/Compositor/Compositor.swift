@@ -23,9 +23,15 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
     var views: [ClientID: ClientView] = [:]
     /// Serves client apps (docs/CLIENT_PROTOCOL.md).
     let clientServer = ClientServer()
+    /// Registers the bundled broker agent with macOS (Compositor+Clients).
+    let broker = BrokerRegistration()
+    /// The Login Items notice shows once per launch on its own.
+    var brokerApprovalShown = false
     /// Restored app tiles waiting to be relaunched together.
     var pendingAppRestores: [ClientSurface] = []
     let adapters = AdapterRuntime()
+    /// The `.hmapp`s the launcher lists (docs/APPS.md).
+    let apps = AppRuntime()
     /// Agents' resume reports, by terminal (see `hyprmuxctl resume`).
     var resumeReports: [ClientID: ResumeReport] = [:]
     /// Pending debounced session save.
@@ -135,12 +141,22 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         }
         nc.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
             self?.window.applyPresentation()
+            // Back from System Settings: the user may have allowed the broker.
+            self?.broker.recheck()
         }
     }
 
     func start() {
-        ClientSurface.shortcutsFirst = config.appShortcuts == "app"
+        ClientSurface.passes = { [weak self] tile, event in
+            guard let self else { return false }
+            return self.appPasses(tile, self.modifiers(event.modifierFlags), event.keyCode)
+        }
         loadAdapters()
+        // The catalog as it was on disk, so a restored session finds its apps by id; the
+        // generated ones are refreshed in the background.
+        loadApps()
+        refreshApps()
+        startBrokerRegistration()
         startClientServer()
         window.makeKeyAndOrderFront(nil)
         if config.fullscreenStyle == "fill", MonitorWindow.wasFilledAtQuit, Self.fixedWindowSize == nil { setMonitorFullscreen(true) }
@@ -159,8 +175,10 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
 
     func reload(_ newConfig: HyprmuxConfig) {
         let ghosttyChanged = newConfig.ghostty != config.ghostty
+        let brokerSettingChanged = newConfig.registerBroker != config.registerBroker
         config = newConfig
-        ClientSurface.shortcutsFirst = newConfig.appShortcuts == "app"
+        if brokerSettingChanged { broker.update(setting: newConfig.registerBroker) }
+
         wm.settings = newConfig.wm
         window.collectionBehavior = newConfig.fullscreenStyle == "native" ? [.fullScreenPrimary] : [.fullScreenNone]
         if newConfig.fullscreenStyle == "native", window.isFilled { window.exitFill() }
@@ -171,6 +189,8 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         syncConfigErrors()
         for c in newConfig.exec { spawn(command: c, inheritFrom: nil) }
         loadAdapters()
+        loadApps()
+        refreshApps()
         monitorChanged(animated: true)
     }
 
@@ -450,6 +470,8 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
             presentLayoutPicker()
         case .saveLayout:
             presentSaveLayoutPrompt()
+        case .apps:
+            presentAppLauncher()
         case .renameWorkspace:
             let n = wm.activeWorkspace
             var picker = Picker(title: "name \(n)", mode: .prompt, query: wm.name(of: n) ?? "")
@@ -591,6 +613,8 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
             bar.submap = name
         case .picker(let kind):
             DispatchQueue.main.async { [weak self] in self?.presentPicker(kind) }
+        case .launch(let app):
+            DispatchQueue.main.async { [weak self] in self?.launchFromBind(app) }
         case .reload:
             NotificationCenter.default.post(name: .hyprmuxReloadConfig, object: nil)
         case .monitorFullscreen:
@@ -868,12 +892,17 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         } as Any)
     }
 
-    /// With `app:shortcuts = app`, a focused app tile gets chords before binds, except
-    /// binds with the p flag. Submaps are Hyprmux's own modes, so they keep their keys.
-    private var appTileHasKeyboard: Bool {
-        guard config.appShortcuts == "app", submap == "reset", let f = wm.focused,
-              let tile = views[f]?.surface as? ClientSurface else { return false }
-        return tile.connection != nil && window.firstResponder === tile
+    /// Binds win in every tile, except chords the focused app's `pass` list claims.
+    /// Submaps are Hyprmux's own modes, so they keep their keys.
+    private func appPasses(_ tile: ClientSurface, _ mods: Modifiers, _ code: UInt16) -> Bool {
+        guard submap == "reset", tile.connection != nil, window.firstResponder === tile,
+              let id = tile.appEntry, let pass = config.appPass[id] else { return false }
+        return pass.contains(AppChord(mods: mods, key: code))
+    }
+
+    private var focusedAppTile: ClientSurface? {
+        guard let f = wm.focused else { return nil }
+        return views[f]?.surface as? ClientSurface
     }
 
     private func handleKey(_ e: NSEvent) -> NSEvent? {
@@ -892,10 +921,9 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
             return nil
         }
         let mods = modifiers(e.modifierFlags)
-        let appHasKeyboard = appTileHasKeyboard
+        if let tile = focusedAppTile, appPasses(tile, mods, e.keyCode) { return e }
         guard let bind = config.binds.first(where: {
             $0.submap == submap && !$0.flags.contains("m") && $0.mods == mods && $0.trigger == .key(e.keyCode)
-                && (!appHasKeyboard || $0.flags.contains("p"))
         }) else { return e }
         consumedKeyUps.insert(e.keyCode)
         if e.isARepeat && !bind.flags.contains("e") { return nil }
@@ -1018,10 +1046,16 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
 
     // MARK: IPC
 
-    /// `adapters match` probes off the main thread; everything else replies here.
+    /// `adapters match`, `apps refresh`, `apps add`, and `broker` wait off the main thread
+    /// (probes, a scan, launchd); everything else replies here.
     func handleIPCReply(_ line: String) -> IPCReply {
-        if case .success(.adaptersMatch(let target)) = IPCRequest.parse(line) { return adaptersMatch(target) }
-        return .text(handleIPC(line))
+        switch IPCRequest.parse(line) {
+        case .success(.adaptersMatch(let target)): return adaptersMatch(target)
+        case .success(.appsRefresh): return appsRefresh()
+        case .success(.appsAdd(let words)): return appsAdd(words)
+        case .success(.broker(let action)): return brokerReply(action)
+        default: return .text(handleIPC(line))
+        }
     }
 
     func handleIPC(_ line: String) -> String {
@@ -1092,11 +1126,17 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
             case .adaptersReload:
                 loadAdapters()
                 return json(adaptersJSON())
-            case .adaptersMatch:
-                return "error: adapters match runs through handleIPCReply"
+            case .adaptersMatch, .appsRefresh, .appsAdd, .broker:
+                return "error: this request runs through handleIPCReply"
+            case .apps:
+                return json(appsJSON())
+            case .launch(let words, let focus):
+                return launchReply(words, focus: focus)
             case .caption(let text):
                 hud.caption.show(text)
                 return "ok"
+            case .sendMenu(let title):
+                return Self.performMenuItem(title) ? "ok" : "error: no enabled menu item \(title)"
             case .resume(let r):
                 let id = ClientID(r.client)
                 guard views[id]?.surface is TerminalView else { return "error: no terminal \(r.client)" }
@@ -1171,6 +1211,11 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
             case .sendDrag(let mods, let button, let from, let to):
                 injectDrag(mods, button: button, from: from, to: to)
                 return "ok"
+            case .snapshot(let reference, let path):
+                guard let (id, surface) = automationTarget(reference) else { return "error: surface not found" }
+                guard let tile = surface as? ClientSurface else { return "error: surface \(id.raw) is not an app tile" }
+                do { try tile.writeSnapshot(to: URL(fileURLWithPath: path)) } catch { return "error: \(error.localizedDescription)" }
+                return "ok"
             case .sendScroll(let mods, let lines, let at):
                 // A line-unit CGEvent, like a notched wheel: AppKit derives deltaY and the
                 // raw notch count from it, as for real hardware.
@@ -1210,7 +1255,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         }
     }
 
-    private func clientInfo(_ p: Placement) -> [String: Any] {
+    func clientInfo(_ p: Placement) -> [String: Any] {
         let s = views[p.id]?.surface
         var info: [String: Any] = [
             "id": p.id.raw, "ref": SurfaceReference(p.id.raw).description,
@@ -1336,6 +1381,25 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
             }
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(16 * (steps + 1))) { post(types.2, to) }
+    }
+
+    /// `sendmenu TITLE`: performs the main-menu item with that title, as a click would.
+    /// Case doesn't matter, and "..." matches "…". False when no enabled item matches.
+    static func performMenuItem(_ title: String) -> Bool {
+        func normalized(_ s: String) -> String { s.replacingOccurrences(of: "...", with: "…").lowercased() }
+        let wanted = normalized(title)
+        func search(_ menu: NSMenu) -> Bool {
+            menu.update()
+            for (i, item) in menu.items.enumerated() {
+                if let sub = item.submenu, search(sub) { return true }
+                if normalized(item.title) == wanted, item.isEnabled, item.action != nil {
+                    menu.performActionForItem(at: i)
+                    return true
+                }
+            }
+            return false
+        }
+        return NSApp.mainMenu.map(search) ?? false
     }
 
     /// What an Option chord types on the current keyboard layout, like a real key event:

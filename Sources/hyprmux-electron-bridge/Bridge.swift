@@ -5,9 +5,14 @@ import Foundation
 import HyprmuxClientKit
 import IOSurface
 
+/// The bridge's exit status once `stopApp` runs. The app's termination handler exits
+/// with it, so a refused launch doesn't end with status 0.
+nonisolated(unsafe) var stopExitCode: Int32 = 0
+
 /// Stops the app and exits. Electron apps may delay or veto SIGTERM (VS Code runs its
 /// own quit lifecycle), so SIGKILL follows after a grace period.
 func stopApp(_ process: Process?, exitCode: Int32) -> Never {
+    stopExitCode = exitCode
     if let process, process.isRunning {
         process.terminate()
         let deadline = Date().addingTimeInterval(3)
@@ -17,7 +22,8 @@ func stopApp(_ process: Process?, exitCode: Int32) -> Never {
     exit(exitCode)
 }
 
-final class Bridge {
+/// Its state lives on the main queue; the injection task hops back there.
+final class Bridge: @unchecked Sendable {
     private let options: Options
     private var client: HMClient!
     private var channel: UnixChannel!
@@ -37,6 +43,11 @@ final class Bridge {
     private let appName: String
     private var appScale: Double = 2
     private var signalSources: [DispatchSourceSignal] = []
+    private var inspector: InspectorWatch?
+    private var inspectorPort = 0
+    private var launchedAt = Date()
+    /// The hook loaded and the inspector is closed.
+    private var injected = false
     private let debug = ProcessInfo.processInfo.environment["HYPRMUX_HOOK_DEBUG"] != nil
 
     init(options: Options) throws {
@@ -71,8 +82,11 @@ final class Bridge {
 
         // 3. The app itself.
         guard let exe = bundle.executableURL else { stderr("bridge: no executable in \(options.appPath)"); exit(1) }
+        // The inspector's WebSocket URL goes to stderr only, never to its HTTP endpoints
+        // (docs/ADAPTERS.md, "Security").
         let port = freePort()
-        var args = ["--inspect-brk=\(port)"]
+        inspectorPort = port
+        var args = ["--inspect-brk=\(port)", "--inspect-publish-uid=stderr"]
         args += adapterArguments()
         args += options.appArgs
         let selfPath = URL(fileURLWithPath: CommandLine.arguments[0]).standardizedFileURL
@@ -98,6 +112,7 @@ final class Bridge {
         env["EE_SCALE"] = "\(NSScreen.main?.backingScaleFactor ?? 2)"
         env["EE_BRIDGE_BIN"] = selfPath.path
         env["EE_APP"] = adapter()
+        if let userData = hookUserData { env["EE_USER_DATA"] = userData }
 
         let process = Process()
         process.executableURL = exe
@@ -105,9 +120,19 @@ final class Bridge {
         process.environment = env
         process.terminationHandler = { [weak self] _ in
             stderr("bridge: \(self?.appName ?? "app") exited")
-            exit(0)
+            exit(stopExitCode)
         }
+        // The app's stderr comes through the bridge: it carries the inspector's URL and
+        // its session reports. InspectorWatch forwards every line to our own stderr.
+        let appStderr = Pipe()
+        process.standardError = appStderr
+        let watch = InspectorWatch(port: port)
+        watch.onEvent = { [weak self] event in self?.inspectorEvent(event) }
+        inspector = watch
         do { try process.run() } catch { stderr("bridge: can't start \(appName): \(error.localizedDescription)"); exit(1) }
+        launchedAt = Date()
+        try? appStderr.fileHandleForWriting.close()
+        watch.start(reading: appStderr.fileHandleForReading.fileDescriptor)
         appProcess = process
         // The app lives and dies with the bridge: killing the bridge must not orphan it.
         for sig in [SIGTERM, SIGINT, SIGHUP] {
@@ -136,16 +161,66 @@ final class Bridge {
         }
 
         stderr("bridge: \(appName) started (pid \(process.processIdentifier)), injecting")
-        // 4. Inject the hook.
+        // 4. Inject the hook. It closes the inspector as it loads.
         Task {
             do {
-                try await Injector().inject(port: port, hookPath: hookPath, entryRegex: entryRegex)
-                stderr("bridge: hook injected into \(appName)")
+                let source = try await Injector().inject(port: port, stderrURL: { watch.webSocketURL },
+                                                         hookPath: hookPath, entryRegex: entryRegex)
+                if source == .http {
+                    stderr("bridge: \(appName) ignored --inspect-publish-uid; found its inspector over HTTP")
+                } else if await Injector.publishesOverHTTP(port: port) {
+                    stderr("bridge: \(appName) also lists its inspector over HTTP")
+                }
+                DispatchQueue.main.async { self.confirmInspectorClosed(process) }
             } catch {
                 stderr("bridge: injection failed: \(error.localizedDescription)")
                 stopApp(process, exitCode: 1)
             }
         }
+        // A launch that never gets the hook in (the app ran on without stopping at its
+        // entry script, say) must not leave the inspector open.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 45) { [weak self] in
+            guard let self, !self.injected else { return }
+            self.refuse("the hook didn't load into \(self.appName) in time")
+        }
+    }
+
+    /// Stops the app and fails the launch. Hyprmux shows the last stderr line to
+    /// developers (`hyprmuxctl adapters`), not to users.
+    private func refuse(_ reason: String) -> Never {
+        stderr("bridge: \(reason); stopping \(appName)")
+        stopApp(appProcess, exitCode: 1)
+    }
+
+    /// Only the bridge may ever attach. Another session, before or after ours, means
+    /// some other process found the inspector: stop the app before it can do more.
+    private func inspectorEvent(_ event: InspectorWatch.Event) {
+        switch event {
+        case .attached(let sessions):
+            if sessions > 1 { refuse("another debugger attached to \(appName)'s inspector") }
+        case .closed(let sessions):
+            if sessions > 1 { refuse("another debugger attached to \(appName)'s inspector") }
+            if sessions == 0 { stderr("bridge: \(appName)'s inspector reported no sessions; can't check for others") }
+        }
+    }
+
+    /// The hook closed the inspector before injection returned. Check that the port is
+    /// really gone, and log how long it was open.
+    private func confirmInspectorClosed(_ process: Process) {
+        let deadline = Date().addingTimeInterval(2)
+        func check() {
+            if !loopbackPortAccepts(inspectorPort) {
+                injected = true
+                let ms = Int(Date().timeIntervalSince(launchedAt) * 1000)
+                stderr("bridge: hook injected into \(appName); inspector closed \(ms) ms after launch")
+                // Later "Debugger attached." lines come from child processes.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.inspector?.stopCounting() }
+                return
+            }
+            guard Date() < deadline else { refuse("\(appName)'s inspector stayed open after injection") }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.01, execute: check)
+        }
+        check()
     }
 
     /// Per-adapter launch arguments. Profiles under Hyprmux's support directory keep a
@@ -154,16 +229,30 @@ final class Bridge {
         let adapter = adapter()
         let given = Set(options.appArgs.filter { $0.hasPrefix("--") }.map { $0.components(separatedBy: "=")[0] })
         var extra: [String] = []
-        switch adapter {
-        case "vscode", "cursor":
-            let dir = FileManager.default.homeDirectoryForCurrentUser
-                .appendingPathComponent("Library/Application Support/Hyprmux/electron-apps/\(appName)")
-            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-            if !given.contains("--user-data-dir") { extra += ["--user-data-dir", dir.appendingPathComponent("userdata").path] }
-            if !given.contains("--extensions-dir") { extra += ["--extensions-dir", dir.appendingPathComponent("extensions").path] }
-        default: break
+        // VS Code and Cursor read --user-data-dir themselves. Other apps get the same
+        // folder from the hook (app.setPath), see profileDirectory.
+        if ["vscode", "cursor"].contains(adapter) {
+            if !given.contains("--user-data-dir") { extra += ["--user-data-dir", profileDirectory.appendingPathComponent("userdata").path] }
+            if !given.contains("--extensions-dir") { extra += ["--extensions-dir", profileDirectory.appendingPathComponent("extensions").path] }
         }
         return extra
+    }
+
+    /// Every lifted app gets its own profile (docs/APPS.md, "Profiles"), so it runs
+    /// next to the user's own copy: Electron apps allow one instance per profile, and a
+    /// second one on the same profile hands off to the first and quits.
+    private var profileDirectory: URL {
+        let dir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/Hyprmux/electron-apps/\(appName)")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    /// The user data folder the hook sets with app.setPath, unless the user passed
+    /// --user-data-dir (then the app decides).
+    private var hookUserData: String? {
+        let given = options.appArgs.contains { $0 == "--user-data-dir" || $0.hasPrefix("--user-data-dir=") }
+        return given ? nil : profileDirectory.appendingPathComponent("userdata").path
     }
 
     private func adapter() -> String {
@@ -210,11 +299,13 @@ final class Bridge {
         case "window":
             addWindow(id: m["win"] as? Int ?? 0, title: m["title"] as? String ?? appName,
                       width: m["w"] as? Int ?? 800, height: m["h"] as? Int ?? 600)
-        case "closed":
+        case "closed", "hidden":
+            // A hidden window (the app's ⌘W on macOS) loses its tile like a closed one.
             guard let id = m["win"] as? Int, let w = windows.removeValue(forKey: id) else { return }
             if focusedWindow == id { focusedWindow = nil }
             surfaces[w.toplevel.surfaceID] = nil
             w.toplevel.destroy()
+            quitIfNoWindows()
         case "frame":
             guard let id = m["win"] as? Int, let w = windows[id] else { return }
             if tracing, let ts = m["ts"] as? Double {
@@ -259,6 +350,18 @@ final class Bridge {
             }
         default:
             break
+        }
+    }
+
+    /// The app's last tile closed: quit it, unless a window comes back within a few
+    /// seconds (an app replacing its window, VS Code reloading). Closing the last tile
+    /// means the user is done with the app; a windowless app would only linger.
+    private func quitIfNoWindows() {
+        guard windows.isEmpty else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+            guard let self, self.windows.isEmpty else { return }
+            stderr("bridge: \(self.appName) has no windows left, quitting it")
+            stopApp(self.appProcess, exitCode: 0)
         }
     }
 

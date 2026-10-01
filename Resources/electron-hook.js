@@ -13,6 +13,13 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { app, BrowserWindow, dialog, Menu } = require('electron');
 
+// The app's own profile in Hyprmux (docs/APPS.md, "Profiles"). Set before the app's
+// code runs, so its user data and its single-instance lock live there, apart from the
+// user's own copy of the app.
+if (process.env.EE_USER_DATA) {
+  try { app.setPath('userData', process.env.EE_USER_DATA); } catch (e) { /* logged once connected */ }
+}
+
 const SOCK = process.env.EE_HOOK_SOCKET;
 const SCALE = Number(process.env.EE_SCALE || 2);
 const BRIDGE_BIN = process.env.EE_BRIDGE_BIN;
@@ -231,10 +238,28 @@ function track(win) {
   win.isFocused = () => focusedRec === rec;
   // Never show the empty native window. Leave its position alone: OSR scale follows
   // the display under it.
-  win.show = win.showInactive = () => {};
   win.focus = () => setFocused(rec);
   win.setOpacity(0);
-  const hide = () => { if (win.isVisible()) win.hide(); };
+  // The hook keeps the native window hidden with the real hide(). The app's own
+  // hide() closes the tile: on macOS, Logseq and others answer ⌘W by hiding their
+  // last window instead of closing it. Showing it again brings the tile back.
+  const nativeHide = win.hide.bind(win);
+  const hide = () => { if (win.isVisible()) nativeHide(); };
+  rec.hidden = false;
+  win.hide = () => {
+    if (!rec.hidden) {
+      rec.hidden = true;
+      write({ t: 'hidden', win: rec.id });
+    }
+    hide();
+  };
+  win.show = win.showInactive = () => {
+    if (!rec.hidden) return;
+    rec.hidden = false;
+    const [cw, ch] = win.getContentSize();
+    write({ t: 'window', win: rec.id, title: win.getTitle() || '', w: cw, h: ch });
+    wc.invalidate();
+  };
   win.on('show', hide);
   setImmediate(hide);
   hide();
@@ -487,8 +512,13 @@ app.on('ready', () => {
   log('dialogs and menus proxied');
 });
 
-// The bridge injected us through the inspector. Close it so no debugger port stays open.
-setTimeout(() => { try { require('inspector').close(); } catch {} }, 2000);
-
 connect(0);
 log('hook loaded; electron', process.versions.electron, 'adapter', ADAPTER);
+
+// The bridge injected us through the inspector, and the hook needs nothing more from
+// it. Close it now, while the bridge's evaluate call is still running: that ends the
+// bridge's session, and the port stops accepting connections (docs/ADAPTERS.md,
+// "Security"). Then tell the bridge on stderr, after every session report the
+// inspector printed there, so it can count them.
+try { require('inspector').close(); } catch (e) { log('can not close the inspector', String(e)); }
+try { fs.writeSync(2, 'hyprmux-hook: inspector closed\n'); } catch {}

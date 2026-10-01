@@ -105,10 +105,16 @@ public struct SessionTile: Codable, Equatable, Sendable {
     public var app: String?
     /// Client app: the toplevel's restore token (docs/CLIENT_PROTOCOL.md, section 10).
     public var restoreToken: String?
+    /// Client app: the `.hmapp` id it was launched from (docs/APPS.md). Restores by id;
+    /// `app` stays for tiles saved before apps had ids.
+    public var appEntry: String?
+    /// Client app: the user's arguments to the `.hmapp`.
+    public var appArgs: [String]?
 
     public init(kind: String, key: Int? = nil, title: String? = nil, cwd: String? = nil, command: String? = nil,
                 agent: SessionAgent? = nil, url: String? = nil, sim: String? = nil,
-                avd: String? = nil, avdName: String? = nil, app: String? = nil, restoreToken: String? = nil) {
+                avd: String? = nil, avdName: String? = nil, app: String? = nil, restoreToken: String? = nil,
+                appEntry: String? = nil, appArgs: [String]? = nil) {
         self.kind = kind
         self.key = key
         self.title = title
@@ -121,6 +127,8 @@ public struct SessionTile: Codable, Equatable, Sendable {
         self.avdName = avdName
         self.app = app
         self.restoreToken = restoreToken
+        self.appEntry = appEntry
+        self.appArgs = appArgs
     }
 }
 

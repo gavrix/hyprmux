@@ -50,6 +50,8 @@ https://github.com/user-attachments/assets/e8d17d9a-0c64-484d-a049-5247830f8e8d
   sharing and recordings (the demo above uses it).
 - **Pickers:** fzf-style lists for workspaces and running iOS or Android devices.
   Type to filter, then press Return to choose.
+- **Apps in tiles:** VS Code, Cursor, and other apps open in tiles from ⌘D. See
+  [Apps in tiles](#apps-in-tiles).
 - **Scripting:** `hyprmuxctl`, a `hyprctl`-like CLI over a Unix socket.
 
 ## Requirements
@@ -96,6 +98,7 @@ Developer ID signature and notarization.
 | ⌘↩ | new terminal |
 | ⌘B | new web tile (⌘O focuses the address bar) |
 | ⌘I | attach a booted iOS Simulator or running Android AVD |
+| ⌘D | open an app in a tile |
 | ⌘W | close |
 | ⌘H/J/K/L, ⌘ arrows | move focus |
 | ⇧⌘H/J/K/L | move the window |
@@ -115,6 +118,33 @@ Developer ID signature and notarization.
 The full default set is in [`config/hyprmux.conf`](config/hyprmux.conf).
 Keys no bind claims go to the focused tile, so ⌘C and ⌘V still work in
 terminals.
+
+## Apps in tiles
+
+Hyprmux opens some macOS apps in tiles. Press ⌘D, or choose **Hyprmux → Open
+App…**, type to filter, and press Return.
+
+- **Which apps:** apps built for Hyprmux, and most Electron apps, VS Code and
+  Cursor among them. The launcher lists only apps that can open.
+- **The first launch:** app tiles connect through a small helper that runs in
+  the background. The first time Hyprmux starts, macOS says it can run in the
+  background, and lists it in System Settings → General → Login Items &
+  Extensions. Keep it allowed there. If it's off, Hyprmux shows a notice that
+  opens that page.
+- **A separate profile:** an Electron app in Hyprmux runs next to your normal
+  copy, with its own settings, sign-ins, and extensions. Set it up once inside
+  Hyprmux. See [Profiles](docs/APPS.md#profiles).
+- **Shortcuts:** Hyprmux's binds win over the app's shortcuts. Rebind the
+  clash in the app, or give the chord to that app with a
+  [pass list](docs/CONFIGURATION.md#app).
+- **Limitations:**
+  - Drag and drop doesn't work in Electron apps, inside the app or from Finder.
+  - An Electron app's own menu bar isn't reachable. Use its command palette
+    instead. In VS Code and Cursor, press F1: ⇧⌘P is a Hyprmux bind.
+  - Some apps can't open in a tile at all. They don't appear in the launcher.
+
+Zed is coming as an optional download. See [Apps](docs/APPS.md) for the
+details.
 
 ## Configuration
 
@@ -156,6 +186,7 @@ to copy its `surface:N` reference.
 - [Architecture](docs/ARCHITECTURE.md): the model, the compositor, surfaces, and
   the Chromium and Simulator bridges.
 - [Configuration](docs/CONFIGURATION.md): options, binds, dispatchers, IPC.
+- [Apps](docs/APPS.md): opening apps in tiles, `.hmapp` bundles, profiles.
 - [Terminal automation](docs/AUTOMATION.md): surface discovery, targeting, agent workflows, and the bundled skill.
 - [Development](docs/DEVELOPMENT.md): building, testing in a separate instance,
   the test tools, and pitfalls.

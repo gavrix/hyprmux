@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Loads or unloads the client-protocol broker with launchctl, for development.
 # A shipping app registers it with SMAppService instead (docs/CLIENT_PROTOCOL.md).
+# Both use one label, so a loaded dev broker stops Hyprmux from registering its own.
 #
 # Usage: scripts/dev-broker.sh load [path/to/Hyprmux.app]   (default: build/Hyprmux.app)
 #        scripts/dev-broker.sh unload
@@ -33,7 +34,7 @@ case "${1:-}" in
     launchctl print "$DOMAIN/$LABEL" 2>/dev/null | grep -E "state|program|pid" || echo "$LABEL isn't loaded"
     ;;
   *)
-    sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'
     exit 2
     ;;
 esac

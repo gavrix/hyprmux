@@ -374,6 +374,14 @@ specified in [CLIENT_PROTOCOL.md](CLIENT_PROTOCOL.md).
   listener and registers its endpoint with the broker, under
   `HYPRMUX_INSTANCE`. Clients look it up there. The broker accepts
   registrations only from processes signed like itself.
+- **Loading the broker:** `BrokerRegistration` registers the bundled launch
+  agent with `SMAppService` on every launch, off the main thread, before
+  `ClientServer` starts. It skips outside an app bundle, when
+  `misc:register_broker` is off, and when another job already holds the
+  broker label (the dev broker, or another copy's agent). When macOS wants
+  approval, `Compositor+Broker` shows a notice that opens Login Items, and
+  checks again whenever Hyprmux becomes active. `ClientServer` retries the
+  broker every 5 seconds, and at once when the agent turns enabled.
 - **`ClientConnection`:** one per client. It keeps the client's buffers,
   surfaces, and toplevels, and checks every message. A bad message ends the
   connection with an `error`.
@@ -388,8 +396,14 @@ specified in [CLIENT_PROTOCOL.md](CLIENT_PROTOCOL.md).
     server let go of it.
 - **Launching:** `new-surface --type app -- TARGET ARGS` reserves a tile
   with a launch token and starts the target. TARGET is an executable, an
-  `.app`, or a bundle id. The client's first toplevel with that token fills
-  the tile. After 20 seconds without one, the tile shows a notice and closes.
+  `.app`, a `.hmapp`, or a bundle id. The client's first toplevel with that token fills
+  the tile. After 20 seconds without one, the tile closes with a notice,
+  "NAME didn't open." A launch that fails says "Couldn't open NAME.", and a
+  restore "Couldn't reopen NAME." Notices never say why: the reason goes to
+  the log, and for adapters to `hyprmuxctl adapters` and the adapter log.
+  An executable Hyprmux started keeps its tiles while it runs, up to 2
+  minutes, since large apps (a debug Zed build) take longer to open a window.
+  If it exits first, the launch fails at once.
   A client that connects on its own gets a new tile.
 - **Adapters:** an `.app` that isn't a client runs through an adapter, an
   executable that is a client and translates the app. Manifests choose the
@@ -397,6 +411,24 @@ specified in [CLIENT_PROTOCOL.md](CLIENT_PROTOCOL.md).
   loads and matches them. `AdapterRuntime` in `Compositor+Adapters` tracks
   every process it launched for `hyprmuxctl adapters`. Hyprmux itself has no
   app-specific code. See [ADAPTERS.md](ADAPTERS.md).
+- **The app catalog:** what the launcher (`picker, apps`) lists. Every entry
+  is a `.hmapp`, a folder bundle with an `Info.json` ([APPS.md](APPS.md)).
+  - **In the core:** `HMAppManifest` parses and writes `Info.json`;
+    `AppCatalog` loads the generated and installed folders and merges them by
+    id; `AppScanner` finds `.app` bundles in fixed folders; `AppGenerator`
+    classifies each one (native client, adapter, or nothing), caches probe
+    results, and writes, rewrites, or deletes only the bundles it owns. The
+    probe and the icon come in as closures, so tests spawn no processes.
+  - **In the app:** `AppRuntime` (`Compositor+Apps`) owns the catalog, runs
+    generation on a background queue at startup, on reload, on `apps refresh`,
+    and when the launcher opens, and publishes the result on main. It keeps
+    recent launches and trust answers next to the generated apps, in
+    `~/Library/Application Support/Hyprmux/Apps/` (a subfolder per
+    `HYPRMUX_INSTANCE` other than `default`).
+  - **Launching an entry** builds the same `AppCommand` as `new-surface`, and
+    reuses its launch path. `ClientServer` remembers each launch's entry id,
+    so every tile of that launch saves `appEntry` in the session and comes
+    back by id.
 
 ## Rendering pipeline notes
 

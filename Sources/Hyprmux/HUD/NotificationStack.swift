@@ -8,6 +8,8 @@ final class NotificationStack {
     private unowned let hud: HUD
     private var queue: NoticeQueue
     private var views: [Notice.ID: NotificationView] = [:]
+    /// What clicking a notice does, besides closing it ("open Login Items").
+    private var actions: [Notice.ID: () -> Void] = [:]
     private var timer: DispatchWorkItem?
 
     init(hud: HUD) {
@@ -21,14 +23,17 @@ final class NotificationStack {
     private let defaultStyle = LayerAnimationStyle.slide(nil)
 
     /// Shows a notification. `sticky` ones stay until clicked (or dismissed by key).
-    /// A `key` updates an existing notice in place instead of adding one.
+    /// A `key` updates an existing notice in place instead of adding one. `action` runs
+    /// when the notice is clicked.
     @discardableResult
     func post(_ level: NoticeLevel, title: String = "", _ body: String,
-              sticky: Bool = false, timeout: Double? = nil, key: String? = nil, source: ClientID? = nil) -> Notice.ID {
+              sticky: Bool = false, timeout: Double? = nil, key: String? = nil, source: ClientID? = nil,
+              action: (() -> Void)? = nil) -> Notice.ID {
         let t = timeout ?? settings.notificationTimeout
         let n = Notice(level: level, title: title, body: body,
                        timeout: sticky || t <= 0 ? nil : t, key: key, source: source)
         let id = queue.post(n, now: now)
+        actions[id] = action
         log.info("notice \(level.rawValue, privacy: .public): \(title, privacy: .public) \(body, privacy: .public)")
         relayout(animated: true)
         return id
@@ -66,6 +71,7 @@ final class NotificationStack {
         let notices = queue.notices
 
         let live = Set(notices.map(\.id))
+        actions = actions.filter { live.contains($0.key) }
         for (id, v) in views where !live.contains(id) {
             v.closing = true
             views[id] = nil
@@ -109,7 +115,9 @@ final class NotificationStack {
         v.onClick = { [weak self] in
             guard let self else { return }
             if let source = self.queue.notice(id)?.source { self.hud.onFocusClient?(source) }
+            let action = self.actions[id]
             self.dismiss(id)
+            action?()
         }
         v.onHover = { [weak self] inside in
             guard let self else { return }

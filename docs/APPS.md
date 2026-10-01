@@ -105,6 +105,22 @@ apps as they are at that moment.
 Why an app is missing isn't shown in the launcher. `hyprmuxctl adapters match
 APP` explains it; see [Apps that don't appear](ADAPTERS.md#apps-that-dont-appear).
 
+## Zed
+
+Zed for Hyprmux is a build of Zed whose windows open as tiles. It's an
+optional download, built from a fork:
+[github.com/gavrix/zed](https://github.com/gavrix/zed/blob/hyprmux/HYPRMUX.md).
+
+1. Download `Zed-for-Hyprmux-VERSION-aarch64.zip` from
+   [its releases](https://github.com/gavrix/zed/releases) and unzip it.
+2. Move `Zed.hmapp` into `~/.config/hyprmux/apps/`.
+3. Run `hyprmuxctl apps refresh`, or open the launcher.
+
+It's signed and notarized, so the [trust](#trust) check passes without asking.
+It keeps its own Zed database and session, apart from a normal Zed, and
+shares the settings in `~/.config/zed`. It doesn't update itself: replace
+`Zed.hmapp` with a newer one.
+
 ## Customizing an app
 
 Copy its generated `.hmapp` into the installed folder and edit `Info.json`:

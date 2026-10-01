@@ -396,7 +396,7 @@ AccessKit trees, and Chromium has its own accessibility tree to translate.
   Swift kit: broker lookup and hello, requests, typed events on the main
   queue, and IOSurface allocation. It calls libxpc directly, so its only
   dependency is `block2`.
-- **GPUI (Zed):** a `hyprmux` module in `gpui_macos` (on a Zed branch) turns
+- **GPUI (Zed):** a `hyprmux` module in `gpui_macos` ([gavrix/zed](https://github.com/gavrix/zed/tree/hyprmux), branch `hyprmux`) turns
   GPUI windows into tiles when Hyprmux launched the process. It keeps
   `MacPlatform` for everything else.
   - GPUI's Metal renderer draws into a three-buffer IOSurface swapchain,

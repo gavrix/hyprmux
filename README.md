@@ -143,8 +143,9 @@ App…**, type to filter, and press Return.
     instead. In VS Code and Cursor, press F1: ⇧⌘P is a Hyprmux bind.
   - Some apps can't open in a tile at all. They don't appear in the launcher.
 
-Zed is coming as an optional download. See [Apps](docs/APPS.md) for the
-details.
+Zed is an optional download: get `Zed.hmapp` from
+[gavrix/zed releases](https://github.com/gavrix/zed/releases) and move it into
+`~/.config/hyprmux/apps/`. See [Apps](docs/APPS.md#zed) for the details.
 
 ## Configuration
 

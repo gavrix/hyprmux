@@ -1,10 +1,10 @@
 # Configuration
 
 Hyprmux reads `~/.config/hyprmux/hyprmux.conf`, or the file named by
-`$HYPRMUX_CONFIG`. If neither exists, it uses the built-in default, which is
-[`config/hyprmux.conf`](../config/hyprmux.conf) compiled into the app.
-**Hyprmux → Open Config…** (⌘,) writes that default to your config path the
-first time and opens it.
+`$HYPRMUX_CONFIG`. On first launch, it creates the selected path with the full
+default from [`config/hyprmux.conf`](../config/hyprmux.conf). The same default
+is compiled into the app as a fallback when file creation or reading fails.
+**Hyprmux → Open Config…** (⌘,) opens the generated file.
 
 The file reloads when you save it, whether your editor writes in place or
 replaces the file. ⇧⌘R or `hyprmuxctl reload` force a reload. Mistakes show in
@@ -156,7 +156,7 @@ Groups hold several windows as tabs in one tile.
 
 | Option | Default | Meaning |
 |---|---|---|
-| `background_color` | near black | Behind the windows. An alpha below 1 makes Hyprmux see-through; `rgba(00000000)` shows the desktop in the gaps. |
+| `background_color` | transparent | Behind the windows. An alpha below 1 makes Hyprmux see-through; `rgba(00000000)` shows the desktop in the gaps. |
 | `fullscreen_style` | `fill` | `fill`: full screen on the normal desktop, so the wallpaper stays visible. `native`: macOS full screen on its own Space. |
 
 ### `web`

@@ -11,6 +11,10 @@ final class ConfigTests: XCTestCase {
         XCTAssertEqual(c.wm.gapsOut, Insets(all: 14))
         XCTAssertEqual(c.activeBorder.colors.count, 2)
         XCTAssertEqual(c.activeBorder.angle, 45)
+        XCTAssertEqual(c.backgroundColor, Color(r: 0, g: 0, b: 0, a: 0))
+        XCTAssertEqual(c.wm.dwindle.splitWidthMultiplier, 1)
+        XCTAssertEqual(c.wm.dwindle.defaultSplitRatio, 1)
+        XCTAssertEqual(c.wm.floatSizeFraction, 0.6)
         XCTAssertTrue(c.ghostty.contains("window-padding-x = 8"))
     }
 
@@ -28,6 +32,25 @@ final class ConfigTests: XCTestCase {
         XCTAssertEqual(text.trimmingCharacters(in: .whitespacesAndNewlines),
                        defaultConfig.trimmingCharacters(in: .whitespacesAndNewlines),
                        "run scripts/gen-default-config.sh")
+    }
+
+    func testLoadOrCreateWritesDefaultWithoutReplacingExistingConfig() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("hyprmux-config-tests-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent("nested/hyprmux.conf")
+
+        let created = ConfigParser.loadOrCreate(path: file.path)
+        XCTAssertEqual(created.errors, [])
+        XCTAssertEqual(created.sourcePath, file.path)
+        XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), defaultConfig)
+
+        let custom = "general:gaps_out = 7\n"
+        try custom.write(to: file, atomically: true, encoding: .utf8)
+        let loaded = ConfigParser.loadOrCreate(path: file.path)
+        XCTAssertEqual(loaded.errors, [])
+        XCTAssertEqual(loaded.wm.gapsOut, Insets(all: 7))
+        XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), custom)
     }
 
     func testVariablesSectionsAndBinds() {
@@ -78,6 +101,8 @@ final class ConfigTests: XCTestCase {
     }
 
     func testTransparencyOptions() {
+        XCTAssertEqual(ConfigParser.parse("").backgroundColor, Color(r: 0, g: 0, b: 0, a: 0))
+
         let c = ConfigParser.parse("""
         decoration {
             inactive_opacity = 0.7

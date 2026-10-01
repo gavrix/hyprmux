@@ -131,7 +131,7 @@ public struct HyprmuxConfig: Sendable {
     public var binds: [KeyBind] = []
     public var execOnce: [String] = []
     public var exec: [String] = []
-    public var backgroundColor = Color(r: 0.07, g: 0.07, b: 0.1)
+    public var backgroundColor = Color(r: 0, g: 0, b: 0, a: 0)
     /// "fill": cover the display on the normal desktop (wallpaper stays visible behind
     /// a transparent window). "native": macOS full screen on its own Space.
     public var fullscreenStyle = "fill"
@@ -212,6 +212,24 @@ public struct HyprmuxConfig: Sendable {
 // MARK: Parser
 
 public enum ConfigParser {
+    /// Creates a full editable config when none exists, then loads it.
+    /// Creation failures fall back to the same embedded default and surface as config errors.
+    public static func loadOrCreate(path: String) -> HyprmuxConfig {
+        let expanded = (path as NSString).expandingTildeInPath
+        if !FileManager.default.fileExists(atPath: expanded) {
+            do {
+                let directory = (expanded as NSString).deletingLastPathComponent
+                try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
+                try defaultConfig.write(toFile: expanded, atomically: true, encoding: .utf8)
+            } catch {
+                var c = parse(defaultConfig)
+                c.errors.append("could not create \(expanded): \(error.localizedDescription); using built-in defaults")
+                return c
+            }
+        }
+        return load(path: expanded)
+    }
+
     public static func load(path: String) -> HyprmuxConfig {
         let expanded = (path as NSString).expandingTildeInPath
         guard let text = try? String(contentsOfFile: expanded, encoding: .utf8) else {

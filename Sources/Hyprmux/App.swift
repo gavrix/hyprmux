@@ -78,15 +78,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var startupNotes: [String] = []
 
     static let configPath: String = {
-        if let p = ProcessInfo.processInfo.environment["HYPRMUX_CONFIG"], !p.isEmpty { return p }
+        if let p = ProcessInfo.processInfo.environment["HYPRMUX_CONFIG"], !p.isEmpty {
+            return (p as NSString).expandingTildeInPath
+        }
         return ("~/.config/hyprmux/hyprmux.conf" as NSString).expandingTildeInPath
     }()
 
     static func loadConfig() -> HyprmuxConfig {
-        if FileManager.default.fileExists(atPath: configPath) {
-            return ConfigParser.load(path: configPath)
-        }
-        return ConfigParser.parse(defaultConfig)
+        ConfigParser.loadOrCreate(path: configPath)
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {

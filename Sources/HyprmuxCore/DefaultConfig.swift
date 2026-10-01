@@ -3,6 +3,9 @@ public let defaultConfig = #"""
 # hyprmux config. Syntax follows hyprland.conf (hyprlang):
 #   key = value, nested sections, $variables, bind = MODS, key, dispatcher, args
 # Copy to ~/.config/hyprmux/hyprmux.conf and edit. Saving reloads it live.
+# Every supported setting appears below. Optional overrides stay commented out.
+# Split this file with, for example:
+# source = ~/.config/hyprmux/binds.conf
 #
 # SUPER is the Command key. Keys are physical positions (US ANSI names),
 # so binds keep working with other keyboard layouts.
@@ -67,6 +70,18 @@ animations {
     animation = layersOut, 1, 1.5, linear
     animation = fadeLayersIn, 1, 1.79, almostLinear
     animation = fadeLayersOut, 1, 1.39, almostLinear
+
+    # Optional child overrides. When omitted, each inherits from its parent above.
+    # animation = windowsMove, 1, 4.79, easeOutQuint
+    # animation = fadeSwitch, 1, 3.03, quick
+    # animation = fadeShadow, 1, 3.03, quick
+    # animation = fadeDim, 1, 3.03, quick
+    # animation = borderangle, 1, 5.39, easeOutQuint
+    # animation = workspacesIn, 1, 3.5, easeOutQuint, slide
+    # animation = workspacesOut, 1, 3.5, easeOutQuint, slide
+    # animation = specialWorkspaceIn, 1, 3, easeOutQuint, slidevert
+    # animation = specialWorkspaceOut, 1, 3, easeOutQuint, slidevert
+    # animation = fadeLayers, 1, 3.03, quick
 }
 
 input {
@@ -78,6 +93,10 @@ dwindle {
     preserve_split = true
     # 0 = split toward the mouse, 1 = new window left/top, 2 = right/bottom
     force_split = 2
+    # Width multiplier used when choosing a horizontal or vertical split.
+    split_width_multiplier = 1.0
+    # 1.0 is an even split; valid values range from 0.1 to 1.9.
+    default_split_ratio = 1.0
 }
 
 binds {
@@ -88,10 +107,9 @@ misc {
     # fill: full screen on the normal desktop, so a transparent background still
     # shows the wallpaper. native: macOS full screen on its own Space (black behind).
     fullscreen_style = fill
-    # Behind the windows. An alpha below 1 makes hyprmux see-through:
-    # rgba(00000000) shows the desktop in the gaps. (Native fullscreen puts the
-    # window on its own Space, where there is only black behind it.)
-    background_color = rgb(11111b)
+    # Behind the windows. Transparent gaps show the desktop and wallpaper.
+    # Native fullscreen puts the window on its own Space, where black shows behind it.
+    background_color = rgba(00000000)
 }
 
 # Settings passed straight to libghostty (same keys as ~/.config/ghostty/config).
@@ -125,6 +143,8 @@ group {
 hud {
     # font_family = JetBrains Mono   # default: Ghostty's font-family
     # font_size = 13                 # default: Ghostty's font-size
+    # Show handled shortcuts and their actions. Useful for demos and screen sharing.
+    keycast = false
     notifications {
         # top_right, top_left, bottom_right, bottom_left, top, bottom, center
         position = top_right
@@ -163,6 +183,8 @@ session {
 }
 
 hyprmux {
+    # Initial size of a newly floated window, as a fraction of the screen.
+    float_size = 0.6
     # ⌘Q quits only when pressed twice within two seconds.
     confirm_quit = true
 }
@@ -173,6 +195,9 @@ web {
     # chromium: bundled Chromium (CEF). Passkeys from your phone or a security key work,
     # so Okta and GitHub sign-in work. Your Mac's own Touch ID passkeys don't. Needs a restart.
     engine = webkit
+    # Optional Chromium-only customization.
+    # chromium_extensions = ~/.config/hyprmux/extensions/example
+    # chromium_flags = remote-debugging-port=9333
     home = https://duckduckgo.com
     # %s is replaced by the search terms typed in the address bar.
     search = https://duckduckgo.com/?q=%s
@@ -181,8 +206,14 @@ web {
     address_bar = true
 }
 
-# Programs to run in new terminals at startup.
+# Optional workspace names shown next to their numbers.
+# workspace = 1, defaultName:main
+# workspace = 2, defaultName:web
+
+# Programs to run in new terminals. exec-once runs only at startup; exec also
+# runs after each config reload.
 # exec-once = htop
+# exec = btop
 
 # --- Binds -----------------------------------------------------------------
 

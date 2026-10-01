@@ -118,10 +118,10 @@ terminals.
 
 ## Configuration
 
-Hyprmux reads `~/.config/hyprmux/hyprmux.conf`. Without it, the built-in
-default applies; **Hyprmux → Open Config…** (⌘,) writes that default out for you
-to edit. Saving reloads it live. Your normal Ghostty config still applies to
-terminals, and a `ghostty { }` block can override it.
+On first launch, Hyprmux writes the full default config to
+`~/.config/hyprmux/hyprmux.conf`. **Hyprmux → Open Config…** (⌘,) opens it.
+Saving reloads it live. Your normal Ghostty config still applies to terminals,
+and a `ghostty { }` block can override it.
 
 See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for every option, bind
 syntax, all dispatchers, and the IPC commands.

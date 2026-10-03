@@ -60,6 +60,7 @@ final class ChromiumSurface: BrowserSurface, HMChromiumBrowserDelegate {
     override func engineGoForward() { browser?.goForward() }
     override func engineReload() { browser?.reload() }
     override func engineStop() { browser?.stopLoad() }
+    override func engineContentDidLayout() { browser?.layoutInParent() }
     override func engineInspect() { browser?.showDevTools() }
 
     override func engineCallCredentialFunction(_ source: String, arguments: [String: Any],

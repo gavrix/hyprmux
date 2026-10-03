@@ -4,6 +4,7 @@
 // supply, and Chromium composites into it. On macOS that forces CEF's Alloy
 // style, which still shows Chrome's passkey (WebAuthn) dialog in its own window.
 #import "ChromiumBridge.h"
+#import <QuartzCore/QuartzCore.h>
 
 #include <climits>
 #include <crt_externs.h>
@@ -396,13 +397,48 @@ class HMClient : public CefClient,
 
 - (void)attach:(CefRefPtr<CefBrowser>)browser {
   _browser = browser;
-  NSView *v = self.browserView;
-  // Track the tile's size without a resize callback.
-  v.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
-  v.frame = _parentView.bounds;
+  // Sized by -layoutInParent, not autoresizing (see there).
+  self.browserView.autoresizingMask = NSViewNotSizable;
+  [self layoutInParent];
   if (_pendingURL) {
     [self loadURL:_pendingURL];
     _pendingURL = nil;
+  }
+}
+
+// AppKit and Core Animation round autoresized sizes, and Chromium's own views
+// and its compositor layer follow the browser view by size deltas. With
+// fractional tile sizes (floating resize) the rounding errors add up: the page
+// layer ends up
+// taller than its view, so the page draws shifted up while clicks land where
+// the view is. So: whole points, every level set explicitly, nothing autoresized.
+- (void)layoutInParent {
+  NSView *v = self.browserView;
+  if (!v) return;
+  NSRect b = _parentView.bounds;
+  NSRect target = NSMakeRect(0, 0, round(NSWidth(b)), round(NSHeight(b)));
+  if (!NSEqualRects(v.frame, target)) v.frame = target;
+  [CATransaction begin];
+  [CATransaction setDisableActions:YES];
+  [self fillSubviewsOf:v depth:0];
+  [CATransaction commit];
+}
+
+/// CefBrowserHostView > WebContentsViewCocoa > RenderWidgetHostViewCocoa: each
+/// fills its parent. The render view's layer holds a flipped, autoresizing
+/// sublayer (ui::DisplayCALayerTree) that must fill it too.
+- (void)fillSubviewsOf:(NSView *)view depth:(int)depth {
+  if (depth > 2) return;
+  for (NSView *sub in view.subviews) {
+    if (!NSEqualRects(sub.frame, view.bounds)) sub.frame = view.bounds;
+    CALayer *layer = sub.layer;
+    for (CALayer *l in layer.sublayers) {
+      if (l.autoresizingMask == (kCALayerWidthSizable | kCALayerHeightSizable) &&
+          !CGRectEqualToRect(l.frame, layer.bounds)) {
+        l.frame = layer.bounds;
+      }
+    }
+    [self fillSubviewsOf:sub depth:depth + 1];
   }
 }
 

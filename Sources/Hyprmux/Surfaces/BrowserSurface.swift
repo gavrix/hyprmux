@@ -142,6 +142,8 @@ class BrowserSurface: FlippedView, Surface, NSTextFieldDelegate {
     func engineInspect() {}
     func engineClose() { host?.browserSurfaceDidClose(self) }
     func engineDestroy() {}
+    /// `content` got its frame. Engines that don't autoresize their view lay it out here.
+    func engineContentDidLayout() {}
     func engineTakeFocus(in window: NSWindow) { window.makeFirstResponder(engineFocusView) }
 
     /// Runs a function in an engine-owned world with structured arguments.
@@ -373,6 +375,7 @@ class BrowserSurface: FlippedView, Surface, NSTextFieldDelegate {
         address.frame = CGRect(x: x, y: 5, width: max(0, bounds.width - x - side), height: h - 10)
         content.frame = CGRect(x: 0, y: h, width: bounds.width, height: max(0, bounds.height - h))
         layoutProgress()
+        engineContentDidLayout()
     }
 
     private func layoutProgress() {

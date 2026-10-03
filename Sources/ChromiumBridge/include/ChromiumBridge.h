@@ -68,6 +68,8 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)stopLoad;
 - (void)showDevTools;
 - (void)setFocused:(BOOL)focused;
+/// Fits the browser view to `parentView`. Call after the parent view resizes.
+- (void)layoutInParent;
 /// Calls a JavaScript function in a fresh isolated world. The argument travels as
 /// a DevTools structured value and is never added to the function source.
 - (void)callIsolatedFunction:(NSString *)source

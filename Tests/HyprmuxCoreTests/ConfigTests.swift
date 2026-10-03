@@ -169,6 +169,15 @@ final class ConfigTests: XCTestCase {
         XCTAssertEqual(c.webNewTab, "chrome-extension://abc/index.html")
     }
 
+    func testCredentialProviderOrder() {
+        XCTAssertNil(ConfigParser.parse("").credentialProviders)
+        let nested = ConfigParser.parse("credentials {\n    providers = vault.work, 1password\n}")
+        XCTAssertEqual(nested.errors, [])
+        XCTAssertEqual(nested.credentialProviders, ["vault.work", "1password"])
+        XCTAssertEqual(ConfigParser.parse("credentials:providers =").credentialProviders, [])
+        XCTAssertEqual(ConfigParser.parse("credentials:unknown = x").errors.count, 1)
+    }
+
     func testGroupBorderSize() {
         XCTAssertNil(ConfigParser.parse("").groupBorderSize)
         let c = ConfigParser.parse("group {\n    border_size = 4\n}")

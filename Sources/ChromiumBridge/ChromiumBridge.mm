@@ -5,12 +5,14 @@
 // style, which still shows Chrome's passkey (WebAuthn) dialog in its own window.
 #import "ChromiumBridge.h"
 
+#include <climits>
 #include <crt_externs.h>
 
 #include "include/cef_app.h"
 #include "include/cef_application_mac.h"
 #include "include/cef_browser.h"
 #include "include/cef_client.h"
+#include "include/cef_values.h"
 #include "include/wrapper/cef_helpers.h"
 #include "include/wrapper/cef_library_loader.h"
 
@@ -25,15 +27,100 @@ static NSString *NS(const CefString &s) {
   return [NSString stringWithUTF8String:s.ToString().c_str()] ?: @"";
 }
 
+typedef NS_ENUM(NSInteger, HMCredentialDevToolsStage) {
+  HMCredentialDevToolsStageFrameTree,
+  HMCredentialDevToolsStageIsolatedWorld,
+  HMCredentialDevToolsStageFunction,
+};
+
+@interface HMCredentialCall : NSObject
+@property(nonatomic, copy) NSString *source;
+@property(nonatomic, copy) NSDictionary<NSString *, id> *argument;
+@property(nonatomic, copy, nullable) void (^completion)(id _Nullable, NSString *_Nullable);
+@property(nonatomic) HMCredentialDevToolsStage stage;
+@end
+@implementation HMCredentialCall
+@end
+
 @interface HMChromiumBrowser ()
 - (void)attach:(CefRefPtr<CefBrowser>)browser;
 - (void)detach;
+- (void)devToolsMethodResult:(int)messageID success:(BOOL)success data:(NSData *)data;
+- (void)devToolsAgentDetached;
+- (BOOL)executeCredentialMethod:(NSString *)method params:(CefRefPtr<CefDictionaryValue>)params
+                           call:(HMCredentialCall *)call stage:(HMCredentialDevToolsStage)stage;
+- (void)finishCredentialCall:(HMCredentialCall *)call value:(nullable id)value error:(nullable NSString *)error;
+- (void)failAllCredentialCalls:(NSString *)error;
 @property (nonatomic) CefRefPtr<CefClient> client;
 @end
 
 // MARK: - CefApp
 
 namespace {
+
+/// Converts only JSON-compatible Foundation values. Credential arguments never
+/// pass through a JSON string, which keeps their values out of source text.
+static CefRefPtr<CefValue> CefValueFromFoundation(id object) {
+  CefRefPtr<CefValue> result = CefValue::Create();
+  if (!object || object == [NSNull null]) {
+    result->SetNull();
+  } else if ([object isKindOfClass:[NSString class]]) {
+    result->SetString([(NSString *)object UTF8String]);
+  } else if ([object isKindOfClass:[NSNumber class]]) {
+    NSNumber *number = object;
+    if (CFGetTypeID((__bridge CFTypeRef)number) == CFBooleanGetTypeID()) {
+      result->SetBool(number.boolValue);
+    } else if (CFNumberIsFloatType((__bridge CFNumberRef)number)) {
+      result->SetDouble(number.doubleValue);
+    } else {
+      long long value = number.longLongValue;
+      if (value >= INT_MIN && value <= INT_MAX) result->SetInt((int)value);
+      else result->SetDouble(number.doubleValue);
+    }
+  } else if ([object isKindOfClass:[NSDictionary class]]) {
+    CefRefPtr<CefDictionaryValue> dictionary = CefDictionaryValue::Create();
+    for (id key in (NSDictionary *)object) {
+      if (![key isKindOfClass:[NSString class]]) return nullptr;
+      CefRefPtr<CefValue> value = CefValueFromFoundation([(NSDictionary *)object objectForKey:key]);
+      if (!value || !dictionary->SetValue([(NSString *)key UTF8String], value)) return nullptr;
+    }
+    result->SetDictionary(dictionary);
+  } else if ([object isKindOfClass:[NSArray class]]) {
+    NSArray *array = object;
+    CefRefPtr<CefListValue> list = CefListValue::Create();
+    list->SetSize(array.count);
+    for (NSUInteger i = 0; i < array.count; i++) {
+      CefRefPtr<CefValue> value = CefValueFromFoundation(array[i]);
+      if (!value || !list->SetValue(i, value)) return nullptr;
+    }
+    result->SetList(list);
+  } else {
+    return nullptr;
+  }
+  return result;
+}
+
+class HMCredentialDevToolsObserver : public CefDevToolsMessageObserver {
+ public:
+  explicit HMCredentialDevToolsObserver(HMChromiumBrowser *owner) : owner_(owner) {}
+
+  void OnDevToolsMethodResult(CefRefPtr<CefBrowser> browser, int message_id, bool success,
+                              const void *result, size_t result_size) override {
+    HMChromiumBrowser *owner = owner_;
+    if (!owner) return;
+    NSData *data = result && result_size ? [NSData dataWithBytes:result length:result_size] : [NSData data];
+    [owner devToolsMethodResult:message_id success:success data:data];
+  }
+
+  void OnDevToolsAgentDetached(CefRefPtr<CefBrowser> browser) override {
+    HMChromiumBrowser *owner = owner_;
+    [owner devToolsAgentDetached];
+  }
+
+ private:
+  __weak HMChromiumBrowser *owner_;
+  IMPLEMENT_REFCOUNTING(HMCredentialDevToolsObserver);
+};
 
 class HMApp : public CefApp, public CefBrowserProcessHandler {
  public:
@@ -280,6 +367,11 @@ class HMClient : public CefClient,
 @implementation HMChromiumBrowser {
   CefRefPtr<CefBrowser> _browser;
   NSString *_pendingURL;
+  CefRefPtr<HMCredentialDevToolsObserver> _devToolsObserver;
+  CefRefPtr<CefRegistration> _devToolsRegistration;
+  NSMutableDictionary<NSNumber *, HMCredentialCall *> *_credentialCallsByMessageID;
+  NSMutableSet<HMCredentialCall *> *_credentialCalls;
+  int _nextDevToolsMessageID;
 }
 
 - (instancetype)initPendingWithParentView:(NSView *)parentView {
@@ -314,7 +406,12 @@ class HMClient : public CefClient,
   }
 }
 
-- (void)detach { _browser = nullptr; }
+- (void)detach {
+  [self failAllCredentialCalls:@"The Chromium browser closed before credential filling completed."];
+  _devToolsRegistration = nullptr;
+  _devToolsObserver = nullptr;
+  _browser = nullptr;
+}
 
 - (NSView *)browserView {
   if (!_browser) return nil;
@@ -350,6 +447,178 @@ class HMClient : public CefClient,
 
 - (void)setFocused:(BOOL)focused {
   if (_browser) _browser->GetHost()->SetFocus(focused);
+}
+
+- (void)callIsolatedFunction:(NSString *)source
+                    argument:(NSDictionary<NSString *, id> *)argument
+                     timeout:(NSTimeInterval)timeout
+                  completion:(void (^)(id _Nullable, NSString *_Nullable))completion {
+  if (![NSThread isMainThread]) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+      [self callIsolatedFunction:source argument:argument timeout:timeout completion:completion];
+    });
+    return;
+  }
+  if (!_browser || !_browser->IsValid()) {
+    completion(nil, @"The Chromium browser is not available.");
+    return;
+  }
+  // Reject unsupported Foundation values before creating a DevTools world.
+  if (!CefValueFromFoundation(argument)) {
+    completion(nil, @"The credential function argument is not JSON-compatible.");
+    return;
+  }
+  if (!_devToolsObserver) {
+    _devToolsObserver = new HMCredentialDevToolsObserver(self);
+    _devToolsRegistration = _browser->GetHost()->AddDevToolsMessageObserver(_devToolsObserver);
+    if (!_devToolsRegistration) {
+      _devToolsObserver = nullptr;
+      completion(nil, @"Chromium could not attach its credential execution context.");
+      return;
+    }
+  }
+  if (!_credentialCalls) _credentialCalls = [NSMutableSet set];
+  if (!_credentialCallsByMessageID) _credentialCallsByMessageID = [NSMutableDictionary dictionary];
+
+  HMCredentialCall *call = [HMCredentialCall new];
+  call.source = [source copy];
+  call.argument = [argument copy];
+  call.completion = [completion copy];
+  [_credentialCalls addObject:call];
+
+  CefRefPtr<CefDictionaryValue> params = CefDictionaryValue::Create();
+  if (![self executeCredentialMethod:@"Page.getFrameTree" params:params call:call
+                                stage:HMCredentialDevToolsStageFrameTree]) {
+    [self finishCredentialCall:call value:nil error:@"Chromium could not inspect the page frame."];
+    return;
+  }
+
+  __weak HMChromiumBrowser *weakSelf = self;
+  __weak HMCredentialCall *weakCall = call;
+  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(MAX(0, timeout) * NSEC_PER_SEC)),
+                 dispatch_get_main_queue(), ^{
+    HMChromiumBrowser *self = weakSelf;
+    HMCredentialCall *call = weakCall;
+    if (self && call && [self->_credentialCalls containsObject:call]) {
+      [self finishCredentialCall:call value:nil error:@"Chromium credential execution timed out."];
+    }
+  });
+}
+
+- (BOOL)executeCredentialMethod:(NSString *)method params:(CefRefPtr<CefDictionaryValue>)params
+                           call:(HMCredentialCall *)call stage:(HMCredentialDevToolsStage)stage {
+  if (!_browser || !_browser->IsValid()) return NO;
+  if (_nextDevToolsMessageID <= 0) _nextDevToolsMessageID = 1;
+  int messageID = _nextDevToolsMessageID++;
+  call.stage = stage;
+  _credentialCallsByMessageID[@(messageID)] = call;
+  int submitted = _browser->GetHost()->ExecuteDevToolsMethod(messageID, method.UTF8String, params);
+  if (submitted == 0) {
+    [_credentialCallsByMessageID removeObjectForKey:@(messageID)];
+    return NO;
+  }
+  return YES;
+}
+
+- (void)devToolsMethodResult:(int)messageID success:(BOOL)success data:(NSData *)data {
+  HMCredentialCall *call = _credentialCallsByMessageID[@(messageID)];
+  if (!call) return;
+  [_credentialCallsByMessageID removeObjectForKey:@(messageID)];
+  if (!success) {
+    [self finishCredentialCall:call value:nil error:@"A Chromium credential protocol method failed."];
+    return;
+  }
+
+  NSError *parseError = nil;
+  id value = data.length ? [NSJSONSerialization JSONObjectWithData:data options:0 error:&parseError] : nil;
+  NSDictionary *result = [value isKindOfClass:[NSDictionary class]] ? value : nil;
+  if (!result || parseError) {
+    [self finishCredentialCall:call value:nil error:@"Chromium returned an invalid credential protocol result."];
+    return;
+  }
+
+  if (call.stage == HMCredentialDevToolsStageFrameTree) {
+    NSDictionary *frameTree = [result[@"frameTree"] isKindOfClass:[NSDictionary class]] ? result[@"frameTree"] : nil;
+    NSDictionary *frame = [frameTree[@"frame"] isKindOfClass:[NSDictionary class]] ? frameTree[@"frame"] : nil;
+    NSString *frameID = [frame[@"id"] isKindOfClass:[NSString class]] ? frame[@"id"] : nil;
+    if (!frameID.length) {
+      [self finishCredentialCall:call value:nil error:@"Chromium did not return the main page frame."];
+      return;
+    }
+    CefRefPtr<CefDictionaryValue> params = CefDictionaryValue::Create();
+    params->SetString("frameId", frameID.UTF8String);
+    params->SetString("worldName", "hyprmux-credentials");
+    if (![self executeCredentialMethod:@"Page.createIsolatedWorld" params:params call:call
+                                  stage:HMCredentialDevToolsStageIsolatedWorld]) {
+      [self finishCredentialCall:call value:nil error:@"Chromium could not create an isolated credential world."];
+    }
+    return;
+  }
+
+  if (call.stage == HMCredentialDevToolsStageIsolatedWorld) {
+    NSNumber *contextID = [result[@"executionContextId"] isKindOfClass:[NSNumber class]]
+        ? result[@"executionContextId"] : nil;
+    if (!contextID) {
+      [self finishCredentialCall:call value:nil error:@"Chromium did not return a credential execution context."];
+      return;
+    }
+    CefRefPtr<CefValue> argumentValue = CefValueFromFoundation(call.argument);
+    // The argument may hold a revealed secret. Keep it only in the outgoing params.
+    call.argument = @{};
+    if (!argumentValue) {
+      [self finishCredentialCall:call value:nil error:@"The credential function argument is not JSON-compatible."];
+      return;
+    }
+    CefRefPtr<CefDictionaryValue> callArgument = CefDictionaryValue::Create();
+    callArgument->SetValue("value", argumentValue);
+    CefRefPtr<CefListValue> arguments = CefListValue::Create();
+    arguments->SetSize(1);
+    arguments->SetDictionary(0, callArgument);
+
+    CefRefPtr<CefDictionaryValue> params = CefDictionaryValue::Create();
+    params->SetString("functionDeclaration", call.source.UTF8String);
+    params->SetInt("executionContextId", contextID.intValue);
+    params->SetList("arguments", arguments);
+    params->SetBool("returnByValue", true);
+    params->SetBool("awaitPromise", true);
+    params->SetBool("silent", true);
+    if (![self executeCredentialMethod:@"Runtime.callFunctionOn" params:params call:call
+                                  stage:HMCredentialDevToolsStageFunction]) {
+      [self finishCredentialCall:call value:nil error:@"Chromium could not execute the credential function."];
+    }
+    return;
+  }
+
+  if (result[@"exceptionDetails"] && result[@"exceptionDetails"] != [NSNull null]) {
+    [self finishCredentialCall:call value:nil error:@"The Chromium credential function threw an exception."];
+    return;
+  }
+  NSDictionary *remoteObject = [result[@"result"] isKindOfClass:[NSDictionary class]] ? result[@"result"] : nil;
+  if (!remoteObject) {
+    [self finishCredentialCall:call value:nil error:@"Chromium returned no credential function result."];
+    return;
+  }
+  [self finishCredentialCall:call value:remoteObject[@"value"] error:nil];
+}
+
+- (void)devToolsAgentDetached {
+  [self failAllCredentialCalls:@"Chromium's credential execution context detached."];
+}
+
+- (void)finishCredentialCall:(HMCredentialCall *)call value:(id)value error:(NSString *)error {
+  if (![_credentialCalls containsObject:call]) return;
+  [_credentialCalls removeObject:call];
+  NSArray<NSNumber *> *messageIDs = [_credentialCallsByMessageID allKeysForObject:call];
+  [_credentialCallsByMessageID removeObjectsForKeys:messageIDs];
+  void (^completion)(id, NSString *) = call.completion;
+  call.completion = nil;
+  if (completion) completion(value, error);
+}
+
+- (void)failAllCredentialCalls:(NSString *)error {
+  for (HMCredentialCall *call in [_credentialCalls copy]) {
+    [self finishCredentialCall:call value:nil error:error];
+  }
 }
 
 - (void)close {

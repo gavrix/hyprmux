@@ -37,6 +37,7 @@ public enum Effect: Equatable, Sendable {
     case launch(String)
     case simButton(ClientID, String)
     case webNav(ClientID, WebNav)
+    case credentialFill(ClientID, String?)
     case close(ClientID)
     case submap(String)
     case picker(PickerKind)
@@ -235,6 +236,7 @@ public final class WindowManager {
         case .launch(let app): perform(.launch(app))
         case .simButton(let b): if let f = subject { perform(.simButton(f, b)) }
         case .webNav(let n): if let f = subject { perform(.webNav(f, n)) }
+        case .fillCredential(let provider): if let f = subject { perform(.credentialFill(f, provider)) }
         case .killActive: if let f = subject { perform(.close(f)) }
         case .moveFocus(let dir): moveFocus(dir, target)
         case .moveWindow(let dir): moveWindow(dir, target)

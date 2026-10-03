@@ -183,6 +183,9 @@ public struct HyprmuxConfig: Sendable {
     /// Extra Chromium command-line switches, e.g. "disable-gpu" or "lang=en-US".
     public var chromiumFlags: [String] = []
 
+    /// Credential provider ids to query, in order. Nil uses every usable provider by id.
+    public var credentialProviders: [String]?
+
     public init() {}
 
     static let animationParents: [String: String] = [
@@ -454,6 +457,7 @@ public enum ConfigParser {
             case "web:engine":
                 let v = value.lowercased()
                 if v == "webkit" || v == "chromium" { config.webEngine = v } else { error(file, line, "web:engine: expected webkit or chromium") }
+            case "credentials:providers": config.credentialProviders = list()
             case "misc:register_broker": if let v = bool() { config.registerBroker = v }
             case "misc:fullscreen_style":
                 let v = value.lowercased()

@@ -62,6 +62,22 @@ final class ChromiumSurface: BrowserSurface, HMChromiumBrowserDelegate {
     override func engineStop() { browser?.stopLoad() }
     override func engineInspect() { browser?.showDevTools() }
 
+    override func engineCallCredentialFunction(_ source: String, arguments: [String: Any],
+                                               completion: @escaping (Result<Any?, Error>) -> Void) {
+        guard let browser else {
+            completion(.failure(BrowserCredentialError.pageChanged))
+            return
+        }
+        browser.callIsolatedFunction(source, argument: arguments, timeout: 5) { value, message in
+            if let message {
+                completion(.failure(NSError(domain: "Hyprmux.ChromiumCredentials", code: 1,
+                                            userInfo: [NSLocalizedDescriptionKey: message])))
+            } else {
+                completion(.success(value))
+            }
+        }
+    }
+
     override func engineClose() {
         guard !closed else { return }
         if let browser { browser.close() } else { finishClose() }

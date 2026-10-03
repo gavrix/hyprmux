@@ -17,7 +17,7 @@ final class PickerField: NSTextField {
 final class PickerListView: FlippedView {
     var picker: Picker
     var theme: HUDTheme
-    /// Row icons by item id (the launcher's app icons). Empty: rows have none.
+    /// Row icons by item id. Empty: rows have none.
     var icons: [String: NSImage] = [:]
     var rowHeight: CGFloat = 24
     var sidePadding: CGFloat = 14
@@ -59,21 +59,38 @@ final class PickerListView: FlippedView {
                 let p = NSAttributedString(string: "›", attributes: [.font: bold, .foregroundColor: theme.accent])
                 p.draw(at: CGPoint(x: sidePadding, y: y + (rowHeight - lineH) / 2))
             }
-            let line = NSMutableAttributedString()
-            line.append(highlighted(item.title, row.titleMatches, color: selected ? theme.foreground : theme.foreground.withAlphaComponent(0.85)))
-            if !item.detail.isEmpty {
-                line.append(NSAttributedString(string: "  ", attributes: [.font: font]))
-                line.append(highlighted(item.detail, row.detailMatches, color: theme.secondary))
-            }
+            let title = highlighted(item.title, row.titleMatches,
+                                    color: selected ? theme.foreground : theme.foreground.withAlphaComponent(0.85))
+            let detail = highlighted(item.detail, row.detailMatches, color: theme.secondary)
             var x = sidePadding + pointerWidth
             if !icons.isEmpty {
-                let side = max(12, rowHeight - 6)
+                // A stacked row is taller for its text, not for its icon.
+                let side = picker.rowLayout == .stacked ? max(12, min(20, lineH + 2)) : max(12, rowHeight - 6)
                 icons[item.id]?.draw(in: CGRect(x: x, y: y + (rowHeight - side) / 2, width: side, height: side),
                                      from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
                 x += side + 8
             }
-            line.draw(with: CGRect(x: x, y: y + (rowHeight - lineH) / 2, width: bounds.width - x - sidePadding, height: lineH),
-                      options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
+            let textWidth = bounds.width - x - sidePadding
+            switch picker.rowLayout {
+            case .inline:
+                let line = NSMutableAttributedString(attributedString: title)
+                if !item.detail.isEmpty {
+                    line.append(NSAttributedString(string: "  ", attributes: [.font: font]))
+                    line.append(detail)
+                }
+                line.draw(with: CGRect(x: x, y: y + (rowHeight - lineH) / 2, width: textWidth, height: lineH),
+                          options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
+            case .stacked:
+                let gap: CGFloat = 2
+                let textHeight = 2 * lineH + gap
+                let textY = y + (rowHeight - textHeight) / 2
+                title.draw(with: CGRect(x: x, y: textY, width: textWidth, height: lineH),
+                           options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
+                if !item.detail.isEmpty {
+                    detail.draw(with: CGRect(x: x, y: textY + lineH + gap, width: textWidth, height: lineH),
+                                options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
+                }
+            }
         }
     }
 
@@ -212,7 +229,7 @@ final class PickerView: DecoratedView, NSTextFieldDelegate {
         let t = theme
         let lineH = ceil(t.font.ascender - t.font.descender + t.font.leading)
         let headerH = lineH + 16
-        let rowH = lineH + 8
+        let rowH = picker.rowLayout == .stacked ? 2 * lineH + 10 : lineH + 8
         let rows = picker.mode == .list ? max(1, min(picker.items.count, picker.maxVisible)) : 0
         let innerW = width - 2 * d.borderSize
         let listH = rows > 0 ? CGFloat(rows) * rowH + 12 : 0
@@ -225,7 +242,10 @@ final class PickerView: DecoratedView, NSTextFieldDelegate {
         content.frame = CGRect(origin: .zero, size: contentSize)
 
         let promptW = ceil(promptLabel.intrinsicContentSize.width)
-        let counterW: CGFloat = picker.mode == .list ? ceil(("999/999" as NSString).size(withAttributes: [.font: t.font]).width) : 0
+        let counterText = headerCounterText
+        let counterW: CGFloat = picker.mode == .list
+            ? min(ceil((counterText as NSString).size(withAttributes: [.font: t.font]).width), innerW * 0.4)
+            : 0
         let y = (headerH - lineH) / 2
         promptLabel.frame = CGRect(x: hPad, y: y, width: promptW, height: lineH)
         counter.frame = CGRect(x: innerW - hPad - counterW, y: y, width: counterW, height: lineH)
@@ -251,8 +271,20 @@ final class PickerView: DecoratedView, NSTextFieldDelegate {
     func select(_ row: Int) { picker.select(row); refresh() }
     func page(_ direction: Int) { picker.page(direction); refresh() }
 
+    func update(items: [PickerItem], status: String?, icons: [String: NSImage]) {
+        picker.setItems(items)
+        picker.status = status
+        list.icons = icons
+        refresh()
+    }
+
+    private var headerCounterText: String {
+        guard picker.mode == .list else { return "" }
+        return picker.status ?? "\(picker.rows.count)/\(picker.items.count)"
+    }
+
     private func refresh() {
-        counter.stringValue = picker.mode == .list ? "\(picker.rows.count)/\(picker.items.count)" : ""
+        counter.stringValue = headerCounterText
         list.picker = picker
         list.needsDisplay = true
     }

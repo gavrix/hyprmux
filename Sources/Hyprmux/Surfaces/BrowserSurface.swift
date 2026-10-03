@@ -18,6 +18,31 @@ protocol BrowserSurfaceHost: AnyObject {
     func browserSurface(_ s: BrowserSurface, adoptPopup popup: BrowserSurface)
 }
 
+struct CredentialTarget: Equatable {
+    let token: String
+    let origin: String
+    let host: String
+    let field: CredentialField
+}
+
+enum BrowserCredentialError: LocalizedError {
+    case noEligibleInput
+    case crossOriginFrame
+    case insecurePage
+    case pageChanged
+    case fillFailed
+
+    var errorDescription: String? {
+        switch self {
+        case .noEligibleInput: "Focus a visible, editable username, email, or password field first."
+        case .crossOriginFrame: "Credential fill cannot access a focused cross-origin frame."
+        case .insecurePage: "Credential fill requires HTTPS, except on loopback development sites."
+        case .pageChanged: "The page or focused login field changed before it could be filled."
+        case .fillFailed: "The page did not accept the selected login value."
+        }
+    }
+}
+
 struct BrowserOptions {
     var home: String
     var newTab: String
@@ -118,6 +143,81 @@ class BrowserSurface: FlippedView, Surface, NSTextFieldDelegate {
     func engineClose() { host?.browserSurfaceDidClose(self) }
     func engineDestroy() {}
     func engineTakeFocus(in window: NSWindow) { window.makeFirstResponder(engineFocusView) }
+
+    /// Runs a function in an engine-owned world with structured arguments.
+    /// Engines must never put argument values into the function source.
+    func engineCallCredentialFunction(_ source: String, arguments: [String: Any],
+                                      completion: @escaping (Result<Any?, Error>) -> Void) {
+        completion(.failure(BrowserCredentialError.fillFailed))
+    }
+
+    /// Captures the exact focused login input before native UI takes keyboard focus.
+    func captureCredentialTarget(completion: @escaping (Result<CredentialTarget, Error>) -> Void) {
+        let token = UUID().uuidString
+        engineCallCredentialFunction(CredentialJavaScript.capture,
+                                     arguments: ["credentialToken": token]) { [weak self] result in
+            guard let self else {
+                completion(.failure(BrowserCredentialError.pageChanged))
+                return
+            }
+            switch result {
+            case .failure:
+                completion(.failure(BrowserCredentialError.noEligibleInput))
+            case .success(let raw):
+                guard let response = raw as? [String: Any], response["ok"] as? Bool == true,
+                      let origin = response["origin"] as? String,
+                      let rawKind = response["kind"] as? String,
+                      let kind = CredentialField(rawValue: rawKind) else {
+                    let code = (raw as? [String: Any])?["code"] as? String
+                    completion(.failure(code == "cross_origin" ? BrowserCredentialError.crossOriginFrame
+                                                               : BrowserCredentialError.noEligibleInput))
+                    return
+                }
+                guard CredentialSecurity.isAllowedCredentialOrigin(origin),
+                      let host = URL(string: origin)?.host?.lowercased() else {
+                    completion(.failure(BrowserCredentialError.insecurePage))
+                    return
+                }
+                guard let url = URL(string: self.currentURL), CredentialSecurity.sameOrigin(url, origin) else {
+                    completion(.failure(BrowserCredentialError.pageChanged))
+                    return
+                }
+                completion(.success(CredentialTarget(token: token, origin: origin, host: host, field: kind)))
+            }
+        }
+    }
+
+    /// Revalidates and fills only a previously captured login input.
+    func fillCredentialTarget(_ target: CredentialTarget, value: String,
+                              completion: @escaping (Result<Void, Error>) -> Void) {
+        guard let url = URL(string: currentURL), CredentialSecurity.sameOrigin(url, target.origin) else {
+            completion(.failure(BrowserCredentialError.pageChanged))
+            return
+        }
+        let arguments: [String: Any] = [
+            "credentialToken": target.token,
+            "expectedOrigin": target.origin,
+            "expectedKind": target.field.rawValue,
+            "credentialValue": value,
+        ]
+        engineCallCredentialFunction(CredentialJavaScript.fill, arguments: arguments) { [weak self] result in
+            guard let self else {
+                completion(.failure(BrowserCredentialError.pageChanged))
+                return
+            }
+            switch result {
+            case .failure:
+                completion(.failure(BrowserCredentialError.fillFailed))
+            case .success(let raw):
+                guard let response = raw as? [String: Any], response["ok"] as? Bool == true,
+                      let url = URL(string: self.currentURL), CredentialSecurity.sameOrigin(url, target.origin) else {
+                    completion(.failure(BrowserCredentialError.pageChanged))
+                    return
+                }
+                completion(.success(()))
+            }
+        }
+    }
 
     // MARK: Engine events (call from subclasses)
 

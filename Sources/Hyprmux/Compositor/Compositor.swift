@@ -2,6 +2,7 @@ import AndroidEmulatorBridge
 import AppKit
 import Carbon
 import HyprmuxCore
+import HyprmuxCredentialSupport
 import ChromiumBridge
 import SimulatorBridge
 
@@ -35,6 +36,9 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
     let apps = AppRuntime()
     /// Agents' resume reports, by terminal (see `hyprmuxctl resume`).
     var resumeReports: [ClientID: ResumeReport] = [:]
+    let credentialProviders = CredentialProviderRuntime()
+    /// The active credential picker flow. It contains no item or field data.
+    var credentialRequest: UUID?
     /// Pending debounced session save.
     var sessionSaveWork: DispatchWorkItem?
     var sessionTimer: Timer?
@@ -156,6 +160,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
             return self.appPasses(tile, self.modifiers(event.modifierFlags), event.keyCode)
         }
         loadAdapters()
+        loadCredentialProviders()
         // The catalog as it was on disk, so a restored session finds its apps by id; the
         // generated ones are refreshed in the background.
         loadApps()
@@ -193,6 +198,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         syncConfigErrors()
         for c in newConfig.exec { spawn(command: c, inheritFrom: nil) }
         loadAdapters()
+        loadCredentialProviders()
         loadApps()
         refreshApps()
         monitorChanged(animated: true)
@@ -614,6 +620,8 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
             DispatchQueue.main.async { [weak self] in self?.spawnWeb(url) }
         case .webNav(let id, let nav):
             (views[id]?.surface as? BrowserSurface)?.perform(nav)
+        case .credentialFill(let id, let provider):
+            DispatchQueue.main.async { [weak self] in self?.credentialFill(id, providerID: provider) }
         case .submap(let name):
             submap = name
             bar.submap = name

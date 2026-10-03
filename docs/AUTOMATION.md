@@ -139,7 +139,12 @@ hyprmuxctl dispatch --surface surface:7 togglefloating
 hyprmuxctl dispatch --surface surface:7 fullscreen 1
 hyprmuxctl dispatch --surface surface:7 moveintogroup l
 hyprmuxctl dispatch --surface surface:9 webnav reload
+hyprmuxctl dispatch --surface surface:9 fillcredential
+hyprmuxctl dispatch --surface surface:9 fillcredential 1password
 ```
+
+In a terminal, `fillcredential` needs the terminal to be focused and showing a password prompt.
+A targeted dispatch to a background terminal is refused.
 
 A targeted dispatcher does not focus the window.
 Dispatchers about focus still move it: `movefocus` and `cyclenext` start from the target.

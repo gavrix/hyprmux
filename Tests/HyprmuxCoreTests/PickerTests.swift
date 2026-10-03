@@ -56,6 +56,21 @@ final class PickerTests: XCTestCase {
         XCTAssertEqual(p.result, .item("a"))
     }
 
+    func testRowLayoutDefaultsToInlineAndStackedStillSearchesBothLines() {
+        let inline = Picker(title: "default", items: items)
+        var stacked = Picker(title: "credentials", items: items, rowLayout: .stacked)
+
+        XCTAssertEqual(inline.rowLayout, .inline)
+        XCTAssertEqual(stacked.rowLayout, .stacked)
+        XCTAssertEqual(stacked.visibleRows.count, inline.visibleRows.count)
+        XCTAssertEqual(stacked.result, inline.result)
+
+        stacked.setQuery("iPad 26.5")
+        XCTAssertEqual(stacked.result, .item("b"))
+        XCTAssertFalse(stacked.rows[0].titleMatches.isEmpty)
+        XCTAssertFalse(stacked.rows[0].detailMatches.isEmpty)
+    }
+
     func testFilterRanksAndSplitsHighlights() {
         var p = Picker(title: "sim", items: items)
         p.setQuery("pad")
@@ -113,5 +128,29 @@ final class PickerTests: XCTestCase {
         p.setQuery("i")
         XCTAssertEqual(p.selection, 0)
         XCTAssertEqual(p.scroll, 0)
+    }
+
+    func testSetItemsPreservesQueryAndSelectionByIDWhenRowsReorder() {
+        let original = [
+            PickerItem(id: "a", title: "Alpha One"),
+            PickerItem(id: "b", title: "Alpha Two"),
+        ]
+        var p = Picker(title: "x", items: original, query: "alpha")
+        p.move(1)
+        XCTAssertEqual(p.selectedItem?.id, "b")
+
+        let reordered = [PickerItem(id: "c", title: "Alpha New"), original[1], original[0]]
+        p.setItems(reordered)
+
+        XCTAssertEqual(p.query, "alpha")
+        XCTAssertEqual(p.rows.map { p.items[$0.index].id }, ["c", "b", "a"])
+        XCTAssertEqual(p.selectedItem?.id, "b")
+    }
+
+    func testStatusCanBeSetAndCleared() {
+        var p = Picker(title: "x", status: "loading Vault…")
+        XCTAssertEqual(p.status, "loading Vault…")
+        p.status = nil
+        XCTAssertNil(p.status)
     }
 }

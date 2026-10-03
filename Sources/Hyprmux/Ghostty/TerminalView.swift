@@ -49,6 +49,11 @@ final class TerminalView: NSView, NSTextInputClient {
     private(set) var pwd: String?
     private(set) var cellSize: CGSize = .zero
     private(set) var focused = false
+    /// Uptime when this view last became first responder.
+    private(set) var focusedSince: TimeInterval = 0
+    /// Ghostty's password-prompt state: canonical input with echo off. Ghostty only
+    /// refreshes it while the surface is focused.
+    private(set) var passwordInput = false
     /// Terminal background, set by the compositor (see Surface.backdropColor).
     var backdrop: NSColor = .black
 
@@ -274,6 +279,22 @@ final class TerminalView: NSView, NSTextInputClient {
     }
 
     func runtimeSetPwd(_ p: String) { pwd = p }
+    func runtimeSetPasswordInput(_ on: Bool) { passwordInput = on }
+
+    /// The facts credential fill checks before it types a password.
+    var credentialState: TerminalCredentialState {
+        TerminalCredentialState(focused: focused && surface != nil, passwordInput: passwordInput,
+                                foregroundPID: foregroundPID)
+    }
+
+    /// The foreground program's name, for ranking credentials. Nil when unknown.
+    var foregroundProcessName: String? {
+        let pid = foregroundPID
+        guard pid > 0 else { return nil }
+        var buffer = [CChar](repeating: 0, count: 256)
+        guard proc_name(pid, &buffer, UInt32(buffer.count)) > 0 else { return nil }
+        return String(cString: buffer)
+    }
     /// The link under the pointer while the link modifier (Cmd) is held, else nil.
     private(set) var hoveredLink: String?
     func runtimeSetHoveredLink(_ l: String?) { hoveredLink = l }
@@ -321,6 +342,7 @@ final class TerminalView: NSView, NSTextInputClient {
     private func focusDidChange(_ f: Bool) {
         guard focused != f, let s = surface else { return }
         focused = f
+        if f { focusedSince = ProcessInfo.processInfo.systemUptime }
         ghostty_surface_set_focus(s, f)
     }
 

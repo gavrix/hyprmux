@@ -68,6 +68,12 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)stopLoad;
 - (void)showDevTools;
 - (void)setFocused:(BOOL)focused;
+/// Calls a JavaScript function in a fresh isolated world. The argument travels as
+/// a DevTools structured value and is never added to the function source.
+- (void)callIsolatedFunction:(NSString *)source
+                    argument:(NSDictionary<NSString *, id> *)argument
+                     timeout:(NSTimeInterval)timeout
+                  completion:(void (^)(id _Nullable value, NSString * _Nullable error))completion;
 /// Force-closes the browser. The delegate gets chromiumBrowserDidClose:.
 - (void)close;
 @end

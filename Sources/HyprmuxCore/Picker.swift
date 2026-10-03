@@ -99,7 +99,7 @@ public struct PickerItem: Equatable, Sendable {
     /// What the picker returns when this row is chosen.
     public var id: String
     public var title: String
-    /// Secondary text after the title (a runtime, a path, a key). Also searched.
+    /// Secondary text beside or below the title (a runtime, a path, a key). Also searched.
     public var detail: String
 
     public init(id: String, title: String, detail: String = "") {
@@ -120,6 +120,14 @@ public enum PickerResult: Equatable, Sendable {
 public struct Picker: Sendable {
     public enum Mode: Sendable { case list, prompt }
 
+    /// How each list item arranges its title and secondary detail.
+    public enum RowLayout: Equatable, Sendable {
+        /// Title and detail share one line. This remains the default for existing pickers.
+        case inline
+        /// Title occupies the first line and detail occupies the second.
+        case stacked
+    }
+
     public struct Row: Equatable, Sendable {
         public var index: Int
         public var score: Int
@@ -131,11 +139,13 @@ public struct Picker: Sendable {
 
     public let title: String
     public let mode: Mode
-    public let items: [PickerItem]
+    public private(set) var items: [PickerItem]
     /// List mode: Enter with no matching row returns the typed text.
     public let allowsCustom: Bool
     /// Rows shown at once; the list scrolls to keep the selection in view.
     public let maxVisible: Int
+    /// Visual arrangement used by the app when drawing each row.
+    public let rowLayout: RowLayout
     /// Whether the filter looks at details too. Off where details are just counts, so
     /// typing "12" doesn't match workspace 1's "2 windows".
     public let searchesDetail: Bool
@@ -143,6 +153,8 @@ public struct Picker: Sendable {
     public var placeholder: String?
     /// The one disabled row shown when the picker has no items at all ("No apps").
     public var emptyText: String?
+    /// Temporary header text shown instead of the match counter.
+    public var status: String?
 
     public private(set) var query = ""
     public private(set) var rows: [Row] = []
@@ -152,18 +164,31 @@ public struct Picker: Sendable {
     public private(set) var scroll = 0
 
     public init(title: String, items: [PickerItem] = [], mode: Mode = .list, allowsCustom: Bool = false,
-                searchesDetail: Bool = true, query: String = "", maxVisible: Int = 10) {
+                searchesDetail: Bool = true, query: String = "", maxVisible: Int = 10,
+                rowLayout: RowLayout = .inline, status: String? = nil) {
         self.title = title
         self.searchesDetail = searchesDetail
         self.items = items
         self.mode = mode
         self.allowsCustom = allowsCustom
         self.maxVisible = max(1, maxVisible)
+        self.rowLayout = rowLayout
+        self.status = status
         setQuery(query)
     }
 
     public var visibleRows: ArraySlice<Row> {
         rows[scroll..<min(rows.count, scroll + maxVisible)]
+    }
+
+    /// Replaces list items, reapplies the current query, and keeps the selected item by id.
+    public mutating func setItems(_ newItems: [PickerItem]) {
+        let selectedID = selectedItem?.id
+        items = newItems
+        setQuery(query)
+        guard let selectedID,
+              let row = rows.firstIndex(where: { items[$0.index].id == selectedID }) else { return }
+        select(row)
     }
 
     public mutating func setQuery(_ q: String) {

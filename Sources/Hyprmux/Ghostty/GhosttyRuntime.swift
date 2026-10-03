@@ -204,6 +204,15 @@ final class GhosttyRuntime {
         case GHOSTTY_ACTION_SET_TITLE:
             guard let v, let t = action.action.set_title.title else { return false }
             v.runtimeSetTitle(String(cString: t))
+        case GHOSTTY_ACTION_SECURE_INPUT:
+            // Sent when the PTY enters or leaves a password prompt (canonical, no echo).
+            // TOGGLE comes from Ghostty's toggle_secure_input binding, not detection.
+            guard let v else { return false }
+            switch action.action.secure_input {
+            case GHOSTTY_SECURE_INPUT_ON: v.runtimeSetPasswordInput(true)
+            case GHOSTTY_SECURE_INPUT_OFF: v.runtimeSetPasswordInput(false)
+            default: return false
+            }
         case GHOSTTY_ACTION_PWD:
             guard let v, let p = action.action.pwd.pwd else { return false }
             v.runtimeSetPwd(String(cString: p))

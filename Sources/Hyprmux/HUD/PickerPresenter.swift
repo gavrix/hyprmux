@@ -10,6 +10,7 @@ final class PickerPresenter {
     private let scrim = PickerScrim()
     private var anchor: HUDAnchor = .monitor(.center)
     private var completion: ((PickerResult?) -> Void)?
+    private var requestID: UUID?
     /// Pickers pop in unless the config sets a layers style.
     private let defaultStyle = LayerAnimationStyle.popin(0.9)
 
@@ -28,10 +29,11 @@ final class PickerPresenter {
     /// Opens `picker`, replacing (cancelling) one that's already open. `completion` gets
     /// the choice, or nil when cancelled.
     func present(_ picker: Picker, anchor: HUDAnchor = .monitor(.center), icons: [String: NSImage] = [:],
-                 completion: @escaping (PickerResult?) -> Void) {
+                 requestID: UUID? = nil, completion: @escaping (PickerResult?) -> Void) {
         if isOpen { finish(nil) }
         self.anchor = anchor
         self.completion = completion
+        self.requestID = requestID
         let v = PickerView(picker: picker, theme: hud.theme, icons: icons)
         v.onPick = { [weak self, weak v] row in
             guard let self, let v else { return }
@@ -49,6 +51,16 @@ final class PickerPresenter {
     }
 
     func cancel() { if isOpen { finish(nil) } }
+
+    /// Replaces rows in the current picker and resizes it. A request id prevents late
+    /// asynchronous results from changing a newer picker.
+    @discardableResult
+    func update(items: [PickerItem], status: String?, icons: [String: NSImage], requestID: UUID) -> Bool {
+        guard let v = view, self.requestID == requestID else { return false }
+        v.update(items: items, status: status, icons: icons)
+        relayout()
+        return true
+    }
 
     /// Keeps the keyboard on the query field.
     func focus(in window: NSWindow) {
@@ -106,7 +118,11 @@ final class PickerPresenter {
     }
 
     private func accept() {
-        guard let r = view?.picker.result else { NSSound.beep(); return }
+        guard let picker = view?.picker else { return }
+        guard let r = picker.result else {
+            if picker.status == nil || !picker.items.isEmpty { NSSound.beep() }
+            return
+        }
         finish(r)
     }
 
@@ -121,6 +137,7 @@ final class PickerPresenter {
         hud.animateOut(v, position: anchor.position, defaultStyle: defaultStyle)
         let done = completion
         completion = nil
+        requestID = nil
         onClose?()
         done?(result)
     }

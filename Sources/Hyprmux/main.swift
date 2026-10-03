@@ -32,6 +32,8 @@ app.delegate = delegate
 app.setActivationPolicy(.regular)
 
 let startupConfig = AppDelegate.loadConfig()
+// CEF switches only change on restart. Keep the startup safety state if config reload removes a live switch.
+let startupChromiumCredentialRefusingSwitch = ChromiumCredentialPolicy.refusingSwitch(in: startupConfig.chromiumFlags)
 let wantsChromium = startupConfig.webEngine == "chromium"
 let cefFramework = Bundle.main.privateFrameworksURL?
     .appendingPathComponent("Chromium Embedded Framework.framework").path ?? ""

@@ -193,8 +193,59 @@ Groups hold several windows as tabs in one tile.
 | `search` | DuckDuckGo | Search URL for address-bar text that isn't a URL; `%s` is the query. |
 | `open_terminal_links` | true | ⌘-click on a link in a terminal opens a web tile instead of your browser. Over a link, ⌘-click opens it even when `$mod` + click is bound to `movewindow`. |
 | `address_bar` | true | Show the address bar, with back, forward, and reload buttons. |
-| `chromium_extensions` | — | Comma-separated unpacked extension folders to load into Chromium. Extensions that need tabs (like 1Password) don't work in tiles. |
-| `chromium_flags` | — | Space-separated Chromium switches, e.g. `remote-debugging-port=9333`. |
+| `chromium_extensions` | — | Comma-separated unpacked extension folders to load into Chromium. Extensions that need tabs (like 1Password) don't work in tiles. Loaded extensions can read page DOM values, including filled credentials, like page scripts. |
+| `chromium_flags` | — | Space-separated Chromium switches. Credential fill is refused with `remote-debugging-port`, `remote-debugging-pipe`, or `devtools-protocol-log-file` because those switches can expose filled values. |
+
+### `credentials`
+
+| Option | Default | Meaning |
+|---|---|---|
+| `providers` | every usable provider, sorted by id | Comma-separated provider ids to query, in picker order. Only listed providers participate. Unknown or unusable ids are skipped and reported when providers load. |
+
+```ini
+credentials {
+    providers = 1password, work-vault
+}
+```
+
+#### Credential browser fill
+
+`fillcredential [provider-id]` opens a native picker from the configured providers,
+or only the named provider. An explicit provider id ignores `credentials:providers`.
+Providers answer progressively, so one locked provider does not delay results from
+another provider. It fills the focused field in WebKit and Chromium tiles, including
+same-origin child frames. Cross-origin frames are not supported.
+
+The bundled `1password` provider requires 1Password CLI version 2 at
+`/opt/homebrew/bin/op` or `/usr/local/bin/op`, with desktop-app integration enabled.
+Other password managers can supply out-of-process providers. See
+[CREDENTIALS.md](CREDENTIALS.md) for provider manifests, trust checks, the protocol,
+and security rules.
+
+Only HTTPS pages are eligible, except HTTP loopback development sites. Focus a
+visible, enabled, editable password or email input before running the dispatcher.
+A text input also works when its autocomplete, id, or name identifies it as a
+username, login, or email field. Hyprmux captures that exact input before opening
+the picker. It validates fresh metadata and requires an exact saved-host match,
+or an explicit `Fill anyway` choice. Navigation, origin changes, focus changes,
+or element replacement cancel the fill. Filling dispatches bubbling `input` and
+`change` events, but never submits the form.
+
+#### Credential terminal fill
+
+In a terminal tile, `fillcredential` types a password into a password prompt,
+such as `sudo`, `ssh`, or `read -s`. Hyprmux uses Ghostty's prompt detection:
+the terminal must have line input on and echo off. A plain shell prompt is refused,
+so a secret never lands in scrollback or shell history.
+
+The terminal must be focused when the dispatcher runs. Hyprmux records the
+foreground program, and that same program must still be asking for a password
+when Hyprmux types it. A terminal has no website to check, so picking the item
+is the confirmation. Hyprmux types the password as keyboard input, without
+bracketed paste, and never presses Return.
+
+Programs that read a password in raw mode and draw their own masked prompt
+are not detected and get refused.
 
 ### `ghostty`
 
@@ -451,6 +502,7 @@ These names work in `bind` lines and with `hyprmuxctl dispatch`.
 | `exec` | [command] | New terminal, optionally running a command. |
 | `web` / `openurl` | [url or search] | New web tile. Empty: a start page with the address bar focused. |
 | `webnav` | `back` `forward` `reload` `stop` `home` `focusurl` `inspect` | Navigation in the focused web tile. |
+| `fillcredential` | [provider id] | Choose a credential and fill the exact focused field in a WebKit or Chromium tile, or type a password into a terminal's password prompt. Empty queries the configured providers. |
 | `sim` / `simulator` | [udid, name, or `booted`] | Show an iOS Simulator. Empty: attach the only running iOS or Android device, or show a combined picker. |
 | `android` / `avd` | [AVD id or name] | Attach a running Android AVD. Empty: the sole running AVD, or a picker when several are running. Never boots an AVD. |
 | `launch` | [name or id, then arguments] | Open an [app](APPS.md) in a new tile. The text names an app whole, or its first word does and the rest are arguments. Empty: the launcher. |
@@ -487,7 +539,7 @@ A bind applies window dispatchers to the focused window. They are `killactive`,
 `movefocus`, `movewindow`, `swapwindow`, `resizeactive`, `moveactive`,
 `movetoworkspace`, `movetoworkspacesilent`, `togglefloating`, `fullscreen`,
 `togglesplit`, `swapsplit`, `splitratio`, `cyclenext`, `centerwindow`, `webnav`,
-`simbutton`, and the group dispatchers.
+`fillcredential`, `simbutton`, and the group dispatchers.
 `hyprmuxctl dispatch --surface N` applies them to another window without focusing it.
 Only dispatchers about focus (`movefocus`, `cyclenext`) or following a window
 (`movetoworkspace`) move focus. A layout dispatcher on a hidden group tab acts on its

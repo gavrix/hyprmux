@@ -75,6 +75,8 @@ public enum Dispatcher: Equatable, Sendable {
     /// Open a web surface (empty = home page, address bar focused).
     case web(String)
     case webNav(WebNav)
+    /// Fill the focused credential input. Nil selects every enabled provider.
+    case fillCredential(String?)
     /// Show an iOS Simulator's screen in a tile: UDID, device name, or "booted".
     case sim(String)
     /// Attach to a running Android Virtual Device: stable AVD id or name.
@@ -135,6 +137,11 @@ public enum Dispatcher: Equatable, Sendable {
         switch name.trimmingCharacters(in: .whitespaces).lowercased() {
         case "exec": return .success(.exec(a))
         case "web", "openurl": return .success(.web(a))
+        case "fillcredential":
+            guard a.isEmpty || CredentialProviderManifest.isValidIdentifier(a) else {
+                return .failure(.init("fillcredential: expected an optional provider id"))
+            }
+            return .success(.fillCredential(a.isEmpty ? nil : a))
         case "sim", "simulator": return .success(.sim(a))
         case "android", "avd": return .success(.android(a))
         case "launch": return .success(.launch(a))
@@ -214,7 +221,7 @@ extension Dispatcher {
     /// IPC can name another one (`dispatch --surface N ...`). The rest act on the app or a workspace.
     public var targetsWindow: Bool {
         switch self {
-        case .webNav, .simButton, .killActive, .moveFocus, .moveWindow, .swapWindow,
+        case .webNav, .fillCredential, .simButton, .killActive, .moveFocus, .moveWindow, .swapWindow,
              .resizeActive, .moveActive, .moveToWorkspace, .toggleFloating, .fullscreen,
              .toggleSplit, .swapSplit, .splitRatio, .cycleNext, .centerWindow,
              .toggleGroup, .changeGroupActive, .moveIntoGroup, .moveOutOfGroup, .moveGroupWindow:

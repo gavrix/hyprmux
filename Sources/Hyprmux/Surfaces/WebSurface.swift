@@ -82,6 +82,27 @@ final class WebKitSurface: BrowserSurface, WKNavigationDelegate, WKUIDelegate {
         webView.removeFromSuperview()
     }
 
+    // MARK: Credential filling
+
+    override func engineCallCredentialFunction(_ source: String, arguments: [String: Any],
+                                               completion: @escaping (Result<Any?, Error>) -> Void) {
+        // The wrapper is built only from a checked-in function source. Values stay in `args`.
+        let wrapper = "return await (\(source))(args)"
+        Task { @MainActor [weak self] in
+            guard let self else {
+                completion(.failure(BrowserCredentialError.pageChanged))
+                return
+            }
+            do {
+                let value = try await webView.callAsyncJavaScript(
+                    wrapper, arguments: ["args": arguments], in: nil, contentWorld: .defaultClient)
+                completion(.success(value))
+            } catch {
+                completion(.failure(error))
+            }
+        }
+    }
+
     // MARK: WKNavigationDelegate
 
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {

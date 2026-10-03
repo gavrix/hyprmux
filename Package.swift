@@ -11,6 +11,7 @@ let package = Package(
         .executable(name: "hyprmux-broker", targets: ["hyprmux-broker"]),
         .executable(name: "hyprmux-demo-client", targets: ["hyprmux-demo-client"]),
         .executable(name: "hyprmux-electron-bridge", targets: ["hyprmux-electron-bridge"]),
+        .executable(name: "hyprmux-credential-1password", targets: ["hyprmux-credential-1password"]),
         .library(name: "HyprmuxClientKit", targets: ["HyprmuxClientKit"]),
     ],
     dependencies: [
@@ -30,8 +31,9 @@ let package = Package(
         // AppKit shell: window, compositor views, animations, libghostty surfaces.
         .executableTarget(
             name: "Hyprmux",
-            dependencies: ["HyprmuxCore", "GhosttyKit", "ChromiumBridge", "SimulatorBridge", "AndroidEmulatorBridge",
-                           "HyprmuxClientProtocol"],
+            dependencies: ["HyprmuxCore", "HyprmuxCredentialSupport", "GhosttyKit", "ChromiumBridge", "SimulatorBridge",
+                           "AndroidEmulatorBridge", "HyprmuxClientProtocol"],
+            exclude: ["Credentials"],
             swiftSettings: [.swiftLanguageMode(.v5)],
             linkerSettings: [
                 .linkedLibrary("c++"),
@@ -64,6 +66,22 @@ let package = Package(
             dependencies: ["HyprmuxClientKit"],
             swiftSettings: [.swiftLanguageMode(.v5)],
             linkerSettings: [.linkedFramework("IOSurface")]
+        ),
+        .target(
+            name: "HyprmuxCredentialSupport",
+            dependencies: ["HyprmuxCore"],
+            path: "Sources/Hyprmux/Credentials",
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
+        .target(
+            name: "OnePasswordCredentialProvider",
+            dependencies: ["HyprmuxCore"],
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
+        .executableTarget(
+            name: "hyprmux-credential-1password",
+            dependencies: ["HyprmuxCore", "OnePasswordCredentialProvider"],
+            swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .executableTarget(
             name: "hyprmux-demo-client",
@@ -122,6 +140,10 @@ let package = Package(
         .testTarget(
             name: "HyprmuxCoreTests",
             dependencies: ["HyprmuxCore"]
+        ),
+        .testTarget(
+            name: "CredentialProviderTests",
+            dependencies: ["HyprmuxCore", "HyprmuxCredentialSupport", "OnePasswordCredentialProvider"]
         ),
         .testTarget(
             name: "AndroidEmulatorBridgeTests",

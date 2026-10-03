@@ -9,16 +9,10 @@ if let res = Bundle.main.resourceURL?.appendingPathComponent("ghostty").path,
     setenv("GHOSTTY_RESOURCES_DIR", res, 1)
 }
 
-/// Chromium switches from the config: extensions and free-form flags.
+/// Chromium switches: free-form flags and extensions from the config, plus default features.
 func chromiumSwitches(_ c: HyprmuxConfig) -> [String] {
-    var s = c.chromiumFlags
     let exts = c.chromiumExtensions.filter { FileManager.default.fileExists(atPath: $0 + "/manifest.json") }
-    if !exts.isEmpty {
-        s.append("load-extension=" + exts.joined(separator: ","))
-        // Chrome 137+ ignores --load-extension unless this feature is off.
-        s.append("disable-features=DisableLoadExtensionCommandLineSwitch")
-    }
-    return s
+    return ChromiumSwitches.build(flags: c.chromiumFlags, extensions: exts)
 }
 
 if ghostty_init(UInt(CommandLine.argc), CommandLine.unsafeArgv) != GHOSTTY_SUCCESS {

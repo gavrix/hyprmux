@@ -304,6 +304,12 @@ input routing internals. See [DEVELOPMENT.md](DEVELOPMENT.md).
   the whole Hyprmux monitor.
 - **Popups:** handled in `OnBeforePopup` by creating a new tile and attaching
   the popup there, so `window.opener` keeps working.
+- **Switches:** `ChromiumSwitches.build` adds the config's `chromium_flags`
+  and extensions, and turns on `ThrottleResizeIpc`. Chromium 154 on Mac
+  otherwise sends the renderer every size of a drag resize, and slow pages
+  replay them all after the drag. A user's `disable-features=ThrottleResizeIpc`
+  turns it off. All `enable-features` and `disable-features` values merge into
+  one switch each, since Chromium keeps only the last one.
 - **Profile:** `~/Library/Application Support/Hyprmux/Chromium`, with
   `use-mock-keychain`, since ad-hoc builds would otherwise hit a keychain
   prompt on every build.

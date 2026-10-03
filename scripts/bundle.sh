@@ -62,7 +62,7 @@ cp -R "$ROOT/Resources/credential-providers" "$APP/Contents/Resources/credential
 mkdir -p "$APP/Contents/Library/LaunchAgents"
 cp "$ROOT/Resources/LaunchAgents/dev.gavrix.hyprmux.broker.plist" "$APP/Contents/Library/LaunchAgents/"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
-# App icon, rendered from Resources/AppIcon/*.svg by scripts/make-icon.sh.
+# App icon, rendered from Resources/AppIcon/AppIcon.png by scripts/make-icon.sh.
 cp "$ROOT/Resources/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 
 SKILL="$ROOT/.agents/skills/hyprmuxctl"

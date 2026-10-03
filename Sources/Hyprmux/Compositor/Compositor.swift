@@ -14,6 +14,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
     let window: MonitorWindow
     let root: CompositorView
     private let bar = BarView()
+    private let barBackdrop = BarBackdrop()
     private let hint = HintView()
     private let specialDim = NSView()
     private let animator: Animator
@@ -116,11 +117,14 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         specialDim.layer?.backgroundColor = NSColor.black.cgColor
         specialDim.alphaValue = 0
         specialDim.isHidden = true
+        root.addSubview(barBackdrop)
         root.addSubview(specialDim)
         root.addSubview(hint)
         root.addSubview(bar)
         root.addSubview(hud.layer)
         bar.onSelectWorkspace = { [weak self] n in self?.dispatch(.workspace(.id(n))) }
+        // The bar sits at the root's origin, so its coordinates are the root's.
+        bar.onPillsFrame = { [weak self] f in self?.barBackdrop.wrap(f) }
         hud.clientFrame = { [weak self] id in self?.views[id]?.targetFrame }
         hud.onFocusClient = { [weak self] id in self?.focusFromHUD(id) }
         hud.picker.onClose = { [weak self] in
@@ -224,6 +228,8 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         var paint = bg
         if transparent { paint.a = max(paint.a, 0.01) }
         root.layer?.backgroundColor = paint.cg
+        barBackdrop.configure(enabled: config.barBackdrop, transparent: transparent)
+        barBackdrop.wrap(bar.pillsFrame)
         if let c = config.activeBorder.colors.first {
             bar.accent = NSColor(cgColor: HyprmuxCore.Color(r: c.r, g: c.g, b: c.b, a: 1).cg) ?? bar.accent
         }
@@ -812,6 +818,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         for v in closing.values { order[ObjectIdentifier(v)] = 20_000 }
         order[ObjectIdentifier(specialDim)] = 9_999
         order[ObjectIdentifier(hint)] = -1
+        order[ObjectIdentifier(barBackdrop)] = -2
         order[ObjectIdentifier(bar)] = 30_000
         order[ObjectIdentifier(hud.layer)] = 30_001
         if let d = drag, let v = views[d.id] { order[ObjectIdentifier(v)] = 25_000 }

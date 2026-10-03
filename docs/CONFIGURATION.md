@@ -268,6 +268,7 @@ The mouse works too: hover selects a row, a click chooses it, and the wheel scro
 |---|---|---|
 | `float_size` | 0.6 | Size of a window floated for the first time, as a fraction of the screen. |
 | `confirm_quit` | true | ⌘Q quits only when pressed twice within two seconds; the first press shows "Press ⌘Q again to quit". Quitting from the Dock, logging out, and the `exit` dispatcher don't ask. |
+| `bar_backdrop` | true | A frosted capsule behind the workspace pills, so they stay readable over any wallpaper. Liquid Glass on macOS 26; a vibrancy blur on older systems. |
 
 ### Workspaces
 

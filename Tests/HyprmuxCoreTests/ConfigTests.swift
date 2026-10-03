@@ -35,6 +35,12 @@ final class ConfigTests: XCTestCase {
         XCTAssertFalse(ConfigParser.parse("hyprmux:confirm_quit = false").confirmQuit)
     }
 
+    func testBarBackdrop() {
+        XCTAssertTrue(ConfigParser.parse(defaultConfig).barBackdrop)
+        XCTAssertTrue(HyprmuxConfig().barBackdrop)
+        XCTAssertFalse(ConfigParser.parse("hyprmux:bar_backdrop = false").barBackdrop)
+    }
+
     func testEmbeddedDefaultMatchesRepoFile() throws {
         let file = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()

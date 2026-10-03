@@ -167,6 +167,7 @@ hyprmuxctl dispatch android Pixel_8_API_36
 hyprmuxctl skill install                    # install the bundled agent skill globally
 hyprmuxctl surfaces                         # JSON for every surface and its capabilities
 hyprmuxctl read-screen --surface surface:2 --lines 100
+hyprmuxctl read-selection --surface surface:2
 hyprmuxctl send --surface surface:3 'npm test\n'
 hyprmuxctl send-key --surface surface:3 ctrl+c
 hyprmuxctl new-surface --workspace 3 --input 'npm test\n'   # a shell in the background

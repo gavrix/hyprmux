@@ -26,6 +26,8 @@ guard !args.isEmpty, args[0] != "-h", args[0] != "--help" else {
       move-surface [--surface <id>] --workspace <ws> [--focus]
                                       move a surface (and its group) to a workspace
       read-screen [--surface <id>] [--scrollback] [--lines N] [--json]
+      read-selection [--surface <id>] [--json]
+                                      read the terminal's most recent mouse selection
       send [--surface <id>] <text>   type text into a terminal; reads stdin when omitted
       send-key [--surface <id>] <key>  send a terminal key, e.g. ctrl+c or enter
       skill install|status|path|source|uninstall [--force]
@@ -320,7 +322,7 @@ func dispatchLine(_ arguments: [String]) throws -> String {
     return (["dispatch", "--surface", surface] + rest).joined(separator: " ")
 }
 
-var unwrapReadScreenResponse = false
+var unwrapTextResponse: String?
 /// `adapters` prints tables unless --json; the reply is always JSON.
 var adaptersView: String?
 
@@ -637,7 +639,18 @@ func commandLine() throws -> String {
         var options = parsed.remaining
         if !options.contains("--json") {
             options.append("--json")
-            unwrapReadScreenResponse = true
+            unwrapTextResponse = command
+        }
+        return ([command] + targetArguments(parsed.surface) + options).joined(separator: " ")
+    case "read-selection":
+        let parsed = try takeSurface(from: commandArgs)
+        var options = parsed.remaining
+        guard options.allSatisfy({ $0 == "--json" }), options.count <= 1 else {
+            throw CLIError(message: "read-selection takes only --surface and --json")
+        }
+        if !options.contains("--json") {
+            options.append("--json")
+            unwrapTextResponse = command
         }
         return ([command] + targetArguments(parsed.surface) + options).joined(separator: " ")
     case "snapshot":
@@ -745,10 +758,10 @@ close(fd)
 let failed = output.starts(with: Data("error:".utf8))
 if failed {
     FileHandle.standardError.write(output)
-} else if unwrapReadScreenResponse {
+} else if let textCommand = unwrapTextResponse {
     guard let object = try? JSONSerialization.jsonObject(with: output) as? [String: Any],
           let text = object["text"] as? String else {
-        FileHandle.standardError.write("hyprmuxctl: invalid read-screen response\n".data(using: .utf8)!)
+        FileHandle.standardError.write("hyprmuxctl: invalid \(textCommand) response\n".data(using: .utf8)!)
         exit(1)
     }
     FileHandle.standardOutput.write(Data(text.utf8))

@@ -177,6 +177,14 @@ Use `--json` when another program needs the target ID and options beside the tex
 The command reads Ghostty's rendered text, not raw PTY bytes.
 Control sequences and output overwritten by terminal rendering are therefore absent.
 
+Read the terminal's most recent mouse selection without changing the clipboard:
+
+```sh
+hyprmuxctl read-selection --surface surface:7
+```
+
+Hyprmux caches it when the mouse selection completes, before keyboard input clears the live selection.
+
 ## Send text and keys
 
 Send text and decode `\n`, `\t`, and `\\` in command arguments:

@@ -39,6 +39,15 @@ final class IPCTests: XCTestCase {
         XCTAssertEqual(try IPCRequest.parse("identify --surface surface:9").get(), .identify(SurfaceReference(9)))
     }
 
+    func testReadSelectionRequest() throws {
+        XCTAssertEqual(
+            try IPCRequest.parse("read-selection --surface surface:8 --json").get(),
+            .readSelection(surface: SurfaceReference(8), json: true)
+        )
+        XCTAssertEqual(try IPCRequest.parse("read-selection").get(), .readSelection(surface: nil, json: false))
+        XCTAssertThrowsError(try IPCRequest.parse("read-selection extra").get())
+    }
+
     func testReadScreenRequest() throws {
         XCTAssertEqual(
             try IPCRequest.parse("read-screen --surface surface:8 --lines 25 --json").get(),

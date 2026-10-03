@@ -178,6 +178,8 @@ public enum IPCRequest: Equatable {
     case sendText(String)
     case sendKey(Modifiers, UInt16)
     case readScreen(surface: SurfaceReference?, scrollback: Bool, lines: Int?, json: Bool)
+    /// Reads the terminal's most recent mouse selection without using the clipboard.
+    case readSelection(surface: SurfaceReference?, json: Bool)
     case sendSurfaceText(surface: SurfaceReference?, text: String)
     case sendSurfaceKey(surface: SurfaceReference?, key: TerminalKey)
     /// Mouse drag in monitor coordinates (top-left origin). Button: 272 left, 273 right.
@@ -270,6 +272,16 @@ public enum IPCRequest: Equatable {
                 guard args.isEmpty else { return .failure(ParseError("identify: unexpected arguments")) }
                 return parseSurface(value).map { .identify($0) }
             }
+        case "read-selection":
+            var args = words(rest)
+            let surfaceValue: String?
+            switch takeOption("--surface", from: &args) {
+            case .failure(let error): return .failure(error)
+            case .success(let value): surfaceValue = value
+            }
+            let wantsJSON = removeFlag("--json", from: &args)
+            guard args.isEmpty else { return .failure(ParseError("read-selection: unexpected arguments")) }
+            return parseSurface(surfaceValue).map { .readSelection(surface: $0, json: wantsJSON) }
         case "read-screen":
             var args = words(rest)
             let surfaceValue: String?

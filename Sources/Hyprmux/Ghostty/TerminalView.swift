@@ -56,6 +56,8 @@ final class TerminalView: NSView, NSTextInputClient {
     private var keyTextAccumulator: [String]?
     private var lastPerformKeyEvent: TimeInterval?
     private var contentSize: CGSize = .zero
+    /// Kept after keyboard input clears Ghostty's live selection, so commands can use it.
+    private var cachedSelection: (text: String, selectedAt: TimeInterval)?
 
     init(app: ghostty_app_t, id: ClientID, options: SurfaceOptions) {
         self.clientID = id
@@ -157,6 +159,29 @@ final class TerminalView: NSView, NSTextInputClient {
         }
         guard let output else { return nil }
         return lines.map { IPCText.tailLines(output, count: $0) } ?? output
+    }
+
+    /// The latest mouse selection. Typing may clear Ghostty's live selection, so mouse-up
+    /// captures it until another selection replaces it.
+    func readTerminalSelection() -> (text: String, selectedAt: TimeInterval)? {
+        cacheTerminalSelection()
+        return cachedSelection
+    }
+
+    private func cacheTerminalSelection(refreshTimestamp: Bool = false) {
+        guard let text = currentTerminalSelectionText(), !text.isEmpty else { return }
+        if refreshTimestamp || cachedSelection?.text != text {
+            cachedSelection = (text, Date().timeIntervalSince1970)
+        }
+    }
+
+    private func currentTerminalSelectionText() -> String? {
+        guard let s = surface else { return nil }
+        var text = ghostty_text_s()
+        guard ghostty_surface_read_selection(s, &text) else { return nil }
+        defer { ghostty_surface_free_text(s, &text) }
+        guard let pointer = text.text, text.text_len > 0 else { return nil }
+        return String(decoding: Data(bytes: pointer, count: Int(text.text_len)), as: UTF8.self)
     }
 
     /// Sends a key directly to this terminal. It bypasses compositor bindings and focus.
@@ -363,6 +388,9 @@ final class TerminalView: NSView, NSTextInputClient {
         guard let s = surface else { return }
         ghostty_surface_mouse_button(s, GHOSTTY_MOUSE_RELEASE, GHOSTTY_MOUSE_LEFT, GhosttyInput.mods(event.modifierFlags))
         ghostty_surface_mouse_pressure(s, 0, 0)
+        cacheTerminalSelection(refreshTimestamp: true)
+        // Ghostty can publish selection state after the release callback returns.
+        DispatchQueue.main.async { [weak self] in self?.cacheTerminalSelection(refreshTimestamp: true) }
     }
 
     override func rightMouseDown(with event: NSEvent) {
@@ -623,14 +651,7 @@ final class TerminalView: NSView, NSTextInputClient {
 
     override func accessibilitySelectedTextRange() -> NSRange { selectedRange() }
 
-    override func accessibilitySelectedText() -> String? {
-        guard let s = surface else { return nil }
-        var text = ghostty_text_s()
-        guard ghostty_surface_read_selection(s, &text) else { return nil }
-        defer { ghostty_surface_free_text(s, &text) }
-        guard let ptr = text.text, text.text_len > 0 else { return nil }
-        return String(decoding: Data(bytes: ptr, count: Int(text.text_len)), as: UTF8.self)
-    }
+    override func accessibilitySelectedText() -> String? { currentTerminalSelectionText() }
 
     // MARK: NSTextInputClient
 

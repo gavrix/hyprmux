@@ -1177,6 +1177,21 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
             case .sendKey(let mods, let code):
                 injectKey(mods, code)
                 return "ok"
+            case .readSelection(let reference, let wantsJSON):
+                guard let (id, surface) = automationTarget(reference) else { return "error: surface not found" }
+                guard let term = surface as? TerminalView else { return "error: surface \(id.raw) is not a terminal" }
+                guard let selection = term.readTerminalSelection() else {
+                    return "error: terminal \(id.raw) has no selected text"
+                }
+                let maximumBytes = 64 * 1024
+                guard selection.text.utf8.count <= maximumBytes else {
+                    return "error: terminal selection exceeds \(maximumBytes) bytes"
+                }
+                if wantsJSON {
+                    return json(["id": id.raw, "ref": SurfaceReference(id.raw).description,
+                                 "text": selection.text, "selectedAt": selection.selectedAt])
+                }
+                return selection.text
             case .readScreen(let reference, let scrollback, let lines, let wantsJSON):
                 guard let (id, surface) = automationTarget(reference) else { return "error: surface not found" }
                 guard let term = surface as? TerminalView else { return "error: surface \(id.raw) is not a terminal" }

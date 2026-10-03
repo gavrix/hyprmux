@@ -528,6 +528,7 @@ See [Terminal automation](AUTOMATION.md) for workflows, limits, and agent skill 
 | `clients`, `surfaces` | JSON for every surface: id, `surface:N` ref, capabilities, kind, workspace, frame, focus, group, URL or pwd. |
 | `identify [--surface ID]` | JSON for the caller, explicit target, or focused surface. |
 | `read-screen [--surface ID] [--scrollback] [--lines N] [--json]` | Reads rendered terminal text. `--lines` implies scrollback. |
+| `read-selection [--surface ID] [--json]` | Reads the terminal's most recent mouse selection without using the clipboard. |
 | `send [--surface ID] TEXT` | Types text into a terminal. Reads stdin when text is omitted; arguments decode `\n`, `\t`, and `\\`. |
 | `send-key [--surface ID] KEY` | Sends a terminal key such as `ctrl+c`, `enter`, `tab`, or `escape`. |
 | `workspaces`, `activewindow`, `version` | JSON or text. |

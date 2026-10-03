@@ -51,6 +51,6 @@ extension TerminalView: Surface {
     var kind: String { "terminal" }
     var backdropColor: NSColor { backdrop }
     var info: [String: Any] { ["pwd": pwd ?? ""] }
-    var automationCapabilities: [String] { ["read_text", "send_text", "send_key"] }
+    var automationCapabilities: [String] { ["read_text", "read_selection", "send_text", "send_key"] }
     func setOccluded(_ occluded: Bool) { setTerminalOccluded(occluded) }
 }

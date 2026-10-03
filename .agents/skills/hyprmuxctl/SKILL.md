@@ -72,6 +72,14 @@ hyprmuxctl read-screen --surface surface:N
 Use `--scrollback` for all available rendered history.
 Use `--json` when structured metadata is needed beside the text.
 
+Read the terminal's most recent mouse selection without the clipboard:
+
+```sh
+hyprmuxctl read-selection --surface surface:N
+```
+
+Hyprmux preserves the selection after terminal input clears its visible highlight.
+
 ## Send explicit input
 
 Prefer an explicit target for every cross-terminal action.

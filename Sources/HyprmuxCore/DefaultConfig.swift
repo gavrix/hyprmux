@@ -213,6 +213,8 @@ web {
     # chromium_extensions = ~/.config/hyprmux/extensions/example
     # chromium_flags = remote-debugging-port=9333
     home = https://duckduckgo.com
+    # Page for a new empty web tile, instead of the built-in start page.
+    # new_tab = https://duckduckgo.com
     # %s is replaced by the search terms typed in the address bar.
     search = https://duckduckgo.com/?q=%s
     # Cmd+click on a link in a terminal opens it in a web tile instead of your browser.

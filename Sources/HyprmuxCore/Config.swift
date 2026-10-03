@@ -169,6 +169,8 @@ public struct HyprmuxConfig: Sendable {
 
     /// Web surfaces.
     public var webHome = "https://duckduckgo.com"
+    /// Page for a new empty web tile, like a browser's New Tab page. Empty = the built-in start page.
+    public var webNewTab = ""
     /// Search URL for address-bar input that isn't a URL. `%s` = query.
     public var webSearch = "https://duckduckgo.com/?q=%s"
     /// Open http(s) links clicked in terminals (cmd+click) in a web surface.
@@ -438,6 +440,7 @@ public enum ConfigParser {
             case "misc:background_color":
                 if let c = Color.parse(value) { config.backgroundColor = c } else { error(file, line, "\(key): bad color") }
             case "web:home": config.webHome = value
+            case "web:new_tab": config.webNewTab = value
             case "web:search":
                 if value.contains("%s") { config.webSearch = value } else { error(file, line, "web:search: needs %s for the query") }
             case "web:open_terminal_links": if let v = bool() { config.webOpenTerminalLinks = v }

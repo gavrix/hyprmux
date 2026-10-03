@@ -162,6 +162,13 @@ final class ConfigTests: XCTestCase {
         XCTAssertEqual(ConfigParser.parse("web:engine = gecko").errors.count, 1)
     }
 
+    func testWebNewTab() {
+        XCTAssertEqual(ConfigParser.parse("").webNewTab, "")
+        let c = ConfigParser.parse("web {\n    new_tab = chrome-extension://abc/index.html\n}")
+        XCTAssertEqual(c.errors, [])
+        XCTAssertEqual(c.webNewTab, "chrome-extension://abc/index.html")
+    }
+
     func testGroupBorderSize() {
         XCTAssertNil(ConfigParser.parse("").groupBorderSize)
         let c = ConfigParser.parse("group {\n    border_size = 4\n}")

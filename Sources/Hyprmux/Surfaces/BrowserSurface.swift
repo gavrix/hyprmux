@@ -20,11 +20,13 @@ protocol BrowserSurfaceHost: AnyObject {
 
 struct BrowserOptions {
     var home: String
+    var newTab: String
     var search: String
     var showAddressBar: Bool
 
     init(_ c: HyprmuxConfig) {
         home = c.webHome
+        newTab = c.webNewTab
         search = c.webSearch
         showAddressBar = c.webShowAddressBar
     }
@@ -126,7 +128,19 @@ class BrowserSurface: FlippedView, Surface, NSTextFieldDelegate {
 
     func engineURLChanged(_ u: String) {
         guard !isEditingAddress else { return }
-        address.stringValue = (u == "about:blank" || u.hasPrefix("data:")) ? "" : u
+        address.stringValue = displayAddress(u)
+    }
+
+    /// What the address bar shows for a URL: nothing for blank and new-tab pages.
+    private func displayAddress(_ u: String) -> String {
+        if u == "about:blank" || u.hasPrefix("data:") { return "" }
+        if let tab = newTabURL, u == tab.absoluteString { return "" }
+        return u
+    }
+
+    /// The configured new-tab page (`web:new_tab`), if any.
+    private var newTabURL: URL? {
+        options.newTab.isEmpty ? nil : WebAddress.resolve(options.newTab, search: options.search)
     }
 
     func engineLoadingChanged(_ l: Bool) {
@@ -180,6 +194,13 @@ class BrowserSurface: FlippedView, Surface, NSTextFieldDelegate {
     /// New-tab page: local, no autofocus (a page that autofocuses would steal the address bar).
     /// `focusAddress` false opens it in the background, leaving keyboard focus where it is.
     func openStartPage(focusAddress takeFocus: Bool = true) {
+        if let url = newTabURL {
+            engineLoad(url)
+            requestedURL = url.absoluteString
+            address.stringValue = ""
+            if takeFocus { focusAddress() }
+            return
+        }
         engineLoadHTML("""
         <html><head><meta name="color-scheme" content="dark"><title>New tab</title></head>
         <body style="margin:0;height:100vh;display:flex;align-items:center;justify-content:center;
@@ -210,8 +231,7 @@ class BrowserSurface: FlippedView, Surface, NSTextFieldDelegate {
 
     func focusPage() {
         if let w = window { engineTakeFocus(in: w) }
-        let u = currentURL
-        address.stringValue = (u == "about:blank" || u.hasPrefix("data:")) ? "" : u
+        address.stringValue = displayAddress(currentURL)
     }
 
     func setAddressBarVisible(_ v: Bool) {

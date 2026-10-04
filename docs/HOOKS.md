@@ -85,7 +85,7 @@ These are Hyprmux's own:
 | `key` | A bind. |
 | `mouse` | A mouse bind drag (`dispatch>>mouse,movewindow,` or `resizewindow`, sent when the drag ends), or a workspace pill clicked in the bar. |
 | `ipc` | `hyprmuxctl dispatch`, or another socket command that moves windows. |
-| `picker` | A choice in a picker (the workspace picker, naming a workspace). |
+| `picker` | A choice in a picker (the workspace picker, naming a workspace) or in the menu. A menu row that opens another picker sends `dispatch>>picker,picker,KIND`. |
 | `app` | Hyprmux itself: a terminal's own split shortcuts, a layout. |
 
 A click or the pointer focuses a window without a dispatch: only `activewindow`

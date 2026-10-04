@@ -18,6 +18,12 @@ final class PickerPresenter {
     /// keyboard focus back on a tile.
     var onClose: (() -> Void)?
 
+    /// Set just before opening a picker from a parent picker (the menu). The next
+    /// `present` takes it: Escape in that picker then reopens the parent. Choosing,
+    /// clicking outside, ⌃C, and being replaced still close it for good.
+    var nextBack: (() -> Void)?
+    private var back: (() -> Void)?
+
     init(hud: HUD) {
         self.hud = hud
         scrim.onClick = { [weak self] in self?.finish(nil) }
@@ -34,6 +40,8 @@ final class PickerPresenter {
         self.anchor = anchor
         self.completion = completion
         self.requestID = requestID
+        back = nextBack
+        nextBack = nil
         let v = PickerView(picker: picker, theme: hud.theme, icons: icons)
         v.onPick = { [weak self, weak v] row in
             guard let self, let v else { return }
@@ -81,7 +89,7 @@ final class PickerPresenter {
         guard f.isDisjoint(with: [.command, .option]) else { return false }
         let ctrl = f.contains(.control)
         switch e.keyCode {
-        case 0x35: finish(nil)                                           // escape
+        case 0x35: finish(nil, goBack: true)                             // escape
         case 0x08 where ctrl, 0x05 where ctrl: finish(nil)               // ⌃C, ⌃G (fzf)
         case 0x24, 0x4C: accept()                                        // return, keypad enter
         case 0x7E: v.move(-1)                                            // up
@@ -126,9 +134,11 @@ final class PickerPresenter {
         finish(r)
     }
 
-    private func finish(_ result: PickerResult?) {
+    private func finish(_ result: PickerResult?, goBack: Bool = false) {
         guard let v = view else { return }
         view = nil
+        let parent = goBack ? back : nil
+        back = nil
         scrim.removeFromSuperview()
         // Give up the keyboard before the panel animates away.
         if let w = v.window, let editor = w.firstResponder as? NSTextView, editor.delegate === v.field {
@@ -140,5 +150,6 @@ final class PickerPresenter {
         requestID = nil
         onClose?()
         done?(result)
+        parent?()
     }
 }

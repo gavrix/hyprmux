@@ -96,6 +96,7 @@ extension Dispatcher {
             case .layout: return "Layouts"
             case .saveLayout: return "Save layout"
             case .apps: return "Apps"
+            case .menu: return "Menu"
             }
         case .monitorFullscreen: return "Full-screen Hyprmux"
         case .toggleGroup: return "Group"

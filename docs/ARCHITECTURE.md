@@ -220,6 +220,10 @@ Hyprland overlay layer: elements sit above every tile and never tile.
     query field. `updateFocus` keeps the field as first responder, and focus
     goes back to the tile on close.
   - A `PickerScrim` under the panel catches clicks outside it and cancels.
+  - The menu (`picker, menu`) is a picker of pickers. Its rows come from
+    `CommandMenu` in the core, with each row's bind looked up in the config.
+    Before running a row, the compositor sets `nextBack`, and the next
+    `present` takes it. Escape in that picker then reopens the menu.
   - `PickerView` keeps its content at full size, centered in the clip, so a
     popin reveals it from the middle.
 - **Font family:** `ghostty_config_get` can't return repeatable strings, so

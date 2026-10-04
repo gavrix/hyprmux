@@ -24,6 +24,7 @@ final class TourTests: XCTestCase {
         XCTAssertEqual(keys.moveToWorkspace(3), "⇧⌘3")
         XCTAssertEqual(keys.scratchpad, "⌘S")
         XCTAssertEqual(keys.close, "⌘W")
+        XCTAssertEqual(keys.menu, "⌘/")
     }
 
     func testRebindsAndMissingBinds() {
@@ -241,6 +242,25 @@ final class TourTests: XCTestCase {
         XCTAssertEqual(e.taskIndex, 2)
         e.update(world([TourSurface(id: 1, focused: true), TourSurface(id: 3, workspace: "special:magic", visible: false)]))
         XCTAssertTrue(e.isStepDone, "hiding the scratchpad lands back on the tour")
+    }
+
+    func testMenuStepWantsTheKeyThenARowFromIt() {
+        let start = world([TourSurface(id: 1, focused: true, frame: full)])
+        let opened = world([TourSurface(id: 1, frame: left), TourSurface(id: 2, focused: true, frame: right)])
+        var e = engine(at: "menu", start)
+        XCTAssertTrue(e.step.tasks[0].text.contains("⌘/"))
+        XCTAssertEqual(e.update(start, events: [.dispatch(.picker(.menu), source: .ipc)]), 0, "the key, not the socket")
+        XCTAssertEqual(e.update(start, events: [.dispatch(.picker(.workspace), source: .key)]), 0, "another picker")
+        XCTAssertEqual(e.update(start, events: [.dispatch(.picker(.menu), source: .key)]), 1)
+        XCTAssertEqual(e.update(opened, events: [.dispatch(.exec(""), source: .key)]), 0, "⌘↩ isn't the menu")
+        let three = world([TourSurface(id: 1, frame: left), TourSurface(id: 2, frame: right),
+                           TourSurface(id: 3, focused: true, frame: right)])
+        XCTAssertEqual(e.update(three, events: [.dispatch(.exec(""), source: .picker)]), 1)
+        XCTAssertEqual(e.currentTask?.isReturn, true)
+        let back = world([TourSurface(id: 1, focused: true, frame: left), TourSurface(id: 2, frame: right),
+                          TourSurface(id: 3, frame: right)])
+        e.update(back, events: focus(1, by: "focuscurrentorlast"))
+        XCTAssertTrue(e.isStepDone)
     }
 
     func testCleanupCountsPracticeTilesEverywhere() {

@@ -7,14 +7,14 @@ import HyprmuxCore
 public enum Curriculum {
     public static let ids = [
         "welcome", "open", "focus", "dwindle", "move", "resize", "float", "web", "group",
-        "workspaces", "send", "scratchpad", "cleanup", "config", "finish",
+        "workspaces", "send", "scratchpad", "menu", "cleanup", "config", "finish",
     ]
 
     public static var count: Int { ids.count }
 
     public static func index(_ id: String) -> Int { ids.firstIndex(of: id) ?? count }
 
-    /// Steps numbered "3 of 13" in the header: everything but the welcome and the end.
+    /// Steps numbered "3 of 14" in the header: everything but the welcome and the end.
     public static func number(_ index: Int) -> (Int, Int)? {
         guard index > 0, index < count - 1 else { return nil }
         return (index, count - 2)
@@ -34,6 +34,7 @@ public enum Curriculum {
         case "workspaces": workspaces(c)
         case "send": send(c)
         case "scratchpad": scratchpad(c)
+        case "menu": menu(c)
         case "cleanup": cleanup(c)
         case "config": config(c)
         default: finish(c)
@@ -291,6 +292,26 @@ public enum Curriculum {
         ], notes: sendKey.map { ["\(key($0, "")) moves the focused tile into the scratchpad."] } ?? [])
     }
 
+    static func menu(_ c: TourContext) -> TourStep {
+        let m = key(c.keys.menu, "picker, menu")
+        return TourStep(id: "menu", title: "The menu", body: [
+            "Forgot a key? \(m) opens the menu. It lists every picker and the most common actions, and each row shows its key.",
+        ], tasks: [
+            TourTask("Press \(m) to open the menu.") { i in
+                i.events.contains { e in
+                    guard let d = e.dispatched else { return false }
+                    return d.source == "key" && d.name == "picker" && d.args == "menu"
+                }
+            },
+            TourTask("Type `term` to filter the list, and press Return. A new terminal opens.") { i in
+                i.dispatched("exec", from: "picker") && !i.newSinceMark.isEmpty
+            },
+            .back("Come back with \(key(c.keys.last, "focuscurrentorlast")) or \(key(c.keys.focusAll, "movefocus"))."),
+        ], notes: [
+            "Rows that end in … open another picker. \(key("Esc", "")) there goes back to the menu, and \(key("Esc", "")) in the menu closes it.",
+        ])
+    }
+
     /// Where the practice tiles are: "2 here, 1 on workspace 3, 1 in the scratchpad".
     @Sendable static func whereabouts(_ i: TaskInput) -> String? {
         let practice = i.practice
@@ -344,6 +365,7 @@ public enum Curriculum {
     static func finish(_ c: TourContext) -> TourStep {
         let k = c.keys
         var more: [String] = []
+        if let m = k.menu { more.append("• \(key(m, "")) opens the menu whenever you forget a key.") }
         if let d = k.device { more.append("• \(key(d, "")) shows a booted iOS Simulator or a running Android emulator in a tile.") }
         if let a = k.apps { more.append("• \(key(a, "")) opens apps such as VS Code and Cursor in a tile.") }
         if let s = k.saveLayout, let l = k.layout {

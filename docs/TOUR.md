@@ -51,13 +51,15 @@ something an earlier step taught. The ways back arrive in this order:
 | 9 | Workspaces | ⌘2 and a terminal there | ⌘1 |
 | 10 | Send a tile to another workspace | ⇧⌘2 from a practice tile | ⌘1 |
 | 11 | The scratchpad | ⌘S, a terminal, ⌘S | ⌘S |
-| 12 | Clean up | ⌘W on every practice tile, wherever it is | everything above |
-| 13 | Make it yours | edit `gaps_in` in your config and save | ⌘Tab |
+| 12 | The menu | ⌘/, then type `term` and press Return | ⌘\` or ⌘H/J/K/L |
+| 13 | Clean up | ⌘W on every practice tile, wherever it is | everything above |
+| 14 | Make it yours | edit `gaps_in` in your config and save | ⌘Tab |
 
 Steps that teach a way to do something check that you used it. Step 2 wants the
 keyboard both ways; if focus moved with the pointer, the tour says so. Step 4's
 move and swap are told apart, and its drag must be a drag. Step 5 follows resize
-mode in and out. Step 3's last return must be ⌘\`.
+mode in and out. Step 3's last return must be ⌘\`. Step 12 wants the menu opened
+by its key and the terminal opened from the menu, not with ⌘↩.
 
 The keys shown are the ones in your config. The tour reads it with the same parser
 as Hyprmux, so a rebound action shows its new key, and an unbound one says so. The

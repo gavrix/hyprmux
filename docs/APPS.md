@@ -1,7 +1,8 @@
 # Apps
 
-Hyprmux opens apps in tiles from inside Hyprmux. Press ⌘D (`picker, apps`) or
-choose Hyprmux → Open App… for the launcher, type to filter, and press Enter.
+Hyprmux opens apps in tiles from inside Hyprmux. Press ⌘D (`picker, apps`),
+choose **Open app…** in the ⌘/ menu, or choose Hyprmux → Open App… in the menu
+bar for the launcher. Type to filter, and press Enter.
 The app opens in a new tile on the current workspace. Apps you start outside Hyprmux stay ordinary macOS apps.
 
 The launcher lists only apps that can open. Everything it lists is a `.hmapp`: a
@@ -166,10 +167,10 @@ first, then the rest by name. Typing filters the names, fzf style. Enter opens
 the selected app; Escape closes the launcher. With no apps at all, it shows one
 row, "No apps".
 
-The Hyprmux menu has **Open App…**, which opens the same launcher. Configs
-written before the launcher existed have no bind for it; add
-`bind = $mod, D, picker, apps`, or use the menu. The menu item has no
-shortcut of its own, since binds own the keyboard.
+The ⌘/ menu (`picker, menu`) and the Hyprmux menu in the menu bar both have an
+entry that opens the same launcher. Configs written before the launcher existed
+have no bind for it; add `bind = $mod, D, picker, apps`, or use either menu. The
+menu bar item has no shortcut of its own, since binds own the keyboard.
 
 The `launch` dispatcher opens one app directly, by name or id. Its text names an
 app whole; failing that, the first word does and the rest are arguments:

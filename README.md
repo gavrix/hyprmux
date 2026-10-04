@@ -49,7 +49,7 @@ https://github.com/user-attachments/assets/e8d17d9a-0c64-484d-a049-5247830f8e8d
 - **Keycast:** `hud:keycast` shows each shortcut as you press it, for screen
   sharing and recordings (the demo above uses it).
 - **Pickers:** fzf-style lists for workspaces and running iOS or Android devices.
-  Type to filter, then press Return to choose.
+  Type to filter, then press Return to choose. ⌘/ opens a menu of all of them.
 - **Apps in tiles:** VS Code, Cursor, and other apps open in tiles from ⌘D. See
   [Apps in tiles](#apps-in-tiles).
 - **Scripting:** `hyprmuxctl`, a `hyprctl`-like CLI over a Unix socket.
@@ -99,6 +99,7 @@ terminal to take it again; see [the tour](docs/TOUR.md).
 
 | Keys | Action |
 |---|---|
+| ⌘/ | the menu: every picker and common actions, each with its key |
 | ⌘↩ | new terminal |
 | ⌘B | new web tile (⌘O focuses the address bar) |
 | ⌘I | attach a booted iOS Simulator or running Android AVD |

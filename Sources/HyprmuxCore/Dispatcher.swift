@@ -60,6 +60,8 @@ public enum PickerKind: String, Equatable, Sendable, CaseIterable {
     case saveLayout = "savelayout"
     /// The launcher: every app Hyprmux can open (docs/APPS.md).
     case apps
+    /// The menu: one list that opens every other picker and a few actions.
+    case menu
 }
 
 public enum FullscreenMode: Int, Equatable, Sendable {

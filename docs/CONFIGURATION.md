@@ -314,6 +314,13 @@ anywhere. While a picker is open, binds are off and the keyboard belongs to it:
 
 The mouse works too: hover selects a row, a click chooses it, and the wheel scrolls.
 
+**The menu** (⌘/, `picker, menu`) is one way into every picker. It lists them
+with a few actions: new terminal, new web tile, show a device, fill a credential,
+reload the config, and quit. Each row shows the bind that does the same thing, read
+from your config, so rows you haven't bound show none. Rows that can't run are left
+out: the "move window" rows need a focused window. Escape in a picker opened from
+the menu goes back to the menu. ⌃C, ⌃G, and a click outside close it.
+
 ### `hyprmux`
 
 | Option | Default | Meaning |
@@ -517,7 +524,7 @@ These names work in `bind` lines and with `hyprmuxctl dispatch`.
 | `workspace` | `N`, `+1`/`-1`, `e+1`/`e-1`, `previous`, `empty`, `special[:name]`, `name:NAME` | Switch workspace. `e±1` skips empty workspaces. `name:` finds the workspace with that name, or names the first free number. |
 | `movetoworkspace` / `movetoworkspacesilent` | same | Move the focused window there (and follow it, or stay). |
 | `renameworkspace` | `N [name]` | Name workspace N. No name clears it. |
-| `picker` | `workspace`, `movetoworkspace`, `movetoworkspacesilent`, `renameworkspace`, `layout`, `savelayout`, `apps` | Hyprmux's own pickers: go to a workspace, move the window to one, name the current one, summon or save a layout, or open an app (the launcher). See [Workspaces](#workspaces), [Layouts](#layouts), and [Apps](APPS.md). |
+| `picker` | `menu`, `workspace`, `movetoworkspace`, `movetoworkspacesilent`, `renameworkspace`, `layout`, `savelayout`, `apps` | Hyprmux's own pickers: the menu of all of them, go to a workspace, move the window to one, name the current one, summon or save a layout, or open an app (the launcher). See [Workspaces](#workspaces), [Layouts](#layouts), and [Apps](APPS.md). |
 | `togglespecialworkspace` | [name] | Show or hide a scratchpad. |
 | `togglefloating` | | Float or re-tile. A first float centers the window; re-tiling returns it to its old slot. |
 | `fullscreen` | `0` or `1` | 0 = cover the screen, 1 = maximize within gaps. |

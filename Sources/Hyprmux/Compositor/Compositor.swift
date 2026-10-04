@@ -509,6 +509,8 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
             presentSaveLayoutPrompt()
         case .apps:
             presentAppLauncher()
+        case .menu:
+            presentMenu()
         case .renameWorkspace:
             let n = wm.activeWorkspace
             var picker = Picker(title: "name \(n)", mode: .prompt, query: wm.name(of: n) ?? "")
@@ -517,6 +519,37 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
                 guard case .text(let name)? = r else { return }
                 self?.dispatch(.renameWorkspace(n, name), source: .picker)
             }
+        }
+    }
+
+    /// `picker, menu`: every picker and a few actions in one list, each with its bind.
+    private func presentMenu() {
+        let surface = focusedSurface
+        let context = CommandMenu.Context(hasWindow: wm.focused != nil,
+                                          hasCredentialTile: surface is BrowserSurface || surface is TerminalView)
+        var picker = Picker(title: "menu", items: CommandMenu.items(binds: config.binds, context: context),
+                            searchesDetail: false, maxVisible: config.hud.pickerMaxRows)
+        picker.placeholder = "type to filter"
+        hud.picker.present(picker) { [weak self] r in
+            guard let self, case .item(let id)? = r, let d = CommandMenu.dispatcher(for: id) else { return }
+            self.runFromMenu(d)
+        }
+    }
+
+    /// Runs a menu row. Pickers open right away, not through the async effect, so they
+    /// take the menu as their parent: Escape in them comes back here.
+    private func runFromMenu(_ d: Dispatcher) {
+        hud.picker.nextBack = { [weak self] in self?.presentMenu() }
+        defer { hud.picker.nextBack = nil }
+        switch d {
+        case .picker(let kind):
+            emit(.dispatch(d, source: .picker))
+            presentPicker(kind)
+        case .sim(let query):
+            emit(.dispatch(d, source: .picker))
+            spawnSim(query)
+        default:
+            dispatch(d, source: .picker)
         }
     }
 

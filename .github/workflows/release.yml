@@ -120,6 +120,21 @@ jobs:
           echo "SIGNING_KEYCHAIN=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
           rm -f "$CERTIFICATE_PATH"
 
+      # The runner defaults to Xcode 16, but the bar's Liquid Glass (NSGlassEffectView)
+      # needs the macOS 26 SDK. Pick the newest Xcode 26 the image has.
+      - name: Select Xcode 26
+        shell: bash
+        run: |
+          set -euo pipefail
+          XCODE="$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -n 1)"
+          if [[ -z "$XCODE" ]]; then
+            echo "No Xcode 26 on this runner" >&2
+            exit 1
+          fi
+          sudo xcode-select -s "$XCODE/Contents/Developer"
+          xcodebuild -version
+          swift --version
+
       - name: Build and notarize DMG
         shell: bash
         run: scripts/release.sh "$VERSION"

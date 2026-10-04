@@ -91,6 +91,10 @@ Developer ID signature and notarization.
 
 ## Quick start
 
+The first launch offers a five-minute tour in the first terminal. It teaches the
+basics with the real keys, one step at a time. Run `hyprmux-tour` in any Hyprmux
+terminal to take it again; see [the tour](docs/TOUR.md).
+
 `SUPER` is ⌘. Keys are physical positions, so they work with any keyboard layout.
 
 | Keys | Action |
@@ -174,7 +178,11 @@ hyprmuxctl new-surface --workspace 3 --input 'npm test\n'   # a shell in the bac
 hyprmuxctl move-surface --surface surface:3 --workspace name:review
 hyprmuxctl dispatch --surface surface:3 togglefloating      # any bind, on any window
 hyprmuxctl close-surface --surface surface:3
+hyprmuxctl events                           # a line per change, like Hyprland's socket2
 ```
+
+[Hooks](docs/HOOKS.md) run a command when an event happens, from JSON files in
+`~/.config/hyprmux/hooks/`.
 
 Shells inside Hyprmux get `HYPRMUX_SOCKET`, `HYPRMUX_SURFACE_ID`,
 `HYPRMUX_CLIENT`, and `HYPRMUX_PID`. Tools can identify their app instance and
@@ -190,6 +198,10 @@ to copy its `surface:N` reference.
 - [Configuration](docs/CONFIGURATION.md): options, binds, dispatchers, IPC.
 - [Apps](docs/APPS.md): opening apps in tiles, `.hmapp` bundles, profiles.
 - [Terminal automation](docs/AUTOMATION.md): surface discovery, targeting, agent workflows, and the bundled skill.
+- [Events and hooks](docs/HOOKS.md): the event stream and commands that run on
+  events.
+- [The tour](docs/TOUR.md): the first-launch tour, its steps, and how it watches
+  Hyprmux.
 - [Development](docs/DEVELOPMENT.md): building, testing in a separate instance,
   the test tools, and pitfalls.
 

@@ -1,0 +1,7 @@
+{
+  "id": "tour",
+  "description": "Offers the interactive tour in the first terminal on Hyprmux's first launch (docs/TOUR.md).",
+  "on": "firstlaunch",
+  "run": "terminal",
+  "command": "hyprmux-tour --welcome"
+}

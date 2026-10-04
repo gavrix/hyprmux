@@ -7,6 +7,7 @@ let package = Package(
     products: [
         .executable(name: "Hyprmux", targets: ["Hyprmux"]),
         .executable(name: "hyprmuxctl", targets: ["hyprmuxctl"]),
+        .executable(name: "hyprmux-tour", targets: ["hyprmux-tour"]),
         .executable(name: "HyprmuxHelper", targets: ["HyprmuxHelper"]),
         .executable(name: "hyprmux-broker", targets: ["hyprmux-broker"]),
         .executable(name: "hyprmux-demo-client", targets: ["hyprmux-demo-client"]),
@@ -93,6 +94,18 @@ let package = Package(
             dependencies: ["HyprmuxCore"],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
+        // The interactive tour (docs/TOUR.md): steps and checks in a tested library,
+        // the terminal UI in the executable. It only reads Hyprmux through the socket.
+        .target(
+            name: "HyprmuxTour",
+            dependencies: ["HyprmuxCore"],
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
+        .executableTarget(
+            name: "hyprmux-tour",
+            dependencies: ["HyprmuxCore", "HyprmuxTour"],
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
         // CEF's C++ wrapper (libcef_dll_wrapper), built from the SDK in vendor/cef.
         .target(
             name: "CEFWrapper",
@@ -140,6 +153,10 @@ let package = Package(
         .testTarget(
             name: "HyprmuxCoreTests",
             dependencies: ["HyprmuxCore"]
+        ),
+        .testTarget(
+            name: "HyprmuxTourTests",
+            dependencies: ["HyprmuxCore", "HyprmuxTour"]
         ),
         .testTarget(
             name: "CredentialProviderTests",

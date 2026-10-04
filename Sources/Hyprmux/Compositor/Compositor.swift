@@ -46,7 +46,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
     var sessionSavingEnabled = false
     private var closing: [ClientID: ClientView] = [:]
     private var nextID: UInt64 = 1
-    private var submap = "reset"
+    private(set) var submap = "reset"
     private var last: Snapshot?
     private var consumedKeyUps: Set<UInt16> = []
     private var monitors: [Any] = []
@@ -76,6 +76,11 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
     }()
     /// Exported to child shells as HYPRMUX_SOCKET.
     var ipcPath: String?
+    /// This launch wrote a new config: emits `firstlaunch`, which the tour's hook uses.
+    var firstLaunch = false
+    /// Where events go: the `events` subscribers of the control socket (docs/HOOKS.md).
+    var eventSink: (([String]) -> Void)?
+    var hooks = HookRegistry()
 
     init(runtime: GhosttyRuntime, config: HyprmuxConfig) {
         self.runtime = runtime
@@ -126,7 +131,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         root.addSubview(hint)
         root.addSubview(bar)
         root.addSubview(hud.layer)
-        bar.onSelectWorkspace = { [weak self] n in self?.dispatch(.workspace(.id(n))) }
+        bar.onSelectWorkspace = { [weak self] n in self?.dispatch(.workspace(.id(n)), source: .mouse) }
         // The bar sits at the root's origin, so its coordinates are the root's.
         bar.onPillsFrame = { [weak self] f in self?.barBackdrop.wrap(f) }
         hud.clientFrame = { [weak self] id in self?.views[id]?.targetFrame }
@@ -151,6 +156,10 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
             self?.window.applyPresentation()
             // Back from System Settings: the user may have allowed the broker.
             self?.broker.recheck()
+            self?.emit(.appActive(true))
+        }
+        nc.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.emit(.appActive(false))
         }
     }
 
@@ -170,14 +179,21 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         window.makeKeyAndOrderFront(nil)
         if config.fullscreenStyle == "fill", MonitorWindow.wasFilledAtQuit, Self.fixedWindowSize == nil { setMonitorFullscreen(true) }
         startSessionSaving()
+        loadHooks()
+        let lifecycle: [HyprmuxEvent] = (firstLaunch ? [.firstLaunch] : []) + [.launch]
+        let terminalHooks = lifecycle.flatMap { hooks.hooks(for: $0.name) }.filter { $0.manifest.run == .terminal }
         // A restored session replaces the startup programs.
-        if restoreSession() { return }
-        let startup = config.execOnce + config.exec
-        if startup.isEmpty {
-            spawn(command: "", inheritFrom: nil)
-        } else {
+        if !restoreSession() {
+            // Like exec-once, a terminal hook replaces the empty startup terminal.
+            let startup = config.execOnce + config.exec
+            if startup.isEmpty, terminalHooks.isEmpty { spawn(command: "", inheritFrom: nil) }
             for cmd in startup { spawn(command: cmd, inheritFrom: nil) }
         }
+        var opened = Set<String>()
+        for h in terminalHooks where opened.insert(h.id).inserted {
+            spawn(command: "", inheritFrom: nil, input: h.manifest.command + "\n")
+        }
+        emit(lifecycle)
     }
 
     // MARK: Config
@@ -201,7 +217,9 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         loadCredentialProviders()
         loadApps()
         refreshApps()
+        loadHooks()
         monitorChanged(animated: true)
+        emit(.configReloaded)
     }
 
     /// Config errors stay on screen as one notice until the config is fixed (or it's clicked away).
@@ -305,11 +323,34 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
 
     // MARK: Spawning and closing
 
-    private func spawn(command: String, inheritFrom parent: TerminalView?) {
+    private func spawn(command: String, inheritFrom parent: TerminalView?, input: String? = nil) {
         var opts = SurfaceOptions.inherited(from: parent ?? focusedTerminal ?? lastTerminal)
         opts.command = command.isEmpty ? nil : command
+        opts.initialInput = input
         guard let term = makeTerminal(opts) else { return }
         manage(term)
+    }
+
+    /// What programs Hyprmux starts (terminals, hooks) need to find it: the socket, the
+    /// app's pid, `hyprmuxctl` on PATH, and the bundled skill.
+    var hyprmuxEnvironment: [String: String] {
+        var env: [String: String] = ["HYPRMUX_PID": "\(getpid())"]
+        if let ipcPath { env["HYPRMUX_SOCKET"] = ipcPath }
+        if let executable = Bundle.main.executableURL {
+            let directory = executable.deletingLastPathComponent()
+            let control = directory.appendingPathComponent("hyprmuxctl")
+            if FileManager.default.isExecutableFile(atPath: control.path) {
+                env["HYPRMUXCTL_PATH"] = control.path
+                let inherited = ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"
+                let entries = inherited.split(separator: ":").map(String.init)
+                env["PATH"] = entries.contains(directory.path) ? inherited : "\(directory.path):\(inherited)"
+            }
+        }
+        if let resources = Bundle.main.resourceURL {
+            let skill = resources.appendingPathComponent("skills/hyprmuxctl/SKILL.md")
+            if FileManager.default.fileExists(atPath: skill.path) { env["HYPRMUX_SKILL_PATH"] = skill.path }
+        }
+        return env
     }
 
     /// A terminal surface with Hyprmux's environment, not yet managed.
@@ -319,24 +360,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         var opts = options
         opts.env["HYPRMUX_CLIENT"] = "\(id.raw)"
         opts.env["HYPRMUX_SURFACE_ID"] = "\(id.raw)"
-        opts.env["HYPRMUX_PID"] = "\(getpid())"
-        if let ipcPath { opts.env["HYPRMUX_SOCKET"] = ipcPath }
-        if let executable = Bundle.main.executableURL {
-            let directory = executable.deletingLastPathComponent()
-            let control = directory.appendingPathComponent("hyprmuxctl")
-            if FileManager.default.isExecutableFile(atPath: control.path) {
-                opts.env["HYPRMUXCTL_PATH"] = control.path
-                let inherited = ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"
-                let entries = inherited.split(separator: ":").map(String.init)
-                opts.env["PATH"] = entries.contains(directory.path) ? inherited : "\(directory.path):\(inherited)"
-            }
-        }
-        if let resources = Bundle.main.resourceURL {
-            let skill = resources.appendingPathComponent("skills/hyprmuxctl/SKILL.md")
-            if FileManager.default.fileExists(atPath: skill.path) {
-                opts.env["HYPRMUX_SKILL_PATH"] = skill.path
-            }
-        }
+        opts.env.merge(hyprmuxEnvironment) { _, ours in ours }
         let term = TerminalView(app: app, id: id, options: opts)
         guard term.surface != nil else {
             log.error("failed to create terminal surface")
@@ -476,7 +500,8 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
             picker.placeholder = "number or name; a new name makes a workspace"
             hud.picker.present(picker) { [weak self] r in
                 guard let self, let r, let t = WorkspacePicker.target(for: r) else { return }
-                self.dispatch(moving ? .moveToWorkspace(t, silent: kind == .moveToWorkspaceSilent) : .workspace(t))
+                self.dispatch(moving ? .moveToWorkspace(t, silent: kind == .moveToWorkspaceSilent) : .workspace(t),
+                              source: .picker)
             }
         case .layout:
             presentLayoutPicker()
@@ -490,7 +515,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
             picker.placeholder = "empty clears the name"
             hud.picker.present(picker) { [weak self] r in
                 guard case .text(let name)? = r else { return }
-                self?.dispatch(.renameWorkspace(n, name))
+                self?.dispatch(.renameWorkspace(n, name), source: .picker)
             }
         }
     }
@@ -596,8 +621,9 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
 
     // MARK: Dispatch
 
-    func dispatch(_ d: Dispatcher, target: ClientID? = nil) {
+    func dispatch(_ d: Dispatcher, target: ClientID? = nil, source: EventSource = .app) {
         log.debug("dispatch \(String(describing: d), privacy: .public) target=\(target?.raw ?? 0)")
+        emit(.dispatch(d, source: source))
         wm.dispatch(d, target: target)
         apply(animated: true)
     }
@@ -625,6 +651,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         case .submap(let name):
             submap = name
             bar.submap = name
+            emit(.submap(name))
         case .picker(let kind):
             DispatchQueue.main.async { [weak self] in self?.presentPicker(kind) }
         case .launch(let app):
@@ -645,6 +672,10 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         let snap = wm.snapshot()
         let prev = last
         last = snap
+        emit(EventDiff.events(from: prev, to: snap) { [views] id in
+            let s = views[id]?.surface
+            return EventDiff.Tile(kind: s?.kind ?? "", title: s?.title ?? "")
+        })
         let wsDelta = (prev?.activeWorkspace).map { snap.activeWorkspace - $0 } ?? 0
         let specialOpened = snap.specialVisible != nil && prev?.specialVisible != snap.specialVisible
         let specialClosed = prev?.specialVisible != nil && snap.specialVisible != prev?.specialVisible
@@ -943,7 +974,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         consumedKeyUps.insert(e.keyCode)
         if e.isARepeat && !bind.flags.contains("e") { return nil }
         hud.keycast.press(chord: KeyChord.display(bind.mods, bind.trigger), label: bind.label)
-        dispatch(bind.dispatcher)
+        dispatch(bind.dispatcher, source: .key)
         return bind.flags.contains("n") ? e : nil
     }
 
@@ -1049,6 +1080,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
             guard let d = drag else { return e }
             drag = nil
             if !d.resize { NSCursor.pop() }
+            if p != d.startMouse { emit(.drag(resize: d.resize)) }
             if !d.floating && !d.resize && !d.startFrame.contains(p) {
                 wm.dropTiled(d.id, at: p)
             }
@@ -1080,7 +1112,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         case .success(let req):
             switch req {
             case .dispatch(let d, nil):
-                dispatch(d)
+                dispatch(d, source: .ipc)
                 return "ok"
             case .dispatch(let d, let reference?):
                 guard let (id, surface) = automationTarget(reference) else { return "error: surface not found" }
@@ -1090,7 +1122,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
                 case .simButton where !(surface is SimulatorSurface):
                     return "error: surface \(id.raw) is not an iOS simulator"
                 default:
-                    dispatch(d, target: id)
+                    dispatch(d, target: id, source: .ipc)
                     return "ok"
                 }
             case .newSurface(let request):
@@ -1109,7 +1141,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
             case .moveSurface(let reference, let workspace, let focus):
                 guard let (id, _) = automationTarget(reference) else { return "error: surface not found" }
                 // Replies with the surface's entry, so the caller sees where it ended up.
-                dispatch(.moveToWorkspace(workspace, silent: !focus), target: id)
+                dispatch(.moveToWorkspace(workspace, silent: !focus), target: id, source: .ipc)
                 guard let p = wm.snapshot().placement(id) else { return "error: surface not found" }
                 return json(clientInfo(p))
             case .clients, .surfaces:
@@ -1500,6 +1532,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
     func terminalTitleDidChange(_ view: TerminalView) {
         refreshGroupBars()
         if view.clientID == wm.focused { bar.title = view.title }
+        emit(HyprmuxEvent.windowTitle(view.clientID, view.title))
     }
 
     func terminalDidClose(_ view: TerminalView, processAlive: Bool) {
@@ -1579,6 +1612,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
     func surfaceTitleDidChange(_ s: Surface) {
         refreshGroupBars()
         if s.clientID == wm.focused { bar.title = s.title }
+        emit(HyprmuxEvent.windowTitle(s.clientID, s.title))
     }
 
     func browserSurfaceDidClose(_ s: BrowserSurface) {

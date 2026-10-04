@@ -45,6 +45,8 @@ guard !args.isEmpty, args[0] != "-h", args[0] != "--help" else {
                                       the helper app tiles connect through: whether macOS runs it,
                                       which program launchd starts, and this instance's registration;
                                       register / unregister its launch agent with macOS
+      events                         stream events as they happen, one NAME>>DATA line each
+                                      (Hyprland's socket2 format; see docs/HOOKS.md)
       workspaces | activewindow | version
       reload                         reload the config
       sendtext <text>                legacy: type into the focused terminal (\\n = enter)
@@ -682,6 +684,9 @@ func commandLine() throws -> String {
         return ([command] + targetArguments(parsed.surface)).joined(separator: " ")
     case "move-surface":
         return try moveSurfaceLine(commandArgs)
+    case "events":
+        guard commandArgs.isEmpty else { throw CLIError(message: "events takes no arguments") }
+        return command
     default:
         return args.joined(separator: " ")
     }
@@ -739,6 +744,34 @@ guard wroteRequest else {
     exit(1)
 }
 shutdown(fd, SHUT_WR)
+
+// `events` streams: one line per event until Hyprmux quits or the reader goes away.
+if args[0] == "events" {
+    signal(SIGPIPE, SIG_IGN)
+    var chunk = [UInt8](repeating: 0, count: 65_536)
+    var first = true
+    while true {
+        let count = read(fd, &chunk, chunk.count)
+        if count < 0, errno == EINTR { continue }
+        if count <= 0 { break }
+        // An older Hyprmux doesn't stream: it answers with an error and hangs up.
+        if first, chunk[0..<count].starts(with: Array("error:".utf8)) {
+            FileHandle.standardError.write(Data(chunk[0..<count]))
+            close(fd)
+            exit(1)
+        }
+        first = false
+        var offset = 0
+        while offset < count {
+            let written = chunk[offset..<count].withUnsafeBytes { write(STDOUT_FILENO, $0.baseAddress, $0.count) }
+            if written < 0, errno == EINTR { continue }
+            if written <= 0 { close(fd); exit(0) }
+            offset += written
+        }
+    }
+    close(fd)
+    exit(0)
+}
 
 var output = Data()
 var buffer = [UInt8](repeating: 0, count: 65_536)

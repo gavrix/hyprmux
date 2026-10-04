@@ -157,6 +157,8 @@ public struct HyprmuxConfig: Sendable {
     public var ghostty: [String] = []
     public var errors: [String] = []
     public var sourcePath: String?
+    /// `loadOrCreate` wrote the file: this is Hyprmux's first launch with it.
+    public var createdFile = false
 
     /// Hyprmux's own UI: notifications (and later menus and pickers).
     public var hud = HUDSettings()
@@ -229,18 +231,22 @@ public enum ConfigParser {
     /// Creation failures fall back to the same embedded default and surface as config errors.
     public static func loadOrCreate(path: String) -> HyprmuxConfig {
         let expanded = (path as NSString).expandingTildeInPath
+        var created = false
         if !FileManager.default.fileExists(atPath: expanded) {
             do {
                 let directory = (expanded as NSString).deletingLastPathComponent
                 try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
                 try defaultConfig.write(toFile: expanded, atomically: true, encoding: .utf8)
+                created = true
             } catch {
                 var c = parse(defaultConfig)
                 c.errors.append("could not create \(expanded): \(error.localizedDescription); using built-in defaults")
                 return c
             }
         }
-        return load(path: expanded)
+        var c = load(path: expanded)
+        c.createdFile = created
+        return c
     }
 
     public static func load(path: String) -> HyprmuxConfig {

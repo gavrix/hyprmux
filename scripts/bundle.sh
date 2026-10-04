@@ -34,12 +34,14 @@ sign() {
 
 swift build -c "$CONFIG" --product Hyprmux
 swift build -c "$CONFIG" --product hyprmuxctl
+swift build -c "$CONFIG" --product hyprmux-tour
 swift build -c "$CONFIG" --product hyprmux-broker
 swift build -c "$CONFIG" --product hyprmux-electron-bridge
 swift build -c "$CONFIG" --product hyprmux-credential-1password
 BIN_DIR="$(swift build -c "$CONFIG" --show-bin-path)"
 BIN="$BIN_DIR/Hyprmux"
 CTL_BIN="$BIN_DIR/hyprmuxctl"
+TOUR_BIN="$BIN_DIR/hyprmux-tour"
 BROKER_BIN="$BIN_DIR/hyprmux-broker"
 EBRIDGE_BIN="$BIN_DIR/hyprmux-electron-bridge"
 CREDENTIAL_1PASSWORD_BIN="$BIN_DIR/hyprmux-credential-1password"
@@ -50,6 +52,8 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/Hyprmux"
 cp "$CTL_BIN" "$APP/Contents/MacOS/hyprmuxctl"
+# The interactive tour (docs/TOUR.md); terminals find it on PATH next to hyprmuxctl.
+cp "$TOUR_BIN" "$APP/Contents/MacOS/hyprmux-tour"
 # Client-protocol broker and its launchd job (docs/CLIENT_PROTOCOL.md, section 3).
 cp "$BROKER_BIN" "$APP/Contents/MacOS/hyprmux-broker"
 cp "$EBRIDGE_BIN" "$APP/Contents/MacOS/hyprmux-electron-bridge"
@@ -57,6 +61,9 @@ cp "$CREDENTIAL_1PASSWORD_BIN" "$APP/Contents/MacOS/hyprmux-credential-1password
 cp "$ROOT/Resources/electron-hook.js" "$APP/Contents/Resources/electron-hook.js"
 rm -rf "$APP/Contents/Resources/adapters"
 cp -R "$ROOT/Resources/adapters" "$APP/Contents/Resources/adapters"
+# Built-in hooks (docs/HOOKS.md): the tour's first-launch offer.
+rm -rf "$APP/Contents/Resources/hooks"
+cp -R "$ROOT/Resources/hooks" "$APP/Contents/Resources/hooks"
 rm -rf "$APP/Contents/Resources/credential-providers"
 cp -R "$ROOT/Resources/credential-providers" "$APP/Contents/Resources/credential-providers"
 mkdir -p "$APP/Contents/Library/LaunchAgents"
@@ -135,6 +142,7 @@ fi
 
 # A second Mach-O executable inside Contents/MacOS must be signed before the outer bundle.
 sign "$APP/Contents/MacOS/hyprmuxctl"
+sign "$APP/Contents/MacOS/hyprmux-tour"
 sign "$APP/Contents/MacOS/hyprmux-broker"
 sign "$APP/Contents/MacOS/hyprmux-electron-bridge"
 sign "$APP/Contents/MacOS/hyprmux-credential-1password"

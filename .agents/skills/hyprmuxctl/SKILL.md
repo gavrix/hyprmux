@@ -177,6 +177,18 @@ Without `--surface`, `dispatch` acts on the focused window, which may belong to 
 Use `movetoworkspacesilent` or `move-surface` to move a window without following it.
 App and workspace dispatchers such as `exec` and `workspace` reject `--surface`.
 
+## Wait for changes
+
+`hyprmuxctl events` streams one `NAME>>DATA` line per change until it is stopped.
+Use it to wait instead of polling, for example for a surface to close:
+
+```sh
+hyprmuxctl events | grep -m1 '^closewindow>>7$'
+```
+
+Window ids in events are the `N` of `surface:N`.
+Useful events: `openwindow`, `closewindow`, `activewindowv2`, `windowtitlev2`, and `dispatch`.
+
 ## Respect the user's view
 
 The user is often working in the focused window.

@@ -49,6 +49,8 @@ Hyprmux owns, positions, and animates itself.
 | `AndroidEmulatorBridge` | Swift 5 | Running-AVD discovery and the Android Emulator's authenticated gRPC screenshot, touch, and key calls. Generated protobuf code stays inside this target. |
 | `GhosttyKit` | binary | Prebuilt libghostty xcframework (terminal emulation and rendering). |
 | `hyprmuxctl` | Swift | The bundled IPC client and local agent-skill installer. |
+| `HyprmuxTour` | Swift 5 | The tour's steps, checks, and progress, over events and `clients` and `workspaces` replies. Unit tested. |
+| `hyprmux-tour` | Swift 5 | The bundled interactive tour: a terminal UI that watches Hyprmux's event stream. See [TOUR.md](TOUR.md). |
 | `HyprmuxClientProtocol` | Swift 5 | Client-protocol service names, message ops, and XPC helpers. |
 | `hyprmux-broker` | Swift 5 | The launchd job that owns the client-protocol mach service names. See [Client apps](#client-apps). |
 | `HyprmuxClientKit` | Swift 5 | The Swift client kit: connection, toplevels, swapchain, events. |
@@ -283,6 +285,31 @@ Each surface advertises capabilities; browsers and devices currently advertise
 none. Legacy test commands still inject input through the focused event path
 (`sendkey`, `sendmouse`, `senddrag`, `sendtext`). `hittest` and `debug` report
 input routing internals. See [DEVELOPMENT.md](DEVELOPMENT.md).
+
+### Events and hooks
+
+See [HOOKS.md](HOOKS.md) for the list and the manifest format.
+
+- **In the core:** `HyprmuxEvent` is one `NAME>>DATA` line. `EventDiff` turns two
+  `Snapshot`s into the window-model events (open, close, focus, workspace,
+  floating, groups), so `apply` emits them with no bookkeeping of its own.
+  `Dispatcher.command` writes a dispatcher back as a bind line's name and
+  arguments, for `dispatch` events. `HookManifest` and `HookRegistry` parse and
+  load hooks, built-in then user, like adapters.
+- **Emitting** (`Compositor+Events.swift`): `emit` sends events to the socket's
+  subscribers and starts the exec hooks listening for them. `apply` emits the
+  snapshot diff; `dispatch` emits `dispatch` with its source before it runs; the
+  mouse-bind code emits a `dispatch>>mouse,…` when a drag ends, since drags call
+  the model directly. Submaps, config reloads, titles, and app activation emit
+  their own.
+- **Streaming:** an `events` request keeps its connection. `IPCServer` sends a
+  greeting with the stateful events' current values, then writes every batch from
+  that subscriber's own queue. One that falls behind or stops reading is dropped,
+  so the main thread never waits on a reader.
+- **Lifecycle:** `start()` emits `firstlaunch` (when `ConfigParser.loadOrCreate`
+  reports it wrote the file) and `launch`. Terminal hooks on them open terminals
+  with the command as the shell's first input, and replace the empty startup
+  terminal like `exec-once` does.
 
 ## Chromium (CEF)
 

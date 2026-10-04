@@ -460,7 +460,8 @@ exec-once = htop     # run in a new terminal at startup
 exec = btop          # also run on every config reload
 ```
 
-Without any `exec-once`, Hyprmux opens one terminal at startup.
+Without any `exec-once`, Hyprmux opens one terminal at startup. A
+[terminal hook](HOOKS.md#hooks) on `launch` or `firstlaunch` replaces it too.
 
 ## Binds
 
@@ -585,6 +586,7 @@ See [Terminal automation](AUTOMATION.md) for workflows, limits, and agent skill 
 | `send [--surface ID] TEXT` | Types text into a terminal. Reads stdin when text is omitted; arguments decode `\n`, `\t`, and `\\`. |
 | `send-key [--surface ID] KEY` | Sends a terminal key such as `ctrl+c`, `enter`, `tab`, or `escape`. |
 | `workspaces`, `activewindow`, `version` | JSON or text. |
+| `events` | Keeps the connection open and streams one `NAME>>DATA` line per event, Hyprland's `socket2` format. See [Events and hooks](HOOKS.md). |
 | `reload` | Reloads the config. |
 | `apps [list\|refresh] [--json]` | The [apps](APPS.md) Hyprmux can open: id, name, kind, source, adapter, and target, plus load errors and both folders. `refresh` regenerates the generated apps and replies when done. |
 | `apps add NAME PATH [ARGS...]` | Writes an installed `.hmapp` for an `.app` (checked like a generated one) or an executable, and replies with it. |

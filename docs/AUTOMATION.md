@@ -217,6 +217,18 @@ hyprmuxctl send-key --surface surface:7 ctrl+c
 Other examples include `tab`, `shift+tab`, and `escape`.
 Targeted input works for terminals on inactive workspaces and hidden group tabs.
 
+## Wait for changes
+
+`hyprmuxctl events` streams a line per change, so a script can wait for something
+instead of polling `surfaces`:
+
+```sh
+hyprmuxctl events | grep -m1 '^closewindow>>7$'   # surface:7 closed
+```
+
+See [Events and hooks](HOOKS.md) for every event, and for hooks: commands Hyprmux
+runs when an event happens.
+
 ## Recommended agent workflow
 
 1. Run `surfaces` and inspect `kind`, `workspace`, `title`, and `capabilities`.

@@ -238,3 +238,68 @@ public struct ParseError: Error, Equatable, Sendable, CustomStringConvertible {
     public init(_ message: String) { self.message = message }
     public var description: String { message }
 }
+
+extension Dispatcher {
+    /// The dispatcher as a bind line writes it: a name and its arguments, so that
+    /// `Dispatcher.parse(name, args)` gives it back. Events report dispatches this way.
+    public var command: (name: String, args: String) {
+        func dir(_ d: Direction) -> String {
+            switch d { case .left: "l"; case .right: "r"; case .up: "u"; case .down: "d" }
+        }
+        func ws(_ t: WorkspaceTarget) -> String {
+            switch t {
+            case .id(let n): return "\(n)"
+            case .relative(let d): return d > 0 ? "+\(d)" : "\(d)"
+            case .relativeExisting(let d): return d > 0 ? "e+\(d)" : "e\(d)"
+            case .previous: return "previous"
+            case .empty: return "empty"
+            case .special(let s): return s == "special" ? "special" : "special:\(s)"
+            case .named(let s): return "name:\(s)"
+            }
+        }
+        func num(_ v: Double) -> String { v == v.rounded() ? String(Int(v)) : String(v) }
+        switch self {
+        case .exec(let c): return ("exec", c)
+        case .web(let u): return ("web", u)
+        case .webNav(let n): return ("webnav", n.rawValue)
+        case .fillCredential(let p): return ("fillcredential", p ?? "")
+        case .sim(let q): return ("sim", q)
+        case .android(let q): return ("android", q)
+        case .simButton(let b): return ("simbutton", b)
+        case .launch(let a): return ("launch", a)
+        case .killActive: return ("killactive", "")
+        case .moveFocus(let d): return ("movefocus", dir(d))
+        case .moveWindow(let d): return ("movewindow", dir(d))
+        case .swapWindow(let d): return ("swapwindow", dir(d))
+        case .resizeActive(let dx, let dy): return ("resizeactive", "\(num(dx)) \(num(dy))")
+        case .moveActive(let dx, let dy): return ("moveactive", "\(num(dx)) \(num(dy))")
+        case .workspace(let t): return ("workspace", ws(t))
+        case .moveToWorkspace(let t, let silent): return (silent ? "movetoworkspacesilent" : "movetoworkspace", ws(t))
+        case .toggleSpecialWorkspace(let s): return ("togglespecialworkspace", s == "special" ? "" : s)
+        case .toggleFloating: return ("togglefloating", "")
+        case .fullscreen(let m): return ("fullscreen", m == .maximize ? "1" : "0")
+        case .toggleSplit: return ("togglesplit", "")
+        case .swapSplit: return ("swapsplit", "")
+        case .splitRatio(let v, let exact): return ("splitratio", exact ? "exact \(num(v))" : num(v))
+        case .cycleNext(let prev): return ("cyclenext", prev ? "prev" : "")
+        case .focusCurrentOrLast: return ("focuscurrentorlast", "")
+        case .centerWindow: return ("centerwindow", "")
+        case .submap(let s): return ("submap", s)
+        case .renameWorkspace(let n, let name): return ("renameworkspace", name.isEmpty ? "\(n)" : "\(n) \(name)")
+        case .picker(let k): return ("picker", k.rawValue)
+        case .monitorFullscreen: return ("monitorfullscreen", "")
+        case .toggleGroup: return ("togglegroup", "")
+        case .changeGroupActive(let step):
+            switch step {
+            case .next: return ("changegroupactive", "f")
+            case .previous: return ("changegroupactive", "b")
+            case .index(let n): return ("changegroupactive", "\(n)")
+            }
+        case .moveIntoGroup(let d): return ("moveintogroup", dir(d))
+        case .moveOutOfGroup: return ("moveoutofgroup", "")
+        case .moveGroupWindow(let fwd): return ("movegroupwindow", fwd ? "f" : "b")
+        case .reload: return ("reload", "")
+        case .exit: return ("exit", "")
+        }
+    }
+}

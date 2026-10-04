@@ -76,6 +76,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var ipc: IPCServer?
     /// Problems found before launch, shown in the config error banner.
     var startupNotes: [String] = []
+    /// main.swift's first config load wrote a new file: Hyprmux emits `firstlaunch`.
+    var firstLaunch = false
     /// `.hmapp`s opened before the compositor started.
     private var pendingOpens: [URL] = []
 
@@ -104,9 +106,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         compositor = Compositor(runtime: runtime, config: config)
+        compositor.firstLaunch = firstLaunch
         ipc = IPCServer(path: IPCPath.default) { [weak self] line in
             self?.compositor.handleIPCReply(line) ?? .text("error: not ready")
         }
+        ipc?.greeting = { [weak self] in self?.compositor.eventGreeting ?? [] }
+        compositor.eventSink = { [weak ipc] lines in ipc?.broadcast(lines) }
         compositor.ipcPath = ipc?.path
         compositor.start()
         let opens = pendingOpens

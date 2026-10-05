@@ -1,8 +1,9 @@
 # Architecture
 
 Hyprmux is one macOS app that acts as a small compositor. Its window is the
-"monitor". Inside it, tiles hold terminals, web pages, iOS Simulator screens,
-or Android Emulator screens. Hyprmux lays them out and drives them like Hyprland windows.
+"monitor". Inside it, tiles hold terminals, web pages, and windows of client
+apps: editors, Electron apps, and Mobile's iOS Simulator and Android Emulator
+screens. Hyprmux lays them out and drives them like Hyprland windows.
 There is no Apple window-management API underneath. Tiles are views that
 Hyprmux owns, positions, and animates itself.
 
@@ -22,18 +23,18 @@ Hyprmux owns, positions, and animates itself.
 │                                            ├ TerminalView (libghostty)
 │                                            ├ WebKitSurface (WKWebView)
 │                                            ├ ChromiumSurface (CEF)  │
-│                                            ├ SimulatorSurface       │
-│                                            ├ AndroidSurface         │
 │                                            └ ClientSurface (apps)   │
 │    ClientServer (XPC) ◄── client apps, found through hyprmux-broker │
 │    HUD: overlay layer, theme, NotificationStack, PickerPresenter    │
 │    IPCServer (Unix socket) ◄── hyprmuxctl                          │
 │                                                                     │
 │  ChromiumBridge (Obj-C++)  ── CEF framework + 4 helper apps          │
-│  SimulatorBridge (Obj-C)   ── Xcode's CoreSimulator/SimulatorKit     │
-│  AndroidEmulatorBridge     ── grpc-swift + checked-in generated API  │
 │  GhosttyKit (prebuilt libghostty)                                   │
 └─────────────────────────────────────────────────────────────────────┘
+
+hyprmux-mobile (Mobile.hmapp, its own process, a client)
+  SimulatorBridge (Obj-C)   ── Xcode's CoreSimulator/SimulatorKit
+  AndroidEmulatorBridge     ── grpc-swift + checked-in generated API
 ```
 
 ## Modules
@@ -45,15 +46,16 @@ Hyprmux owns, positions, and animates itself.
 | `ChromiumBridge` | Obj-C++ | CEF lifecycle, the `NSApplication` subclass CEF needs, browsers as child views. |
 | `CEFWrapper` | C++ | CEF's `libcef_dll_wrapper`, built by SwiftPM from `vendor/cef` (no cmake). |
 | `HyprmuxHelper` | Obj-C | Chromium's helper process (GPU, renderer, ...). |
-| `SimulatorBridge` | Obj-C | Simulator display and input through Xcode's private frameworks. |
-| `AndroidEmulatorBridge` | Swift 5 | Running-AVD discovery and the Android Emulator's authenticated gRPC screenshot, touch, and key calls. Generated protobuf code stays inside this target. |
+| `hyprmux-mobile` | Swift 5 | Mobile.hmapp's program: simulator and emulator screens as client windows. See [Mobile](#mobile). |
+| `SimulatorBridge` | Obj-C | Simulator display and input through Xcode's private frameworks. Only Mobile links it. |
+| `AndroidEmulatorBridge` | Swift 5 | Running-AVD discovery and the Android Emulator's authenticated gRPC screenshot, touch, and key calls. Generated protobuf code stays inside this target. Only Mobile links it. |
 | `GhosttyKit` | binary | Prebuilt libghostty xcframework (terminal emulation and rendering). |
 | `hyprmuxctl` | Swift | The bundled IPC client and local agent-skill installer. |
 | `HyprmuxTour` | Swift 5 | The tour's steps, checks, and progress, over events and `clients` and `workspaces` replies. Unit tested. |
 | `hyprmux-tour` | Swift 5 | The bundled interactive tour: a terminal UI that watches Hyprmux's event stream. See [TOUR.md](TOUR.md). |
 | `HyprmuxClientProtocol` | Swift 5 | Client-protocol service names, message ops, and XPC helpers. |
 | `hyprmux-broker` | Swift 5 | The launchd job that owns the client-protocol mach service names. See [Client apps](#client-apps). |
-| `HyprmuxClientKit` | Swift 5 | The Swift client kit: connection, toplevels, swapchain, events. |
+| `HyprmuxClientKit` | Swift 5 | The Swift client kit: connection, launches, toplevels, subsurfaces, swapchain, events. |
 | `hyprmux-demo-client` | Swift 5 | A small client that draws with CoreGraphics. It's for testing, not bundled. |
 
 ## The model: `WindowManager`
@@ -89,7 +91,7 @@ positions a tile on its own authority.
   preferring overlap on the other axis, then distance, then recency.
 
 The model never touches AppKit. Actions the app must take (spawn a terminal,
-close a surface, open a web tile, press a simulator button, quit) leave the
+close a surface, open a web tile, launch an app, quit) leave the
 model as `Effect` values through `perform`.
 
 `snapshot()` returns a `Snapshot`. For every client it holds the final frame
@@ -164,10 +166,6 @@ handles occlusion, close, and destroy.
   - **`ChromiumSurface`:** CEF through `ChromiumBridge`. Chromium implements
     WebAuthn itself, so phone passkeys (QR code) and USB security keys work.
     See [Chromium](#chromium-cef).
-- **`SimulatorSurface`:** a booted iOS Simulator's screen, with touch and
-  keys. See [Simulator](#ios-simulator).
-- **`AndroidSurface`:** a running AVD's raw screenshot stream, with touch and
-  physical Mac key input. See [Android Emulator](#android-emulator).
 - **`ClientSurface`:** a tile drawn by another process through the client
   protocol. See [Client apps](#client-apps).
 
@@ -246,7 +244,7 @@ Hyprland overlay layer: elements sit above every tile and never tile.
 
 - **Schema and model in the core:** `SessionState` (JSON) holds workspaces,
   split trees, floating rects as fractions of the work area, groups, focus, and
-  names. Android tiles retain their stable AVD id and display name.
+  names.
   `WindowManager.exportSession` and `restoreSession` take closures. The app
   describes each client as a `SessionTile`, and creates a client from one.
   A tile the app skips collapses its split. `RestorePolicy` decides which
@@ -349,7 +347,22 @@ See [HOOKS.md](HOOKS.md) for the list and the manifest format.
     `chrome.windows` (1Password, for one) don't work in them.
   - Mac and iCloud passkeys (Touch ID) need Apple's browser entitlement.
 
-## iOS Simulator
+## Mobile
+
+`hyprmux-mobile` is the program of `Mobile.hmapp`, a first-party app in
+`Resources/apps`. It's a client like any other: Hyprmux has no device code.
+One process (`"instances": "single"`) shows every device. Each window's
+restore token is its window id, `ios:UDID` or `android:AVD_ID`.
+
+- **Launches:** it offers the running devices. Arguments that name one open it
+  directly. Restore tokens bring back the devices that still run. With none
+  running, a window says so.
+- **Window:** the toplevel's surface is the background and the button bar,
+  drawn only on resize. The device screen is a subsurface, letterboxed above
+  the bar. A failed stream draws its error in place of the screen.
+- **Quitting:** when its last window closes and no offer is open.
+
+### iOS Simulator
 
 `SimulatorBridge` loads `CoreSimulator` and `SimulatorKit` from the selected
 Xcode. All private calls are dynamic, so a changed Xcode fails with an error,
@@ -357,9 +370,9 @@ not a crash.
 
 - **Display:** the device's IO ports expose the main display's
   `framebufferSurface`, an `IOSurface`. A callback fires when the surface
-  changes and another when pixels change. `SimulatorSurface` hands the surface
-  to a layer: no copies, no screen recording, no Simulator.app. The screen is
-  letterboxed in the tile, above a slim bar with a Home button.
+  changes and another when pixels change. Mobile registers that surface as
+  the subsurface's buffer and commits it again on each frame. Hyprmux shows
+  it as a layer's contents: no copies, no screen recording, no Simulator.app.
 - **Touch:** goes through `SimDeviceLegacyHIDClient`, one message per phase, as
   the mouse moves.
   - The message layout comes from idb (`Sources/SimulatorBridge/idb`, MIT),
@@ -371,30 +384,30 @@ not a crash.
   - Touches that start at a screen edge carry the edge flag, which is how iOS
     recognizes the home swipe and other system gestures.
 - **Keys:** macOS key codes map to USB HID usages
-  (`IndigoHIDMessageForKeyboardArbitrary`).
-- **Buttons:** Home and Lock use `IndigoHIDMessageForButton`. The bar's Home
-  button and the `simbutton` binds share one path.
+  (`IndigoHIDMessageForKeyboardArbitrary`). Modifiers come as
+  `keyboard.modifiers` bits; each change becomes a key of its own.
+- **Buttons:** Home and Lock use `IndigoHIDMessageForButton`, from the bar.
 
-## Android Emulator
+### Android Emulator
 
 `AndroidEmulatorBridge` reads emulator advertisements from macOS running-AVD
 folders. It accepts only regular, user-owned `pid_*.ini` and `pid_*_info.ini`
-files whose process still exists. Endpoints must use loopback addresses. Hyprmux never starts or
-stops an emulator.
+files whose process still exists. Endpoints must use loopback addresses. Mobile
+never starts or stops an emulator.
 
 - **Discovery:** reads the stable `avd.id`, display `avd.name`, local gRPC port,
   and optional `grpc.token`. Endpoint descriptions always redact the token.
 - **Display:** the first native RGBA8888 frame establishes input coordinates.
   Emulator 37.2.3+ then writes frames within a 720×1280 bound into a client-owned
-  file mapping. Each notification snapshots the mapping before Core Animation
-  reads it. Older emulators and rejected MMAP requests fall back to gRPC bytes.
-  The surface wraps pixels in `CGImage` without codec work and keeps only the
-  newest pending frame.
+  file mapping. Each notification snapshots the mapping. Older emulators and
+  rejected MMAP requests fall back to gRPC bytes. Mobile writes the newest
+  frame into a subsurface swapchain buffer, swapping RGBA to BGRA in the same
+  pass, and drops older ones.
 - **Input:** one long-lived `streamInputEvent` call carries touch and keyboard
   events. The mouse maps into the aspect-fitted device image. Touch pressure is
   1 while down and 0 when released. Keys use physical macOS codes with the
-  proto's `Mac` code type. Modifier transitions use `flagsChanged`. The visible
-  Back, Home, and Recent apps buttons send `GoBack`, `GoHome`, and `AppSwitch`.
+  proto's `Mac` code type. The Back, Home, and Recent apps buttons send
+  `GoBack`, `GoHome`, and `AppSwitch`.
 - **Lifecycle:** occluded tiles cancel their screenshot stream. Closing a tile
   closes only the gRPC channel and leaves the AVD running.
 
@@ -424,6 +437,9 @@ specified in [CLIENT_PROTOCOL.md](CLIENT_PROTOCOL.md).
   connection with an `error`.
 - **`ClientSurface`:** the tile.
   - It shows the committed IOSurface as a layer's contents, with no copy.
+    Committing the buffer on screen again makes it read the pixels again.
+  - Subsurfaces are child views above it, each with its own IOSurface as
+    contents, scaled to its rect.
   - It sends `toplevel.configure` when its size, scale, focus, or occlusion
     changes.
   - Its view's display link drives frame callbacks. Occluded tiles get none.
@@ -431,17 +447,25 @@ specified in [CLIENT_PROTOCOL.md](CLIENT_PROTOCOL.md).
     top-left points.
   - A replaced buffer is released once `IOSurfaceIsInUse` says the render
     server let go of it.
-- **Launching:** `new-surface --type app -- TARGET ARGS` reserves a tile
-  with a launch token and starts the target. TARGET is an executable, an
-  `.app`, a `.hmapp`, or a bundle id. The client's first toplevel with that token fills
-  the tile. After 20 seconds without one, the tile closes with a notice,
-  "NAME didn't open." A launch that fails says "Couldn't open NAME.", and a
-  restore "Couldn't reopen NAME." Notices never say why: the reason goes to
-  the log, and for adapters to `hyprmuxctl adapters` and the adapter log.
-  An executable Hyprmux started keeps its tiles while it runs, up to 2
-  minutes, since large apps (a debug Zed build) take longer to open a window.
-  If it exits first, the launch fails at once.
-  A client that connects on its own gets a new tile.
+- **Launching:** an `AppLaunch` (`Clients/AppLaunch.swift`) per launch, with
+  a token. No tile exists until the app answers ([CLIENT_PROTOCOL.md,
+  section 10](CLIENT_PROTOCOL.md#10-launch-and-restore)).
+  - `Compositor+Clients` starts the process with the token, or sends `launch`
+    to a running single-instance app. `ClientServer` keeps the launches by
+    token and the single-instance processes by app id.
+  - A toplevel with the token gets a tile on the workspace recorded at launch.
+    An offer of several windows fills the launch picker ("Opening NAME…"), or
+    goes back to `hyprmuxctl launch`.
+  - After 20 seconds without an answer, the launch fails with a notice, "NAME
+    didn't open." A launch that fails says "Couldn't open NAME.", and a
+    restore "Couldn't reopen NAME." Notices never say why: the reason goes to
+    the log, and for adapters to `hyprmuxctl adapters` and the adapter log.
+  - An executable Hyprmux started keeps its launch while it runs, up to 2
+    minutes, since large apps (a debug Zed build) take longer to open a window.
+    If it exits first, the launch fails at once.
+  - Restored tiles are the exception: they exist first, and wait for windows
+    with their restore tokens.
+  - A client that connects on its own gets a new tile.
 - **Adapters:** an `.app` that isn't a client runs through an adapter, an
   executable that is a client and translates the app. Manifests choose the
   adapter by bundle id and bundle contents. `AdapterRegistry` in HyprmuxCore
@@ -451,8 +475,8 @@ specified in [CLIENT_PROTOCOL.md](CLIENT_PROTOCOL.md).
 - **The app catalog:** what the launcher (`picker, apps`) lists. Every entry
   is a `.hmapp`, a folder bundle with an `Info.json` ([APPS.md](APPS.md)).
   - **In the core:** `HMAppManifest` parses and writes `Info.json`;
-    `AppCatalog` loads the generated and installed folders and merges them by
-    id; `AppScanner` finds `.app` bundles in fixed folders; `AppGenerator`
+    `AppCatalog` loads the built-in, generated, and installed folders and
+    merges them by id; `AppScanner` finds `.app` bundles in fixed folders; `AppGenerator`
     classifies each one (native client, adapter, or nothing), caches probe
     results, and writes, rewrites, or deletes only the bundles it owns. The
     probe and the icon come in as closures, so tests spawn no processes.
@@ -463,17 +487,16 @@ specified in [CLIENT_PROTOCOL.md](CLIENT_PROTOCOL.md).
     `~/Library/Application Support/Hyprmux/Apps/` (a subfolder per
     `HYPRMUX_INSTANCE` other than `default`).
   - **Launching an entry** builds the same `AppCommand` as `new-surface`, and
-    reuses its launch path. `ClientServer` remembers each launch's entry id,
-    so every tile of that launch saves `appEntry` in the session and comes
-    back by id.
+    reuses its launch path. Each `AppLaunch` remembers its entry id, so every
+    tile of that launch saves `appEntry` in the session and comes back by id.
 
 ## Rendering pipeline notes
 
 - **Terminals:** libghostty draws terminals on its own Metal layer.
 - **Chromium:** composites into its child view through its own layer tree.
-- **Simulator:** its `IOSurface` is a layer's contents.
-- **Android Emulator:** raw RGBA frames wrap in `CGImage` values and become a layer's contents.
-- **Client apps:** the client's committed IOSurface is a layer's contents.
+- **Client apps:** the client's committed IOSurface is a layer's contents, and
+  so is each subsurface's. Mobile's iOS screens are the simulator's own
+  framebuffer.
 - **Everything else** is Core Animation: borders, masks, shadow, the blur
   view, and the tab strip.
 - **Opacity:** the clip's group opacity applies to all of them, which is how

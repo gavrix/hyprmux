@@ -9,7 +9,7 @@ compatibility: macOS with Hyprmux running and hyprmuxctl available
 # Hyprmux surface automation
 
 Use `hyprmuxctl` as the compositor-mediated interface to Hyprmux surfaces:
-terminals, web tiles, and simulator or emulator tiles.
+terminals, web tiles, and app tiles, including Mobile's simulator and emulator tiles.
 Do not open the Unix socket directly or depend on surface view objects.
 
 ## Establish the client
@@ -119,10 +119,9 @@ It prints the new surface's JSON; read its `ref` for later commands:
 ref=$(hyprmuxctl new-surface --workspace 3 --cwd "$PWD" --input 'npm test\n' | jq -r .ref)
 hyprmuxctl new-surface --workspace name:agents -- htop
 hyprmuxctl new-surface --type web --workspace 2 https://example.com
-hyprmuxctl new-surface --type sim booted
 ```
 
-Put options before the command, URL, or device.
+Put options before the command or URL.
 `--input` types into a shell that stays open after the program exits.
 A command after `--` replaces the shell, and the terminal closes when it exits.
 Without `--cwd`, a terminal starts in the focused terminal's directory, not the caller's.
@@ -136,6 +135,16 @@ hyprmuxctl apps                                      # the apps Hyprmux can open
 hyprmuxctl launch Cursor ~/src/project               # name or id, then the app's arguments
 hyprmuxctl apps add "Zed (dev)" ~/src/zed/target/release-fast/zed   # install an app (.app or executable)
 hyprmuxctl apps refresh                              # rescan the app folders now
+```
+
+An app that can open several windows replies with them instead of opening one.
+Pick one with `--window ID`. Mobile shows iOS Simulators and Android Emulators
+this way:
+
+```sh
+hyprmuxctl launch Mobile                             # {"app": "Mobile", "windows": [{"id": "ios:UDID", ...}]}
+hyprmuxctl launch --window ios:UDID Mobile           # opens that device; each call opens another tile
+hyprmuxctl launch Mobile "iPhone 17"                 # or name the device directly
 ```
 
 An app missing from `apps` can't open in a tile. `adapters match` says why:

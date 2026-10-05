@@ -7,7 +7,7 @@ final class EventsTests: XCTestCase {
     func testCommandParsesBack() {
         let all: [Dispatcher] = [
             .exec(""), .exec("htop -d 5"), .web("github.com"), .webNav(.back), .fillCredential(nil), .fillCredential("op"),
-            .sim("booted"), .android("Pixel"), .simButton("home"), .launch("Zed"), .killActive,
+            .launch("Zed"), .killActive,
             .moveFocus(.left), .moveWindow(.up), .swapWindow(.down), .resizeActive(dx: -40, dy: 0),
             .moveActive(dx: 10.5, dy: -3), .workspace(.id(3)), .workspace(.relative(-1)), .workspace(.relativeExisting(1)),
             .workspace(.previous), .workspace(.empty), .workspace(.special("magic")), .workspace(.named("notes")),

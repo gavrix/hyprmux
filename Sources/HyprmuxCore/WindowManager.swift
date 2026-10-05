@@ -31,11 +31,8 @@ public struct WMSettings: Equatable, Sendable {
 public enum Effect: Equatable, Sendable {
     case spawn(command: String)
     case spawnWeb(url: String)
-    case spawnSim(query: String)
-    case spawnAndroid(query: String)
     /// Open a catalog app (docs/APPS.md): a name or id, then arguments.
     case launch(String)
-    case simButton(ClientID, String)
     case webNav(ClientID, WebNav)
     case credentialFill(ClientID, String?)
     case close(ClientID)
@@ -231,10 +228,7 @@ public final class WindowManager {
         switch d {
         case .exec(let cmd): perform(.spawn(command: cmd))
         case .web(let url): perform(.spawnWeb(url: url))
-        case .sim(let q): perform(.spawnSim(query: q))
-        case .android(let q): perform(.spawnAndroid(query: q))
         case .launch(let app): perform(.launch(app))
-        case .simButton(let b): if let f = subject { perform(.simButton(f, b)) }
         case .webNav(let n): if let f = subject { perform(.webNav(f, n)) }
         case .fillCredential(let provider): if let f = subject { perform(.credentialFill(f, provider)) }
         case .killActive: if let f = subject { perform(.close(f)) }
@@ -394,6 +388,11 @@ public final class WindowManager {
     }
 
     /// Where new clients go: the focused client's workspace when it is visible.
+    /// Where a new window goes now: the focused window's workspace, if it's in view.
+    public var newWindowWorkspace: WorkspaceID { targetWorkspace }
+
+    public func isVisible(_ ws: WorkspaceID) -> Bool { visibleWorkspaces.contains(ws) }
+
     private var targetWorkspace: WorkspaceID {
         if let f = focused, let ws = clients[f]?.workspace, visibleWorkspaces.contains(ws) { return ws }
         if let s = specialVisible { return .special(s) }

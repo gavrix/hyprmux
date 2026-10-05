@@ -48,7 +48,7 @@ every change:
 
 | Event | Data | When |
 |---|---|---|
-| `openwindow` | `ID,WORKSPACE,KIND,TITLE` | A window opened. KIND is `terminal`, `web`, `sim`, `android`, or `app`. |
+| `openwindow` | `ID,WORKSPACE,KIND,TITLE` | A window opened. KIND is `terminal`, `web`, or `app`. |
 | `closewindow` | `ID` | A window closed. |
 | `movewindow` | `ID,WORKSPACE` | A window moved to another workspace. |
 | `activewindow` | `KIND,TITLE` | Focus moved. Both are empty when nothing has focus. |

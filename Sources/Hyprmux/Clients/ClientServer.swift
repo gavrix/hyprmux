@@ -8,8 +8,17 @@ private let clientLog = Logger(subsystem: "dev.gavrix.hyprmux", category: "clien
 
 /// What the server needs from the compositor.
 protocol ClientServerHost: AnyObject {
-    /// A toplevel no tile was reserved for: make and manage a new tile.
-    func clientServer(_ server: ClientServer, newSurfaceFor appID: String, name: String) -> ClientSurface
+    /// A toplevel no restored tile waits for: make and place a new tile. `launch` is the
+    /// launch it answers, if any.
+    func clientServer(_ server: ClientServer, newSurfaceFor appID: String, name: String, launch: AppLaunch?) -> ClientSurface
+    /// A toplevel of `launch` took its tile.
+    func clientServer(_ server: ClientServer, opened tile: ClientSurface, for launch: AppLaunch)
+    /// The app offered windows for a launch (`launch.offer`).
+    func clientServer(_ server: ClientServer, offered windows: [HMWindowOffer], for launch: AppLaunch)
+    /// The app said a launch gets no more windows (`launch.done`).
+    func clientServer(_ server: ClientServer, finished launch: AppLaunch)
+    /// The connection a launch went to closed before the launch got a window.
+    func clientServer(_ server: ClientServer, lost launch: AppLaunch)
     func clientServer(_ server: ClientServer, titleChanged surface: ClientSurface)
     /// An app tile waits for a client, but Hyprmux isn't registered with the broker.
     /// Called once per launch; the host explains what the user can do.
@@ -25,47 +34,70 @@ final class ClientServer {
     private var connections: [ObjectIdentifier: ClientConnection] = [:]
     private(set) var registered = false
     private var warned = false
-    /// Tiles waiting for a launched client, by launch token. A fresh launch reserves one
-    /// tile; a restored session may reserve several, each with its restore token.
-    private var reserved: [String: [ClientSurface]] = [:]
-    /// What each launch ran, for the session: `new-surface --type app` text, or a `.hmapp`
-    /// id and its arguments.
-    private var launches: [String: Launch] = [:]
+    /// Launches by token: pending ones, and settled ones whose app is still connected
+    /// (later windows of a launch are stamped with it).
+    private var launches: [String: AppLaunch] = [:]
+    /// Single-instance apps by id: the process Hyprmux started, its connection once it
+    /// says hello, and launches that wait for that hello.
+    private var singles: [String: SingleInstance] = [:]
 
-    struct Launch {
-        var argument: String
-        var entry: String?
-        var entryArgs: [String] = []
-
-        /// Marks a tile as coming from this launch, so the session can relaunch it.
-        func stamp(_ tile: ClientSurface) {
-            tile.appEntry = entry
-            tile.entryArgs = entryArgs
-            tile.launchArgument = entry == nil ? argument : nil
+    final class SingleInstance {
+        var process: Process?
+        /// The launch token the process started with: its hello names it.
+        let token: String
+        weak var connection: ClientConnection?
+        var queued: [AppLaunch] = []
+        init(process: Process?, token: String) {
+            self.process = process
+            self.token = token
         }
     }
 
-    func reserve(_ tiles: [ClientSurface], token: String, launch: Launch) {
-        reserved[token, default: []] += tiles
-        launches[token] = launch
+    func add(_ launch: AppLaunch) { launches[launch.token] = launch }
+
+    func remove(_ launch: AppLaunch) {
+        launches[launch.token] = nil
+        for single in singles.values { single.queued.removeAll { $0 === launch } }
     }
 
-    func cancelReservation(_ token: String) -> [ClientSurface] {
-        reserved.removeValue(forKey: token) ?? []
+    func launch(for token: String?) -> AppLaunch? { token.flatMap { launches[$0] } }
+
+    /// The running (or starting) process of a single-instance app.
+    func single(_ appID: String) -> SingleInstance? { singles[appID] }
+
+    func setSingle(_ appID: String, _ instance: SingleInstance?) { singles[appID] = instance }
+
+    /// Sends `launch` to the single-instance app's process now, or once it connects.
+    func deliver(_ launch: AppLaunch, to instance: SingleInstance) {
+        if let c = instance.connection { launch.sendLaunch(on: c) } else { instance.queued.append(launch) }
     }
 
-    func reservedTiles(_ token: String) -> [ClientSurface] { reserved[token] ?? [] }
+    /// A connection said hello: it answers its own launch, and the launches queued for
+    /// its app.
+    fileprivate func greeted(_ connection: ClientConnection, token: String?) {
+        guard let token else { return }
+        var deliver: [AppLaunch] = []
+        // The first launch may be gone already (dismissed while the app started).
+        if let launch = launch(for: token) { deliver.append(launch) }
+        if let single = singles.values.first(where: { $0.token == token }) {
+            single.connection = connection
+            deliver += single.queued
+            single.queued.removeAll()
+        }
+        for l in deliver where l.pending { l.sendLaunch(on: connection) }
+    }
 
-    func launch(for token: String?) -> Launch? { token.flatMap { launches[$0] } }
+    fileprivate func closed(_ connection: ClientConnection) {
+        for (id, single) in singles where single.connection === connection { singles[id] = nil }
+        for l in launches.values where l.connection === connection {
+            launches[l.token] = nil
+            if l.pending { host?.clientServer(self, lost: l) }
+        }
+    }
 
-    /// The tile a launched client's toplevel fills: the one saved with the same restore
-    /// token, else the first one still waiting.
-    func takeReserved(launch token: String?, restore: String?) -> ClientSurface? {
-        guard let token, var tiles = reserved[token], !tiles.isEmpty else { return nil }
-        let index = restore.flatMap { r in tiles.firstIndex { $0.restoreToken == r } } ?? 0
-        let tile = tiles.remove(at: index)
-        reserved[token] = tiles.isEmpty ? nil : tiles
-        return tile
+    /// The process a single-instance launch started ended.
+    func processEnded(_ process: Process) {
+        for (id, single) in singles where single.process === process { singles[id] = nil }
     }
 
     func start() {
@@ -165,6 +197,16 @@ final class ClientConnection {
         var pendingScale: CGFloat = 1
         var pendingCallbacks: [UInt64] = []
         var toplevel: UInt64 = 0
+        /// Set when the surface is a subsurface: its object id.
+        var subsurface: UInt64 = 0
+    }
+
+    /// A `subsurface` object: a surface drawn above its parent, scaled to a rect.
+    private final class SubsurfaceState {
+        let surface: UInt64
+        let parent: UInt64
+        var pendingRect: CGRect?
+        init(surface: UInt64, parent: UInt64) { self.surface = surface; self.parent = parent }
     }
 
     let peer: xpc_connection_t
@@ -174,13 +216,13 @@ final class ClientConnection {
     private var greeted = false
     private var appID = ""
     private var name = ""
-    /// Every toplevel of a launched client may fill a tile reserved for its launch.
+    /// The launch that started the process: toplevels that name no launch belong to it.
     private var launchToken: String?
-    private var launch: ClientServer.Launch?
     private var buffers: [UInt64: Buffer] = [:]
     private var surfaces: [UInt64: SurfaceState] = [:]
     /// Toplevel id → the tile showing it.
     private var toplevels: [UInt64: ClientSurface] = [:]
+    private var subsurfaces: [UInt64: SubsurfaceState] = [:]
     private var closed = false
 
     init(peer: xpc_connection_t, server: ClientServer) {
@@ -220,6 +262,8 @@ final class ClientConnection {
         toplevels.removeAll()
         buffers.removeAll()
         surfaces.removeAll()
+        subsurfaces.removeAll()
+        server?.closed(self)
         onClose?(self)
     }
 
@@ -282,8 +326,16 @@ final class ClientConnection {
             s.pendingCallbacks.removeAll()
             let buffer = s.bufferAttached ? s.pendingBuffer : nil
             s.bufferAttached = false
-            if let tile = toplevels[s.toplevel] {
+            if s.subsurface != 0, let sub = subsurfaces[s.subsurface], let tile = tile(forSurface: sub.parent) {
+                tile.commitChild(s.subsurface, buffer: buffer, callbacks: callbacks)
+            } else if let tile = toplevels[s.toplevel] {
                 tile.commit(buffer: buffer, scale: s.pendingScale, callbacks: callbacks)
+                // Subsurface rects take effect with the parent's commit.
+                for (sid, sub) in subsurfaces where sub.parent == id {
+                    guard let r = sub.pendingRect else { continue }
+                    sub.pendingRect = nil
+                    tile.setChildRect(sid, r)
+                }
             } else if !callbacks.isEmpty {
                 // No role yet: answer callbacks right away so the client isn't stuck.
                 for cb in callbacks { send(HMOp.surfaceFrameDone, ["callback": cb, "time": CACurrentMediaTime(), "target_time": CACurrentMediaTime()]) }
@@ -291,17 +343,54 @@ final class ClientConnection {
 
         case HMOp.surfaceDestroy:
             guard let s = surfaces.removeValue(forKey: id) else { return fail("object", "no surface \(id)") }
+            if s.subsurface != 0 { destroySubsurface(s.subsurface) }
             if let tile = toplevels.removeValue(forKey: s.toplevel) { tile.clientLeft() }
+
+        case HMOp.subsurfaceCreate:
+            let sid = m.uint("surface"), pid = m.uint("parent")
+            guard subsurfaces[id] == nil, id != 0 else { return fail("object", "subsurface id \(id) in use") }
+            guard let s = surfaces[sid] else { return fail("object", "no surface \(sid)") }
+            guard let parent = surfaces[pid] else { return fail("object", "no surface \(pid)") }
+            guard s.toplevel == 0, s.subsurface == 0, sid != pid else { return fail("role", "surface \(sid) already has a role") }
+            guard parent.subsurface == 0 else { return fail("role", "a subsurface can't have subsurfaces") }
+            s.subsurface = id
+            subsurfaces[id] = SubsurfaceState(surface: sid, parent: pid)
+
+        case HMOp.subsurfaceSetRect:
+            guard let sub = subsurfaces[id] else { return fail("object", "no subsurface \(id)") }
+            let r = CGRect(x: m.double("x"), y: m.double("y"), width: m.double("w"), height: m.double("h"))
+            guard r.width >= 0, r.height >= 0, r.minX.isFinite, r.minY.isFinite else {
+                return fail("subsurface", "bad rect")
+            }
+            sub.pendingRect = r
+
+        case HMOp.subsurfaceDestroy:
+            guard subsurfaces[id] != nil else { return fail("object", "no subsurface \(id)") }
+            destroySubsurface(id)
+
+        case HMOp.launchOffer, HMOp.launchDone:
+            guard let server, let host = server.host else { return }
+            // Unknown or ended launches are fine: the user may have dismissed it.
+            guard let launch = server.launch(for: m.string("launch_token")), launch.connection === self else { return }
+            if op == HMOp.launchDone {
+                host.clientServer(server, finished: launch)
+            } else {
+                host.clientServer(server, offered: HMWindowOffer.decode(m.string("windows_json")), for: launch)
+            }
 
         case HMOp.toplevelCreate:
             let sid = m.uint("surface")
             guard let s = surfaces[sid] else { return fail("object", "no surface \(sid)") }
             guard toplevels[id] == nil, id != 0 else { return fail("object", "toplevel id \(id) in use") }
             guard s.toplevel == 0 else { return fail("role", "surface \(sid) already has a role") }
+            guard s.subsurface == 0 else { return fail("role", "surface \(sid) already has a role") }
             guard let server, let host = server.host else { return }
             let restore = m.string("restore_token").flatMap { $0.isEmpty ? nil : $0 }
-            let tile = server.takeReserved(launch: launchToken, restore: restore)
-                ?? host.clientServer(server, newSurfaceFor: appID, name: name)
+            let named = m.string("launch_token").flatMap { $0.isEmpty ? nil : $0 }
+            // A launch answers only through the connection it went to.
+            let launch = server.launch(for: named ?? launchToken).flatMap { $0.connection === self ? $0 : nil }
+            let reserved = launch?.takeReserved(restore: restore)
+            let tile = reserved ?? host.clientServer(server, newSurfaceFor: appID, name: name, launch: launch)
             s.toplevel = id
             toplevels[id] = tile
             tile.bind(connection: self, toplevel: id, surface: sid, appID: appID)
@@ -311,6 +400,7 @@ final class ClientConnection {
                 tile.launchArgument = nil
             }
             tile.restoreToken = restore
+            if let launch { host.clientServer(server, opened: tile, for: launch) }
 
         case HMOp.toplevelSetRestoreToken:
             guard let tile = toplevels[id] else { return fail("object", "no toplevel \(id)") }
@@ -376,7 +466,6 @@ final class ClientConnection {
         name = m.string("name") ?? appID
         let token = m.string("launch_token") ?? ""
         launchToken = token.isEmpty ? nil : token
-        launch = server?.launch(for: launchToken)
         greeted = true
         clientLog.info("client \(self.pid) connected: \(self.appID, privacy: .public)")
         if let reply = xpc_dictionary_create_reply(m) {
@@ -385,5 +474,17 @@ final class ClientConnection {
             xpcSet(reply, "scale", Double(NSScreen.main?.backingScaleFactor ?? 2))
             xpc_connection_send_message(peer, reply)
         }
+        server?.greeted(self, token: launchToken)
+    }
+
+    private func tile(forSurface sid: UInt64) -> ClientSurface? {
+        guard let s = surfaces[sid] else { return nil }
+        return toplevels[s.toplevel]
+    }
+
+    private func destroySubsurface(_ id: UInt64) {
+        guard let sub = subsurfaces.removeValue(forKey: id) else { return }
+        surfaces[sub.surface]?.subsurface = 0
+        tile(forSurface: sub.parent)?.removeChild(id)
     }
 }

@@ -73,7 +73,7 @@ public struct TourKeys: Sendable {
     public var workspacePicker: String? { chord(.picker(.workspace)) }
     public var renameWorkspace: String? { chord(.picker(.renameWorkspace)) }
     public var reload: String? { chord(.reload) }
-    public var device: String? { chord { if case .sim = $0 { return true }; return false } }
+    public var device: String? { chord(.launch(CommandMenu.mobileApp)) }
     public var apps: String? { chord(.picker(.apps)) }
     public var menu: String? { chord(.picker(.menu)) }
     public var layout: String? { chord(.picker(.layout)) }

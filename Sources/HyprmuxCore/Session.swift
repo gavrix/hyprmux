@@ -5,7 +5,7 @@ import Foundation
 
 /// Everything needed to bring a Hyprmux session back: workspaces, their split trees,
 /// floating windows, groups, focus, and names. Tiles carry what their surface needs
-/// (a directory, a URL, a simulator). JSON; the same schema serves saved sessions and
+/// (a directory, a URL, an app). JSON; the same schema serves saved sessions and
 /// (later) hand-written layouts, so every field but `kind` is optional.
 public struct SessionState: Codable, Equatable, Sendable {
     public var version = 1
@@ -81,7 +81,7 @@ public struct SessionFullscreen: Codable, Equatable, Sendable {
 
 /// One window's content.
 public struct SessionTile: Codable, Equatable, Sendable {
-    /// "terminal", "web", "sim", "android", or "app".
+    /// "terminal", "web", or "app".
     public var kind: String
     /// Unique within the file. Focus and fullscreen refer to tiles by key.
     public var key: Int?
@@ -94,12 +94,6 @@ public struct SessionTile: Codable, Equatable, Sendable {
     public var agent: SessionAgent?
     /// Web: the page.
     public var url: String?
-    /// Simulator: UDID (or a device name).
-    public var sim: String?
-    /// Android Emulator: stable Android Virtual Device id.
-    public var avd: String?
-    /// Android Emulator: display name, retained as a restore fallback and for hand-written layouts.
-    public var avdName: String?
     /// Client app: what `new-surface --type app` was given (target and arguments).
     /// Tiles that came from one launch share it, and are relaunched together.
     public var app: String?
@@ -112,8 +106,7 @@ public struct SessionTile: Codable, Equatable, Sendable {
     public var appArgs: [String]?
 
     public init(kind: String, key: Int? = nil, title: String? = nil, cwd: String? = nil, command: String? = nil,
-                agent: SessionAgent? = nil, url: String? = nil, sim: String? = nil,
-                avd: String? = nil, avdName: String? = nil, app: String? = nil, restoreToken: String? = nil,
+                agent: SessionAgent? = nil, url: String? = nil, app: String? = nil, restoreToken: String? = nil,
                 appEntry: String? = nil, appArgs: [String]? = nil) {
         self.kind = kind
         self.key = key
@@ -122,9 +115,6 @@ public struct SessionTile: Codable, Equatable, Sendable {
         self.command = command
         self.agent = agent
         self.url = url
-        self.sim = sim
-        self.avd = avd
-        self.avdName = avdName
         self.app = app
         self.restoreToken = restoreToken
         self.appEntry = appEntry
@@ -331,7 +321,7 @@ extension WindowManager {
     }
 
     /// Rebuilds a saved session into an empty manager. `make` creates each tile's client and
-    /// returns its id, or nil to skip it (a simulator that's gone). Returns the clients made.
+    /// returns its id, or nil to skip it (an app that's gone). Returns the clients made.
     @discardableResult
     public func restoreSession(_ s: SessionState, make: (SessionTile) -> ClientID?) -> [ClientID] {
         precondition(clients.isEmpty, "restore into an empty window manager")
@@ -401,8 +391,7 @@ extension WindowManager {
 
     /// Builds one saved workspace into `id` (which must be empty or new).
     ///
-    /// `make` can run the main run loop (a simulator tile waits for a helper process), so
-    /// queued work such as a web tile taking focus runs in the middle of this. A focus
+    /// `make` can run the main run loop, so queued work such as a web tile taking focus runs in the middle of this. A focus
     /// change that switches workspaces collects empty ones, and this one looks empty until
     /// its tree is set: it's marked as being built so it isn't collected.
     func restoreWorkspace(_ w: SessionWorkspace, into id: WorkspaceID, make: (SessionTile) -> ClientID?) -> [ClientID] {

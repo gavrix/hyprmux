@@ -17,8 +17,8 @@ guard !args.isEmpty, args[0] != "-h", args[0] != "--help" else {
                                       dispatchers act on --surface instead of the focused one
       clients | surfaces             list every managed surface as JSON
       identify [--surface <id>]      describe the caller, target, or focused surface
-      new-surface [--type terminal|web|sim|android|app] [--workspace <ws>] [--focus] [--floating]
-                  [--cwd <dir>] [--input <text>] [[--] <command | url | device | app>]
+      new-surface [--type terminal|web|app] [--workspace <ws>] [--focus] [--floating]
+                  [--cwd <dir>] [--input <text>] [[--] <command | url | app>]
                                       open a surface and print it as JSON; it takes focus
                                       only with --focus
       close-surface [--surface <id>]  close a surface
@@ -36,8 +36,10 @@ guard !args.isEmpty, args[0] != "-h", args[0] != "--help" else {
                                       and their folders; refresh regenerates the generated ones
       apps add <name> <path> [args]  install an app: an .app (checked like generated ones) or
                                       an executable, with default arguments
-      launch [--focus] <name | id> [args]
-                                      open an app in a new tile and print it as JSON
+      launch [--focus] [--window <id>] <name | id> [args]
+                                      open an app in a new tile and print it as JSON; an app
+                                      that offers several windows prints them instead, and
+                                      --window opens one of them
       adapters [list | match <app> | reload] [--json]
                                       the adapter registry: what Hyprmux loaded, which adapter
                                       would lift an app (with its probe), and running instances
@@ -550,9 +552,21 @@ func appsLine(_ arguments: [String]) throws -> String {
 func launchLine(_ arguments: [String]) throws -> String {
     var rest = arguments
     var wire = ["launch"]
-    if rest.first == "--focus" {
+    // Options come before the app's name; the app's own arguments follow it.
+    while let first = rest.first, first.hasPrefix("--"), first != "--" {
         rest.removeFirst()
-        wire.append("--focus")
+        switch first {
+        case "--focus":
+            wire.append("--focus")
+        case "--window":
+            guard let id = rest.first, !id.isEmpty, !id.contains(where: \.isWhitespace) else {
+                throw CLIError(message: "launch --window needs a window id (launch without it lists them)")
+            }
+            rest.removeFirst()
+            wire += ["--window", id]
+        default:
+            throw CLIError(message: "launch: unknown option \(first)")
+        }
     }
     if rest.first == "--" { rest.removeFirst() }
     guard !rest.isEmpty else { throw CLIError(message: "launch needs an app name or id (hyprmuxctl apps lists them)") }

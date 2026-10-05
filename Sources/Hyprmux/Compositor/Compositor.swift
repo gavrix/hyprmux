@@ -1,10 +1,8 @@
-import AndroidEmulatorBridge
 import AppKit
 import Carbon
 import HyprmuxCore
 import HyprmuxCredentialSupport
 import ChromiumBridge
-import SimulatorBridge
 
 /// Glue between the model (WindowManager), the monitor window, and terminal surfaces.
 final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindowDelegate {
@@ -404,85 +402,6 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         return web
     }
 
-    /// Shows an iOS Simulator or Android Emulator in a tile.
-    /// Empty query: the only running device, or one picker containing both platforms.
-    private func spawnSim(_ query: String) {
-        if query.isEmpty {
-            let booted: [HMSimDeviceInfo]
-            let simulatorError: Error?
-            do {
-                booted = try HMSimulator.devices().filter(\.booted)
-                simulatorError = nil
-            } catch {
-                booted = []
-                simulatorError = error
-            }
-            let android = AndroidEmulatorDiscovery.running()
-            switch booted.count + android.count {
-            case 0:
-                if let simulatorError {
-                    flash("No running device. Simulator: \(simulatorError.localizedDescription)")
-                } else {
-                    flash("No booted iOS Simulator or running Android emulator.")
-                }
-            case 1:
-                if let device = booted.first { spawnSim(device.udid) }
-                else if let endpoint = android.first { openAndroid(endpoint) }
-            default:
-                pickDevice(booted, android)
-            }
-            return
-        }
-        let display: HMSimDisplay
-        do {
-            display = try HMSimDisplay(query: query)
-        } catch {
-            flash("Simulator: \(error.localizedDescription)")
-            return
-        }
-        manage(makeSim(display))
-    }
-
-    func makeSim(_ display: HMSimDisplay) -> SimulatorSurface {
-        let sim = SimulatorSurface(id: allocateID(), display: display)
-        sim.onClose = { [weak self] s in self?.removeClient(s.clientID) }
-        return sim
-    }
-
-    /// Attaches to a running Android Virtual Device. Hyprmux never boots an AVD.
-    /// Empty query: the sole running AVD, or a picker when several are running.
-    private func spawnAndroid(_ query: String) {
-        let endpoints = AndroidEmulatorDiscovery.running()
-        if query.isEmpty {
-            switch endpoints.count {
-            case 0: flash("No running Android emulator. Start an AVD first.")
-            case 1: openAndroid(endpoints[0])
-            default: pickAndroidEmulator(endpoints)
-            }
-            return
-        }
-        guard let endpoint = AndroidEmulatorDiscovery.match(query, in: endpoints) else {
-            flash("No running Android AVD matches \(query).")
-            return
-        }
-        openAndroid(endpoint)
-    }
-
-    private func openAndroid(_ endpoint: AndroidEmulatorEndpoint) {
-        do {
-            manage(try makeAndroid(endpoint))
-        } catch {
-            flash("Android Emulator: \(error.localizedDescription)")
-        }
-    }
-
-    func makeAndroid(_ endpoint: AndroidEmulatorEndpoint) throws -> AndroidSurface {
-        let android = try AndroidSurface(id: allocateID(), endpoint: endpoint)
-        android.onClose = { [weak self] surface in self?.removeClient(surface.clientID) }
-        android.onError = { [weak self] message in self?.flash("Android Emulator: \(message)") }
-        return android
-    }
-
     // MARK: Pickers
 
     /// `picker, KIND`: the workspace pickers and the rename prompt.
@@ -545,9 +464,6 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         case .picker(let kind):
             emit(.dispatch(d, source: .picker))
             presentPicker(kind)
-        case .sim(let query):
-            emit(.dispatch(d, source: .picker))
-            spawnSim(query)
         default:
             dispatch(d, source: .picker)
         }
@@ -564,46 +480,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         })).sorted()
     }
 
-    /// One picker for every running mobile device Hyprmux can embed.
-    private func pickDevice(_ devices: [HMSimDeviceInfo], _ endpoints: [AndroidEmulatorEndpoint]) {
-        let ios = devices.map {
-            PickerItem(id: "ios:\($0.udid)", title: $0.name, detail: Self.runtimeName($0.runtime))
-        }
-        let android = endpoints.map {
-            let detail = $0.avdID == $0.name ? "Android" : "Android · \($0.avdID)"
-            return PickerItem(id: "android:\($0.avdID)", title: $0.name, detail: detail)
-        }
-        hud.picker.present(Picker(title: "device", items: ios + android, maxVisible: config.hud.pickerMaxRows)) { [weak self] result in
-            guard case .item(let id)? = result else { return }
-            if id.hasPrefix("ios:") {
-                self?.spawnSim(String(id.dropFirst(4)))
-            } else if id.hasPrefix("android:") {
-                self?.spawnAndroid(String(id.dropFirst(8)))
-            }
-        }
-    }
-
-    /// Picker of AVDs that already have a live emulator process.
-    private func pickAndroidEmulator(_ endpoints: [AndroidEmulatorEndpoint]) {
-        let items = endpoints.map {
-            PickerItem(id: String($0.pid), title: $0.name, detail: $0.avdID == $0.name ? "running" : $0.avdID)
-        }
-        hud.picker.present(Picker(title: "android emulator", items: items, maxVisible: config.hud.pickerMaxRows)) { [weak self] result in
-            guard case .item(let rawPID)? = result, let pid = Int32(rawPID),
-                  let endpoint = endpoints.first(where: { $0.pid == pid }) else { return }
-            self?.openAndroid(endpoint)
-        }
-    }
-
-    /// "com.apple.CoreSimulator.SimRuntime.iOS-27-0" → "iOS 27.0".
-    static func runtimeName(_ id: String) -> String {
-        guard let last = id.split(separator: ".").last else { return id }
-        let parts = last.split(separator: "-")
-        guard let os = parts.first else { return String(last) }
-        return os + " " + parts.dropFirst().joined(separator: ".")
-    }
-
-    /// A short-lived warning, e.g. "no booted simulator".
+    /// A short-lived warning, e.g. "No app named X."
     func flash(_ message: String) {
         hud.notifications.post(.warning, message)
     }
@@ -669,12 +546,6 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         case .close(let id):
             log.debug("killactive client=\(id.raw)")
             views[id]?.surface.requestClose()
-        case .spawnSim(let q):
-            DispatchQueue.main.async { [weak self] in self?.spawnSim(q) }
-        case .spawnAndroid(let q):
-            DispatchQueue.main.async { [weak self] in self?.spawnAndroid(q) }
-        case .simButton(let id, let name):
-            (views[id]?.surface as? SimulatorSurface)?.press(name == "lock" ? .lock : .home)
         case .spawnWeb(let url):
             DispatchQueue.main.async { [weak self] in self?.spawnWeb(url) }
         case .webNav(let id, let nav):
@@ -1134,6 +1005,8 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         case .success(.appsRefresh): return appsRefresh()
         case .success(.appsAdd(let words)): return appsAdd(words)
         case .success(.broker(let action)): return brokerReply(action)
+        case .success(.launch(let words, let focus, let window)): return launchReply(words, focus: focus, window: window)
+        case .success(.newSurface(let r)) where r.kind == .app: return openAppSurface(r)
         default: return .text(handleIPC(line))
         }
     }
@@ -1152,8 +1025,6 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
                 switch d {
                 case .webNav where !(surface is BrowserSurface):
                     return "error: surface \(id.raw) is not a web surface"
-                case .simButton where !(surface is SimulatorSurface):
-                    return "error: surface \(id.raw) is not an iOS simulator"
                 default:
                     dispatch(d, target: id, source: .ipc)
                     return "ok"
@@ -1206,12 +1077,10 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
             case .adaptersReload:
                 loadAdapters()
                 return json(adaptersJSON())
-            case .adaptersMatch, .appsRefresh, .appsAdd, .broker:
+            case .adaptersMatch, .appsRefresh, .appsAdd, .broker, .launch:
                 return "error: this request runs through handleIPCReply"
             case .apps:
                 return json(appsJSON())
-            case .launch(let words, let focus):
-                return launchReply(words, focus: focus)
             case .caption(let text):
                 hud.caption.show(text)
                 return "ok"
@@ -1387,46 +1256,29 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
             surface = term
         case .web:
             surface = makeWeb(r.argument, focusStartPage: r.focus)
-        case .sim:
-            let query = r.argument.isEmpty ? "booted" : r.argument
-            do {
-                surface = makeSim(try HMSimDisplay(query: query))
-            } catch {
-                return "error: simulator: \(error.localizedDescription)"
-            }
-        case .android:
-            let endpoints = AndroidEmulatorDiscovery.running()
-            let endpoint: AndroidEmulatorEndpoint
-            if r.argument.isEmpty {
-                guard endpoints.count == 1 else {
-                    return endpoints.isEmpty
-                        ? "error: no running Android emulator"
-                        : "error: several Android emulators are running; name one"
-                }
-                endpoint = endpoints[0]
-            } else {
-                guard let match = AndroidEmulatorDiscovery.match(r.argument, in: endpoints) else {
-                    return "error: no running Android AVD matches \(r.argument)"
-                }
-                endpoint = match
-            }
-            do {
-                surface = try makeAndroid(endpoint)
-            } catch {
-                return "error: Android Emulator: \(error.localizedDescription)"
-            }
         case .app:
-            do {
-                surface = try makeApp(r.argument)
-            } catch {
-                return "error: \(error.localizedDescription)"
-            }
+            return "error: new-surface --type app runs through handleIPCReply"
         }
         adopt(surface)
         wm.addClient(surface.clientID, floating: r.floating, workspace: workspace, focus: r.focus)
         apply(animated: true)
         guard let p = wm.snapshot().placement(surface.clientID) else { return "error: surface closed while opening" }
         return json(clientInfo(p))
+    }
+
+    /// `new-surface --type app`: replies once the app opens its window (or offers several).
+    private func openAppSurface(_ r: NewSurfaceRequest) -> IPCReply {
+        var workspace: WorkspaceID?
+        if let t = r.workspace {
+            guard let id = wm.claimWorkspace(t) else { return .text("error: no such workspace") }
+            workspace = id
+        }
+        let name = shellWords(r.argument)?.first.map { ($0 as NSString).lastPathComponent } ?? "app"
+        return awaitLaunch(name: name, workspace: workspace, floating: r.floating) { request in
+            var request = request
+            request.focus = r.focus
+            try self.launchTarget(r.argument, request)
+        }
     }
 
     private func automationTarget(_ reference: SurfaceReference?) -> (ClientID, Surface)? {

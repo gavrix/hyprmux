@@ -62,6 +62,31 @@ final class HMAppTests: XCTestCase {
         XCTAssertEqual(error(#"{"format":1,"id":"a","name":7,"kind":"native","exec":"x"}"#), "\"name\" must be a string")
     }
 
+    func testInstances() throws {
+        let single = try HMAppManifest.parse(Data(#"{"format":1,"id":"a","name":"A","kind":"native","exec":"x","instances":"single"}"#.utf8)).get()
+        XCTAssertEqual(single.instances, .single)
+        XCTAssertTrue(String(decoding: single.encoded(), as: UTF8.self).contains(#""instances" : "single""#))
+        XCTAssertEqual(try HMAppManifest.parse(single.encoded()).get(), single)
+        // The default is left out.
+        let multiple = HMAppManifest(id: "a", name: "A", kind: .native, exec: "/bin/a")
+        XCTAssertEqual(multiple.instances, .multiple)
+        XCTAssertFalse(String(decoding: multiple.encoded(), as: UTF8.self).contains("instances"))
+        XCTAssertEqual(error(#"{"format":1,"id":"a","name":"A","kind":"native","exec":"x","instances":"two"}"#),
+                       "\"instances\" must be multiple or single")
+    }
+
+    /// The bundled first-party app parses, runs one process, and names its program.
+    func testBundledMobileApp() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let path = root.appendingPathComponent("Resources/apps/Mobile.hmapp").path
+        let app = try HMApp.load(path, source: .builtin).get()
+        XCTAssertEqual(app.id, "dev.gavrix.hyprmux.mobile")
+        XCTAssertEqual(app.name, "Mobile")
+        XCTAssertEqual(app.manifest.instances, .single)
+        XCTAssertEqual(app.manifest.exec, "hyprmux-mobile")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: app.iconPath))
+    }
+
     func testUnknownKeysAreErrors() {
         XCTAssertEqual(error(#"{"format":1,"id":"a","name":"A","kind":"native","exec":"x","arg":["y"]}"#), "unknown key \"arg\"")
     }

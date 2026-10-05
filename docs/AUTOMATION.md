@@ -86,30 +86,46 @@ hyprmuxctl new-surface --workspace 3 --cwd ~/src/app     # a shell on workspace 
 hyprmuxctl new-surface --workspace name:agents -- htop   # run a command instead of the shell
 hyprmuxctl new-surface --input 'devx pi\n'               # type into the new shell once it starts
 hyprmuxctl new-surface --type web github.com
-hyprmuxctl new-surface --type sim booted
-hyprmuxctl new-surface --type android Pixel_8_API_36
+hyprmuxctl new-surface --type app -- ~/bin/my-client   # a client app; see Open apps
 ref=$(hyprmuxctl new-surface --workspace 2 | jq -r .ref)
 ```
 
 | Option | Meaning |
 |---|---|
-| `--type` | `terminal` (default), `web`, `sim`, or `android`. |
+| `--type` | `terminal` (default), `web`, or `app`. |
 | `--workspace` | Workspace syntax: `3`, `name:NAME`, `special:NAME`, `empty`, `+1`. Default: the focused window's workspace. A new `name:` creates and names a workspace. |
 | `--focus` | Focus the surface, switching to its workspace. |
 | `--floating` | Open it floating instead of tiled. |
 | `--cwd` | Terminal directory. Relative paths are relative to the caller. Default: the focused terminal's directory. |
 | `--input` | Text typed into the new shell. Decodes `\n`, `\t`, and `\\`. The shell stays after the program exits. |
 
-The argument after the options is the terminal command, the URL, or the device.
+The argument after the options is the terminal command, the URL, or the app.
 Options end at `--` or at the first plain word, so put them first.
 A terminal command replaces the shell, and the terminal closes when it exits.
 Without an argument, a web surface opens the start page.
-A simulator defaults to `booted`, and Android to the only running emulator.
+An app replies once it opens its window.
 
 Without `--focus`, focus and the visible workspace stay as they are.
 The one exception is an empty screen: a surface that lands in view takes focus when nothing has it.
 Without `--workspace`, a background surface opened while a group is focused joins it as a hidden tab.
 It does not end a fullscreen window.
+
+## Open apps
+
+`launch` opens an app from the catalog ([APPS.md](APPS.md)), by name or id, and
+replies with its tile once the window opens. Mobile shows iOS Simulators and
+Android Emulators:
+
+```sh
+hyprmuxctl launch Mobile                    # several devices: lists them, opens none
+hyprmuxctl launch --window ios:8A3F… Mobile # open one from the list
+hyprmuxctl launch Mobile "iPhone 17"        # or name it: a name, UDID, or AVD id
+hyprmuxctl launch --focus Reactotron
+```
+
+An app that offers several windows replies with `{"app": NAME, "windows":
+[{id, title, detail}]}`. Pass an `id` back with `--window`. Each pick opens a
+new tile, even for a device that is already open.
 
 Close, focus, or move a surface:
 

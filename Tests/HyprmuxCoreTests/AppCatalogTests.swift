@@ -39,6 +39,17 @@ final class AppCatalogTests: XCTestCase {
         XCTAssertEqual(c.directories.map(\.exists), [true, true])
     }
 
+    func testBuiltinAppsLoseToTheOthers() throws {
+        let builtin = root.appendingPathComponent("builtin").path
+        try app("dev.mobile", "Mobile", in: builtin)
+        try app("dev.other", "Other", in: builtin)
+        try app("dev.other", "Other (mine)", in: installed)
+        let c = AppCatalog.load(directories: [(.builtin, builtin), (.generated, generated), (.installed, installed)])
+        XCTAssertEqual(c.app(id: "dev.mobile")?.source, .builtin)
+        XCTAssertEqual(c.app(id: "dev.other")?.source, .installed)
+        XCTAssertEqual(c.overridden.map(\.id), ["dev.other"])
+    }
+
     func testReportsErrorsPerFile() throws {
         try app("com.a", "Alpha", in: generated)
         let broken = (installed as NSString).appendingPathComponent("Broken.hmapp")

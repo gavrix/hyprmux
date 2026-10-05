@@ -134,9 +134,9 @@ extension Compositor {
         }.selected
     }
 
-    /// Every tile an instance has: reserved ones still waiting, and connected ones.
+    /// Every tile an instance has: restored ones still waiting, and connected ones.
     private func tiles(of i: AdapterInstance) -> [ClientSurface] {
-        var result = clientServer.reservedTiles(i.token)
+        var result = clientServer.launch(for: i.token)?.reserved ?? []
         for case let c as ClientSurface in views.values.map(\.surface) where c.connection?.pid == i.pid {
             if !result.contains(where: { $0 === c }) { result.append(c) }
         }
@@ -147,7 +147,7 @@ extension Compositor {
         if i.failure != nil { return "failed" }
         if i.endedAt != nil { return "exited" }
         if tiles.contains(where: { $0.connection != nil }) { return "running" }
-        if !clientServer.reservedTiles(i.token).isEmpty { return "launching" }
+        if clientServer.launch(for: i.token)?.pending == true { return "launching" }
         // Alive, but no tiles: every window closed, or it never connected in time.
         return "idle"
     }

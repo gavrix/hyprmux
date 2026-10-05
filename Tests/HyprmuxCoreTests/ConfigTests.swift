@@ -200,17 +200,12 @@ final class ConfigTests: XCTestCase {
         XCTAssertEqual(ConfigParser.parse("misc:register_broker = maybe").errors.count, 1)
     }
 
-    func testSimDispatcher() {
-        XCTAssertEqual(try? Dispatcher.parse("sim", "").get(), .sim(""))
-        XCTAssertEqual(try? Dispatcher.parse("simbutton", "Home").get(), .simButton("home"))
-        XCTAssertNil(try? Dispatcher.parse("simbutton", "power").get())
-        XCTAssertEqual(try? Dispatcher.parse("sim", "iPhone 17 Pro").get(), .sim("iPhone 17 Pro"))
-    }
-
-    func testAndroidDispatcherAliases() {
-        XCTAssertEqual(try? Dispatcher.parse("android", "").get(), .android(""))
-        XCTAssertEqual(try? Dispatcher.parse("avd", "Pixel_API_36").get(), .android("Pixel_API_36"))
-        XCTAssertEqual(try? Dispatcher.parse("ANDROID", "Pixel 8").get(), .android("Pixel 8"))
+    /// Devices moved to Mobile.hmapp: its window picker replaced these dispatchers.
+    func testDeviceDispatchersAreGone() {
+        for name in ["sim", "simulator", "android", "avd", "simbutton"] {
+            XCTAssertNil(try? Dispatcher.parse(name, "").get(), name)
+        }
+        XCTAssertEqual(try? Dispatcher.parse("launch", "Mobile").get(), .launch("Mobile"))
     }
 
     func testWebDispatchers() {

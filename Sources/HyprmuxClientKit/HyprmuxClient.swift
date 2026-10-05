@@ -95,6 +95,14 @@ public final class HMClient {
     fileprivate var frameCallbacks: [UInt64: (Double) -> Void] = [:]
     fileprivate var dialogReplies: [UInt64: ([String: Any]) -> Void] = [:]
     fileprivate var menuReplies: [UInt64: (String?) -> Void] = [:]
+    fileprivate var subsurfaces: [UInt64: HMSubsurface] = [:]
+    /// Launches still open: offered, or waiting for windows.
+    fileprivate var launches: [String: HMLaunch] = [:]
+    /// Hyprmux asks for windows: once for the launch that started the process, right
+    /// after the handshake, and again for each launch of a single-instance app. Set it
+    /// before `connect()`. Answer with `makeToplevel(…, launch:)`, `offer`, or `done`.
+    /// Without a handler, launches are ignored, as clients written before launches did.
+    public var onLaunch: ((HMLaunch) -> Void)?
 
     public init(appID: String, name: String, instance: String = HMProtocol.currentInstance, queue: DispatchQueue = .main) {
         self.appID = appID
@@ -140,13 +148,16 @@ public final class HMClient {
     }
 
     /// A new tile. Wait for its first `onConfigure` before drawing. A `restoreToken`
-    /// lets a restored session put this toplevel back in the tile it had.
-    public func makeToplevel(title: String, restoreToken: String? = nil) -> HMToplevel {
+    /// lets a restored session put this toplevel back in the tile it had. `launch` is the
+    /// launch this window answers: Hyprmux places it where that launch asked. Without
+    /// one, the window belongs to the launch that started the process.
+    public func makeToplevel(title: String, restoreToken: String? = nil, launch: HMLaunch? = nil) -> HMToplevel {
         let surface = allocate()
         let id = allocate()
         send(HMOp.surfaceCreate, ["id": surface])
         var create: [String: Any] = ["id": id, "surface": surface]
         if let restoreToken { create["restore_token"] = restoreToken }
+        if let launch { create["launch_token"] = launch.token }
         send(HMOp.toplevelCreate, create)
         let t = HMToplevel(client: self, id: id, surfaceID: surface)
         toplevels[id] = t
@@ -160,6 +171,13 @@ public final class HMClient {
     func send(_ op: String, _ fields: [String: Any]) {
         guard let connection else { return }
         xpc_connection_send_message(connection, xpcMessage(op, fields))
+    }
+
+    fileprivate func requestFrame(surface: UInt64, _ next: ((Double) -> Void)?) {
+        guard let next else { return }
+        let cb = allocate()
+        frameCallbacks[cb] = next
+        send(HMOp.surfaceFrame, ["id": surface, "callback": cb])
     }
 
     fileprivate func register(_ surface: IOSurfaceRef) -> HMBuffer {
@@ -188,6 +206,19 @@ public final class HMClient {
             guard let b = buffers[m.uint("id")] else { return }
             b.busy = false
             toplevels.values.forEach { $0.released(b) }
+            subsurfaces.values.forEach { $0.released(b) }
+        case HMOp.launch:
+            guard let token = m.string("launch_token"), !token.isEmpty, let onLaunch else { return }
+            let l = HMLaunch(client: self, token: token, args: m.strings("args"), restoreTokens: m.strings("restore_tokens"))
+            launches[token] = l
+            onLaunch(l)
+        case HMOp.launchOpen:
+            guard let token = m.string("launch_token"), let l = launches[token], let window = m.string("window") else { return }
+            l.onOpen?(window)
+        case HMOp.launchCancel:
+            guard let token = m.string("launch_token"), let l = launches.removeValue(forKey: token) else { return }
+            l.cancelled = true
+            l.onCancel?()
         case HMOp.pointerEnter:
             toplevelsBySurface[m.uint("surface")]?.onPointer?(.enter(x: m.double("x"), y: m.double("y")))
         case HMOp.pointerLeave:
@@ -246,11 +277,10 @@ public final class HMToplevel {
     /// busy should present their latest content here.
     public var onBufferReleased: (() -> Void)?
     private unowned let client: HMClient
-    private var swapchain: [HMBuffer] = []
+    private lazy var swapchain = HMSwapchain(client: client)
     private var unacked: UInt64?
-    /// Buffers of an old size, destroyed once the compositor releases them.
-    private var stale: [HMBuffer] = []
-    public static let swapchainLength = 3
+    private var children: [HMSubsurface] = []
+    public static let swapchainLength = HMSwapchain.length
 
     init(client: HMClient, id: UInt64, surfaceID: UInt64) {
         self.client = client
@@ -326,58 +356,206 @@ public final class HMToplevel {
     /// A free buffer at the configured pixel size, or nil when all are in use.
     public func acquireBuffer() -> HMBuffer? {
         guard let c = configuration, c.pixelWidth > 0, c.pixelHeight > 0 else { return nil }
-        // A new size retires the old swapchain.
-        if let first = swapchain.first, first.width != c.pixelWidth || first.height != c.pixelHeight {
-            for b in swapchain { if b.busy { stale.append(b) } else { client.destroy(b) } }
-            swapchain.removeAll()
-        }
-        if let free = swapchain.first(where: { !$0.busy }) { return free }
-        guard swapchain.count < Self.swapchainLength else { return nil }
-        let props: [String: Any] = [
-            kIOSurfaceWidth as String: c.pixelWidth, kIOSurfaceHeight as String: c.pixelHeight,
-            kIOSurfaceBytesPerElement as String: 4, kIOSurfacePixelFormat as String: 0x4247_5241,  // 'BGRA'
-        ]
-        guard let s = IOSurfaceCreate(props as CFDictionary) else { return nil }
-        let b = client.register(s)
-        swapchain.append(b)
-        return b
+        return swapchain.acquire(width: c.pixelWidth, height: c.pixelHeight)
     }
 
     /// Shows `buffer`, acks the latest configure, and asks for a frame callback.
     /// `next` runs when it's time to draw again, with the target display time.
     public func present(_ buffer: HMBuffer, next: ((Double) -> Void)? = nil) {
-        if let serial = unacked {
-            client.send(HMOp.toplevelAckConfigure, ["id": id, "serial": serial])
-            unacked = nil
-        }
+        ackConfigure()
         buffer.busy = true
         let scale = configuration?.scale ?? 2
         client.send(HMOp.surfaceAttach, ["id": surfaceID, "buffer": buffer.id])
         client.send(HMOp.surfaceSetScale, ["id": surfaceID, "scale": scale])
-        if let next {
-            let cb = client.allocate()
-            client.frameCallbacks[cb] = next
-            client.send(HMOp.surfaceFrame, ["id": surfaceID, "callback": cb])
-        }
+        client.requestFrame(surface: surfaceID, next)
+        client.send(HMOp.surfaceCommit, ["id": surfaceID])
+    }
+
+    /// Commits without new pixels: applies pending subsurface rects.
+    public func commit() {
+        ackConfigure()
+        client.send(HMOp.surfaceCommit, ["id": surfaceID])
+    }
+
+    private func ackConfigure() {
+        guard let serial = unacked else { return }
+        client.send(HMOp.toplevelAckConfigure, ["id": id, "serial": serial])
+        unacked = nil
+    }
+
+    /// A child surface drawn above this one, scaled to the rect it's given.
+    public func makeSubsurface() -> HMSubsurface {
+        let surface = client.allocate()
+        let id = client.allocate()
+        client.send(HMOp.surfaceCreate, ["id": surface])
+        client.send(HMOp.subsurfaceCreate, ["id": id, "surface": surface, "parent": surfaceID])
+        let sub = HMSubsurface(client: client, id: id, surfaceID: surface)
+        client.subsurfaces[id] = sub
+        children.append(sub)
+        return sub
+    }
+
+    fileprivate func released(_ b: HMBuffer) {
+        if swapchain.released(b) { onBufferReleased?() }
+    }
+
+    public func destroy() {
+        for sub in children { sub.destroy() }
+        children.removeAll()
+        client.send(HMOp.toplevelDestroy, ["id": id])
+        client.send(HMOp.surfaceDestroy, ["id": surfaceID])
+        swapchain.destroyAll()
+        client.toplevels[id] = nil
+        client.toplevelsBySurface[surfaceID] = nil
+    }
+}
+
+/// A child of a toplevel's surface (`subsurface.create`). It shows a buffer scaled to a
+/// rect in the parent, in points. Input stays with the toplevel. Use it to show pixels
+/// by reference: `register` another process's IOSurface (a simulator's framebuffer) and
+/// `present` it again whenever its pixels change, without copying them.
+public final class HMSubsurface {
+    public let id: UInt64
+    public let surfaceID: UInt64
+    private unowned let client: HMClient
+    private lazy var swapchain = HMSwapchain(client: client)
+    private var external: [HMBuffer] = []
+    private var destroyed = false
+    /// A swapchain buffer became free.
+    public var onBufferReleased: (() -> Void)?
+
+    init(client: HMClient, id: UInt64, surfaceID: UInt64) {
+        self.client = client
+        self.id = id
+        self.surfaceID = surfaceID
+    }
+
+    /// Where the subsurface sits in the parent, in points. It takes effect at the parent's
+    /// next commit. A zero size hides it.
+    public func setRect(x: Double, y: Double, width: Double, height: Double) {
+        client.send(HMOp.subsurfaceSetRect, ["id": id, "x": x, "y": y, "w": width, "h": height])
+    }
+
+    /// Registers an IOSurface this client doesn't own, such as a simulator's framebuffer.
+    /// Nothing is copied: Hyprmux reads the same memory.
+    public func register(_ surface: IOSurfaceRef) -> HMBuffer {
+        let b = client.register(surface)
+        external.append(b)
+        return b
+    }
+
+    public func unregister(_ b: HMBuffer) {
+        external.removeAll { $0 === b }
+        client.destroy(b)
+    }
+
+    /// A free buffer of this pixel size from the subsurface's own swapchain.
+    public func acquireBuffer(width: Int, height: Int) -> HMBuffer? {
+        swapchain.acquire(width: width, height: height)
+    }
+
+    /// Shows `buffer`. Presenting the buffer already shown means its pixels changed.
+    public func present(_ buffer: HMBuffer, next: ((Double) -> Void)? = nil) {
+        buffer.busy = true
+        client.send(HMOp.surfaceAttach, ["id": surfaceID, "buffer": buffer.id])
+        client.requestFrame(surface: surfaceID, next)
         client.send(HMOp.surfaceCommit, ["id": surfaceID])
     }
 
     fileprivate func released(_ b: HMBuffer) {
-        if let i = stale.firstIndex(where: { $0 === b }) {
-            stale.remove(at: i)
-            client.destroy(b)
-        } else if swapchain.contains(where: { $0 === b }) {
-            onBufferReleased?()
-        }
+        if swapchain.released(b) { onBufferReleased?() }
     }
 
     public func destroy() {
-        client.send(HMOp.toplevelDestroy, ["id": id])
+        guard !destroyed else { return }
+        destroyed = true
+        client.send(HMOp.subsurfaceDestroy, ["id": id])
         client.send(HMOp.surfaceDestroy, ["id": surfaceID])
-        for b in swapchain + stale { client.destroy(b) }
-        swapchain.removeAll()
+        swapchain.destroyAll()
+        for b in external { client.destroy(b) }
+        external.removeAll()
+        client.subsurfaces[id] = nil
+    }
+}
+
+/// One launch Hyprmux asks the client to answer (`launch`). Answer it with windows made
+/// with `makeToplevel(…, launch:)`, or `offer` windows and open the one Hyprmux picks in
+/// `onOpen`. Call `done` when the launch gets no more windows.
+public final class HMLaunch {
+    public let token: String
+    /// The arguments given at launch, without the `.hmapp`'s `args` template.
+    public let args: [String]
+    /// Windows a restored session wants back, by restore token. An app may ignore them.
+    public let restoreTokens: [String]
+    /// The user picked an offered window, by id. It may come more than once for one
+    /// window: each is a new copy.
+    public var onOpen: ((String) -> Void)?
+    /// The user dismissed the offer, or the launch timed out. Nothing waits for it now.
+    public var onCancel: (() -> Void)?
+    public internal(set) var cancelled = false
+    private unowned let client: HMClient
+
+    init(client: HMClient, token: String, args: [String], restoreTokens: [String]) {
+        self.client = client
+        self.token = token
+        self.args = args
+        self.restoreTokens = restoreTokens
+    }
+
+    /// Offers windows to pick from. One window opens at once; several show a picker.
+    /// Offering again replaces the list.
+    public func offer(_ windows: [HMWindowOffer]) {
+        client.send(HMOp.launchOffer, ["launch_token": token, "windows_json": HMWindowOffer.encode(windows)])
+    }
+
+    /// No more windows come for this launch.
+    public func done() {
+        client.launches[token] = nil
+        client.send(HMOp.launchDone, ["launch_token": token])
+    }
+}
+
+/// Up to three IOSurfaces of one size. A new size retires the old ones once the
+/// compositor releases them.
+final class HMSwapchain {
+    private unowned let client: HMClient
+    private var buffers: [HMBuffer] = []
+    private var stale: [HMBuffer] = []
+    static let length = 3
+
+    init(client: HMClient) { self.client = client }
+
+    func acquire(width: Int, height: Int) -> HMBuffer? {
+        guard width > 0, height > 0 else { return nil }
+        if let first = buffers.first, first.width != width || first.height != height {
+            for b in buffers { if b.busy { stale.append(b) } else { client.destroy(b) } }
+            buffers.removeAll()
+        }
+        if let free = buffers.first(where: { !$0.busy }) { return free }
+        guard buffers.count < Self.length else { return nil }
+        let props: [String: Any] = [
+            kIOSurfaceWidth as String: width, kIOSurfaceHeight as String: height,
+            kIOSurfaceBytesPerElement as String: 4, kIOSurfacePixelFormat as String: 0x4247_5241,  // 'BGRA'
+        ]
+        guard let s = IOSurfaceCreate(props as CFDictionary) else { return nil }
+        let b = client.register(s)
+        buffers.append(b)
+        return b
+    }
+
+    /// Returns true when `b` is one of the current buffers.
+    func released(_ b: HMBuffer) -> Bool {
+        if let i = stale.firstIndex(where: { $0 === b }) {
+            stale.remove(at: i)
+            client.destroy(b)
+            return false
+        }
+        return buffers.contains { $0 === b }
+    }
+
+    func destroyAll() {
+        for b in buffers + stale { client.destroy(b) }
+        buffers.removeAll()
         stale.removeAll()
-        client.toplevels[id] = nil
-        client.toplevelsBySurface[surfaceID] = nil
     }
 }

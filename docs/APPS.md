@@ -3,7 +3,9 @@
 Hyprmux opens apps in tiles from inside Hyprmux. Press ⌘D (`picker, apps`),
 choose **Open app…** in the ⌘/ menu, or choose Hyprmux → Open App… in the menu
 bar for the launcher. Type to filter, and press Enter.
-The app opens in a new tile on the current workspace. Apps you start outside Hyprmux stay ordinary macOS apps.
+The app opens in a new tile on the current workspace. An app that can open
+several windows, such as [Mobile](#mobile), asks which one first. Apps you start
+outside Hyprmux stay ordinary macOS apps.
 
 The launcher lists only apps that can open. Everything it lists is a `.hmapp`: a
 folder bundle that only Hyprmux understands. It isn't a macOS app, so Spotlight,
@@ -60,6 +62,7 @@ Visual Studio Code.hmapp/
 | `version` | no | The target's version when Hyprmux generated it. |
 | `exec` | no | The executable. An absolute path; a path relative to the `.hmapp` (it contains `/`, like `bin/zed`); or a bare name, looked up in the adapter bin directories, then in the `.hmapp`. |
 | `args` | no | Default `["{args}"]`. `{app}` is `app`, `{bundle}` is the `.hmapp`'s path, and an `{args}` element is replaced by the arguments given at launch. |
+| `instances` | no | `multiple` (the default): a process per launch. `single`: one process. A launch while it runs goes to that process, which opens the window ([Single instance](#single-instance)). |
 | `generatedBy` | no | `"hyprmux"` on generated apps. Hyprmux only rewrites or deletes bundles that have it. |
 
 With `exec`, Hyprmux runs the executable. Without it, Hyprmux opens the `.app`
@@ -70,12 +73,19 @@ can't change what runs.
 
 | Folder | Source | Owner |
 |---|---|---|
+| `Hyprmux.app/Contents/Resources/apps/` | Built-in | Hyprmux. First-party apps, such as [Mobile](#mobile), shipped and signed with it. |
 | `~/Library/Application Support/Hyprmux/Apps/` | Generated | Hyprmux. It regenerates them. |
 | `apps/` next to the config file, normally `~/.config/hyprmux/apps/` | Installed | You, or whoever gave you the app. Hyprmux never changes them, except through `hyprmuxctl apps add`. |
 
 An instance started with a `HYPRMUX_INSTANCE` other than `default` keeps its
-generated apps in a subfolder named after it. When an installed app has the
-same id as a generated one, the installed one wins.
+generated apps in a subfolder named after it. Ids are unique across the
+folders: an installed app replaces a generated or built-in one with the same
+id, and a generated app replaces a built-in one.
+
+A built-in app's executable lives in `Hyprmux.app/Contents/MacOS`, so a bare
+`exec` name finds it. In development, `HYPRMUX_ADAPTER_BIN` points bare names at
+a `swift build` output instead. To try a dev build of a built-in app with a
+release Hyprmux, install a copy of its `.hmapp` with an absolute `exec`.
 
 ## Generated apps
 
@@ -105,6 +115,28 @@ apps as they are at that moment.
 
 Why an app is missing isn't shown in the launcher. `hyprmuxctl adapters match
 APP` explains it; see [Apps that don't appear](ADAPTERS.md#apps-that-dont-appear).
+
+## Mobile
+
+Mobile shows booted iOS Simulators and running Android Emulators in tiles. It's
+built in: `Mobile.hmapp` ships inside Hyprmux, and ⌘I (`launch, Mobile`) opens
+it. One process shows every device.
+
+- **Picking a device:** with several devices running, Mobile offers them and
+  Hyprmux shows a picker. With one, it opens at once. With none, a window says
+  so; boot a device and open Mobile again.
+- **Copies:** picking a device that is already open opens another tile of it.
+- **Naming a device:** `launch, Mobile iPhone 17` in a bind, or
+  `hyprmuxctl launch Mobile "iPhone 17"`, opens that device without asking. A
+  name, a UDID, an AVD id, or a window id (`ios:UDID`, `android:AVD_ID`) works.
+- **Input:** click and drag to touch. Typing goes to the device, except the
+  shortcuts Hyprmux binds. The bar under the screen has Home and Lock (iOS), or
+  Back, Home, and Recents (Android).
+- **Sessions:** device tiles come back if the device is running. The others
+  are skipped.
+- **Errors** show in the tile, for example when an emulator stops streaming.
+
+Mobile never boots a simulator or starts an emulator.
 
 ## Zed
 
@@ -157,8 +189,17 @@ hyprmuxctl launch --focus com.todesktop.230313mzl4w4u92
 ARGS become default arguments; arguments given at launch follow them.
 
 `launch NAME|ID [ARGS...]` opens an app in a new tile and replies with the
-tile's JSON, like `new-surface`. It matches an id first, then a name, ignoring
-case. The tile takes focus only with `--focus`.
+tile's JSON, like `new-surface`, once the app opens its window. It matches an id
+first, then a name, ignoring case. The tile takes focus only with `--focus`.
+
+An app that offers several windows replies with them instead, and opens none.
+`--window ID` opens one of them:
+
+```sh
+hyprmuxctl launch Mobile
+# {"app": "Mobile", "windows": [{"id": "ios:8A3F…", "title": "iPhone 17", "detail": "iOS 27.0"}, …]}
+hyprmuxctl launch --window ios:8A3F… Mobile
+```
 
 ## The launcher
 
@@ -166,6 +207,11 @@ case. The tile takes focus only with `--focus`.
 first, then the rest by name. Typing filters the names, fzf style. Enter opens
 the selected app; Escape closes the launcher. With no apps at all, it shows one
 row, "No apps".
+
+After Enter, the picker says "Opening NAME…" until the app answers. An app that
+offers several windows fills it with them; Enter opens the selected one. Escape
+cancels the launch and goes back to the apps. The window lands on the workspace
+you launched from, and takes focus if that workspace is still in view.
 
 The ⌘/ menu (`picker, menu`) and the Hyprmux menu in the menu bar both have an
 entry that opens the same launcher. Configs written before the launcher existed
@@ -224,10 +270,18 @@ adapter lifts, `hyprmuxctl adapters` shows the reason as the instance's note,
 and the path of its full log ([Runtime state](ADAPTERS.md#runtime-state)).
 Other reasons go to the system log (subsystem `dev.gavrix.hyprmux`).
 
+## Single instance
+
+An app with `"instances": "single"` runs one process. The first launch starts
+it; every later launch goes to that process over its connection, and the
+process opens the window. The process decides when to quit. Mobile quits when
+its last window closes.
+
 ## Closing
 
 Closing an app's last tile quits the app, after a 3-second grace period that
-lets an app replace its window (VS Code reloading, say). On macOS many apps keep
+lets an app replace its window (VS Code reloading, say). The app does this
+itself: the Electron bridge and Mobile do. On macOS many apps keep
 running with no windows; in Hyprmux a windowless app would only linger. An app
 that answers ⌘W by hiding its window instead of closing it (Logseq does) loses
 the tile the same way.
@@ -239,6 +293,9 @@ session or a layout. The app's path or adapter can change in between. When
 the id is gone, Hyprmux shows "Couldn't reopen NAME." and drops the tile.
 A `.hmapp` opened by path comes back by that path.
 
+Restore is best effort. Hyprmux hands the app each window's restore token, and
+the app decides what comes back. A tile the app doesn't bring back is dropped.
+
 ## Trust
 
 A `.hmapp` that carries its own executable is code. If it was downloaded (it
@@ -246,5 +303,5 @@ has the `com.apple.quarantine` attribute), Hyprmux checks the executable's
 signature before running it. A valid signature from a certificate Apple issued
 (Developer ID, or Apple Development) passes. Otherwise Hyprmux asks once,
 naming the app, and remembers the answer in `trust.json` in the generated
-folder. A changed executable asks again. Generated apps, and apps whose `exec`
-is outside the bundle, skip the check.
+folder. A changed executable asks again. Built-in and generated apps, and apps
+whose `exec` is outside the bundle, skip the check.

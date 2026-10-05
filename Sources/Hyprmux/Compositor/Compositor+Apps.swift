@@ -49,14 +49,26 @@ final class AppRuntime {
         ((AppDelegate.configPath as NSString).deletingLastPathComponent as NSString).appendingPathComponent("apps")
     }
 
-    static var directories: [(HMAppSource, String)] {
-        [(.generated, generatedDirectory), (.installed, installedDirectory)]
+    /// First-party apps in the bundle: `Hyprmux.app/Contents/Resources/apps`.
+    static var builtinDirectory: String? {
+        Bundle.main.resourceURL?.appendingPathComponent("apps").path
     }
 
-    /// A `.hmapp` opened by path: generated if it lives in the generated folder.
+    /// Lowest precedence first: an installed app replaces a generated or builtin one.
+    static var directories: [(HMAppSource, String)] {
+        var dirs: [(HMAppSource, String)] = []
+        if let builtin = builtinDirectory { dirs.append((.builtin, builtin)) }
+        dirs.append((.generated, generatedDirectory))
+        dirs.append((.installed, installedDirectory))
+        return dirs
+    }
+
+    /// A `.hmapp` opened by path: builtin or generated if it lives in their folder.
     static func source(of path: String) -> HMAppSource {
-        let dir = (generatedDirectory as NSString).standardizingPath + "/"
-        return (path as NSString).standardizingPath.hasPrefix(dir) ? .generated : .installed
+        let p = (path as NSString).standardizingPath
+        func inside(_ dir: String) -> Bool { p.hasPrefix((dir as NSString).standardizingPath + "/") }
+        if let b = builtinDirectory, inside(b) { return .builtin }
+        return inside(generatedDirectory) ? .generated : .installed
     }
 
     static var recentFile: String { (generatedDirectory as NSString).appendingPathComponent("recent.json") }
@@ -199,13 +211,14 @@ extension Compositor {
         case .failure(let e): throw AppLaunchError(message: e.message)
         }
         let adapter = m.kind == .adapter ? m.adapter : nil
+        let single = m.instances == .single ? m.id : nil
         if let exe = c.executable {
             try checkTrust(app, executable: exe)
             return AppCommand(executable: URL(fileURLWithPath: exe), bundle: nil, arguments: c.arguments, label: m.name,
-                              adapterID: adapter, app: m.app)
+                              adapterID: adapter, app: m.app, single: single)
         }
         return AppCommand(executable: nil, bundle: c.app.map { URL(fileURLWithPath: $0) }, arguments: c.arguments,
-                          label: m.name, adapterID: nil, app: m.app)
+                          label: m.name, adapterID: nil, app: m.app, single: single)
     }
 
     /// `appCommand`, marked so the session restores the tiles by app id.
@@ -221,21 +234,18 @@ extension Compositor {
         ([app.id] + args).map(shellQuote).joined(separator: " ")
     }
 
-    /// Launches a catalog app into a new reserved tile, not yet managed.
-    func launchEntry(id: String, args: [String]) throws -> ClientSurface {
-        guard let app = apps.catalog.app(id: id) else { throw AppLaunchError(message: "no app \(id)") }
-        return try launchApp(app, args: args)
+    /// Launches a catalog app. Its window gets a tile when the app answers.
+    @discardableResult
+    func launchApp(_ app: HMApp, args: [String], _ request: LaunchRequest) throws -> AppLaunch {
+        let command = try entryCommand(for: app, args: args)
+        let l = try startLaunch(command, argument: Self.entryArgument(app, args), request: request)
+        apps.recordLaunch(app.id)
+        return l
     }
 
-    func launchApp(_ app: HMApp, args: [String]) throws -> ClientSurface {
-        let command = try entryCommand(for: app, args: args)
-        let tile = ClientSurface(id: allocateID(), launchToken: nil, label: app.name)
-        tile.appEntry = app.id
-        tile.entryArgs = args
-        tile.onClose = { [weak self] t in self?.removeClient(t.clientID) }
-        try launch(command, argument: Self.entryArgument(app, args), into: [tile], timeout: Self.appConnectTimeout)
-        apps.recordLaunch(app.id)
-        return tile
+    /// A person launched it: the picker shows "Opening NAME…", then any offer.
+    func interactiveLaunch(back: (() -> Void)? = nil) -> LaunchRequest {
+        LaunchRequest(focus: true, interactive: true, back: back)
     }
 
     /// `launch, NAME|ID [ARGS]` from a bind: the whole text names an app, or its first
@@ -257,7 +267,7 @@ extension Compositor {
             return
         }
         do {
-            manage(try launchApp(app, args: args))
+            try launchApp(app, args: args, interactiveLaunch())
         } catch {
             flash(launchFailureNotice(error, name: app.name))
         }
@@ -266,7 +276,7 @@ extension Compositor {
     /// A `.hmapp` opened in Finder (or with `open`): launch it into a tile.
     func openHMApp(at path: String) {
         do {
-            manage(try makeApp(shellQuote(path)))
+            try launchTarget(shellQuote(path), interactiveLaunch())
         } catch {
             let name = (try? HMApp.load(path, source: AppRuntime.source(of: path)).get().name)
                 ?? ((path as NSString).lastPathComponent as NSString).deletingPathExtension
@@ -336,10 +346,12 @@ extension Compositor {
         for a in ordered { icons[a.id] = apps.icon(for: a) }
         hud.picker.present(picker, icons: icons) { [weak self] r in
             guard let self, case .item(let id)? = r else { return }
+            guard let app = self.apps.catalog.app(id: id) else { return }
             do {
-                self.manage(try self.launchEntry(id: id, args: []))
+                // Escape while it opens comes back to the launcher.
+                try self.launchApp(app, args: [], self.interactiveLaunch { [weak self] in self?.presentAppLauncher() })
             } catch {
-                self.flash(self.launchFailureNotice(error, name: self.apps.catalog.app(id: id)?.name ?? id))
+                self.flash(self.launchFailureNotice(error, name: app.name))
             }
         }
     }
@@ -451,21 +463,64 @@ extension Compositor {
         return jsonText(app.json)
     }
 
-    /// `launch NAME|ID [ARGS...]` over IPC: replies with the tile's `surfaces` entry, like
-    /// `new-surface`.
-    func launchReply(_ words: [String], focus: Bool) -> String {
-        guard let first = words.first else { return "error: launch: name an app" }
-        guard let app = apps.catalog.find(first) else { return "error: no app \(first) (hyprmuxctl apps lists them)" }
-        let tile: ClientSurface
-        do {
-            tile = try launchApp(app, args: Array(words.dropFirst()))
-        } catch {
-            return "error: \(error.localizedDescription)"
+    /// `launch [--window ID] NAME|ID [ARGS...]` over IPC: replies with the window's tile,
+    /// like `new-surface`, once the app opens it. An app that offers several windows and
+    /// no `--window` replies with the offer instead.
+    func launchReply(_ words: [String], focus: Bool, window: String?) -> IPCReply {
+        guard let first = words.first else { return .text("error: launch: name an app") }
+        guard let app = apps.catalog.find(first) else { return .text("error: no app \(first) (hyprmuxctl apps lists them)") }
+        return awaitLaunch(name: app.name) { request in
+            var r = request
+            r.focus = focus
+            r.window = window
+            try self.launchApp(app, args: Array(words.dropFirst()), r)
         }
-        adopt(tile)
-        wm.addClient(tile.clientID, focus: focus)
-        apply(animated: true)
-        guard let p = wm.snapshot().placement(tile.clientID) else { return "error: surface closed while opening" }
-        return jsonText(clientInfo(p))
+    }
+
+    /// Runs a launch for IPC, and replies when it ends: the tile's `surfaces` entry, the
+    /// offered windows, or an error.
+    func awaitLaunch(name: String, workspace: WorkspaceID? = nil, floating: Bool = false,
+                     _ start: (LaunchRequest) throws -> Void) -> IPCReply {
+        let done = DispatchSemaphore(value: 0)
+        var outcome: AppLaunch.Outcome?
+        var request = LaunchRequest(workspace: workspace, focus: false)
+        request.floating = floating
+        request.completion = { result in
+            outcome = result
+            done.signal()
+        }
+        do {
+            try start(request)
+        } catch {
+            return .text("error: \(error.localizedDescription)")
+        }
+        return .background { [weak self] in
+            _ = done.wait(timeout: .now() + Self.appRunningTimeout + 30)
+            var text = "error: \(name) didn't open"
+            // On main, after messages already queued: the window's title lands first.
+            DispatchQueue.main.sync {
+                guard let self, let outcome else { return }
+                text = self.launchReplyText(outcome, name: name)
+            }
+            return text
+        }
+    }
+
+    private func launchReplyText(_ outcome: AppLaunch.Outcome, name: String) -> String {
+        switch outcome {
+        case .window(let tile):
+            guard let p = wm.snapshot().placement(tile.clientID) else { return "error: surface closed while opening" }
+            return jsonText(clientInfo(p))
+        case .offer(let windows):
+            return jsonText(["app": name, "windows": windows.map { w -> [String: String] in
+                var o = ["id": w.id, "title": w.title]
+                if !w.detail.isEmpty { o["detail"] = w.detail }
+                return o
+            }])
+        case .nothing:
+            return "error: \(name) opened no window"
+        case .failed(let why):
+            return "error: \(why)"
+        }
     }
 }

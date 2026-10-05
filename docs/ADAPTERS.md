@@ -146,7 +146,8 @@ The executable gets the expanded `args`, plus `HYPRMUX_LAUNCH_TOKEN` and
 
 - Connect to Hyprmux with `HyprmuxClientKit`, or any implementation of the
   protocol. The kit sends the launch token in its `hello`, and the first
-  toplevel fills the tile Hyprmux reserved.
+  toplevel answers the launch: it gets a tile where the launch started
+  ([Launch and restore](CLIENT_PROTOCOL.md#10-launch-and-restore)).
 - Create one toplevel per app window, and destroy it when the window closes.
 - Exit when the app exits, and stop the app when Hyprmux disconnects or the
   adapter gets SIGTERM.

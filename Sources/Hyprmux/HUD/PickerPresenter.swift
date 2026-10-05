@@ -60,6 +60,12 @@ final class PickerPresenter {
 
     func cancel() { if isOpen { finish(nil) } }
 
+    /// Closes the picker only if it's still the one opened with `requestID`.
+    func cancel(requestID: UUID) {
+        guard isOpen, self.requestID == requestID else { return }
+        finish(nil)
+    }
+
     /// Replaces rows in the current picker and resizes it. A request id prevents late
     /// asynchronous results from changing a newer picker.
     @discardableResult

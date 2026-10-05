@@ -1,0 +1,8 @@
+{
+  "exec" : "hyprmux-mobile",
+  "format" : 1,
+  "id" : "dev.gavrix.hyprmux.mobile",
+  "instances" : "single",
+  "kind" : "native",
+  "name" : "Mobile"
+}

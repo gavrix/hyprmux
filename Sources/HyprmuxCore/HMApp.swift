@@ -14,6 +14,14 @@ public struct HMAppManifest: Equatable, Sendable {
         case adapter
     }
 
+    /// How many processes the app runs.
+    public enum Instances: String, Sendable, CaseIterable {
+        /// A process per launch.
+        case multiple
+        /// One process. A launch while it runs goes to it, and it opens the window.
+        case single
+    }
+
     public static let format = 1
     /// `generatedBy` on bundles Hyprmux owns. Only these may be rewritten or deleted.
     public static let generator = "hyprmux"
@@ -33,11 +41,12 @@ public struct HMAppManifest: Equatable, Sendable {
     public var exec: String?
     /// `{app}`, `{bundle}`, and an `{args}` element that splices the user's arguments.
     public var args: [String]
+    public var instances: Instances
     public var generatedBy: String?
 
     public init(id: String, name: String, kind: Kind, adapter: String? = nil, app: String? = nil,
                 version: String? = nil, exec: String? = nil, args: [String] = HMAppManifest.defaultArgs,
-                generatedBy: String? = nil) {
+                instances: Instances = .multiple, generatedBy: String? = nil) {
         self.id = id
         self.name = name
         self.kind = kind
@@ -46,12 +55,13 @@ public struct HMAppManifest: Equatable, Sendable {
         self.version = version
         self.exec = exec
         self.args = args
+        self.instances = instances
         self.generatedBy = generatedBy
     }
 
     public var isGenerated: Bool { generatedBy == Self.generator }
 
-    static let keys: Set<String> = ["format", "id", "name", "kind", "adapter", "app", "version", "exec", "args", "generatedBy"]
+    static let keys: Set<String> = ["format", "id", "name", "kind", "adapter", "app", "version", "exec", "args", "instances", "generatedBy"]
 
     /// Letters, digits, `.`, `_`, `-`.
     public static func isValidID(_ id: String) -> Bool {
@@ -96,6 +106,12 @@ public struct HMAppManifest: Equatable, Sendable {
                 guard let a = v as? [String] else { return .failure(ParseError("\"args\" must be an array of strings")) }
                 m.args = a
             }
+            if let v = try string("instances").get() {
+                guard let i = Instances(rawValue: v) else {
+                    return .failure(ParseError("\"instances\" must be multiple or single"))
+                }
+                m.instances = i
+            }
             if kind == .adapter, m.adapter == nil {
                 return .failure(ParseError("\"adapter\" is required when \"kind\" is adapter"))
             }
@@ -121,6 +137,7 @@ public struct HMAppManifest: Equatable, Sendable {
         if let version { o["version"] = version }
         if let exec { o["exec"] = exec }
         if args != Self.defaultArgs { o["args"] = args }
+        if instances != .multiple { o["instances"] = instances.rawValue }
         if let generatedBy { o["generatedBy"] = generatedBy }
         let data = (try? JSONSerialization.data(withJSONObject: o, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])) ?? Data()
         return data + Data("\n".utf8)
@@ -144,8 +161,11 @@ public struct HMAppManifest: Equatable, Sendable {
     }
 }
 
-/// Where a `.hmapp` came from. An installed one with a generated one's id replaces it.
+/// Where a `.hmapp` came from, lowest precedence first. A later source's app with the
+/// same id replaces an earlier one's.
 public enum HMAppSource: String, Sendable, CaseIterable {
+    /// First-party apps shipped inside Hyprmux.app.
+    case builtin
     case generated, installed
 }
 
@@ -228,7 +248,7 @@ public struct HMApp: Equatable, Sendable {
     public var json: [String: Any] {
         let m = manifest
         var o: [String: Any] = ["id": m.id, "name": m.name, "kind": m.kind.rawValue, "source": source.rawValue,
-                                "path": path, "args": m.args]
+                                "path": path, "args": m.args, "instances": m.instances.rawValue]
         if let a = m.adapter { o["adapter"] = a }
         if let a = m.app { o["app"] = a }
         if let v = m.version { o["version"] = v }

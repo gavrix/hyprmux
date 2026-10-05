@@ -112,9 +112,9 @@ public enum IPCText {
 }
 
 /// Surface kinds `new-surface` opens. The names match the `kind` field of `surfaces`.
-/// `app` launches a client app (docs/CLIENT_PROTOCOL.md) into a reserved tile.
+/// `app` launches a client app (docs/CLIENT_PROTOCOL.md); the reply waits for its window.
 public enum SurfaceKind: String, Equatable, Sendable, CaseIterable {
-    case terminal, web, sim, android, app
+    case terminal, web, app
 }
 
 /// `new-surface`: what to open, where, and whether it takes focus.
@@ -127,7 +127,6 @@ public struct NewSurfaceRequest: Equatable, Sendable {
     public var floating: Bool
     /// Terminal: a command to run instead of the login shell (empty: the shell).
     /// Web: a URL or search terms (empty: the start page).
-    /// Sim and Android: the device (empty: the only running one).
     /// App: an executable, an `.app`, or a bundle id, then its arguments.
     public var argument: String
     /// Terminal only. Nil: the focused terminal's directory, as a bind does.
@@ -211,7 +210,8 @@ public enum IPCRequest: Equatable {
     /// Writes an installed `.hmapp`: NAME, PATH, then default arguments.
     case appsAdd([String])
     /// Opens a catalog app in a new tile: NAME or ID, then arguments.
-    case launch([String], focus: Bool)
+    /// `window`: the offered window to open (`--window ID`).
+    case launch([String], focus: Bool, window: String?)
 
     public static func parse(_ line: String) -> Result<IPCRequest, ParseError> {
         let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -404,9 +404,14 @@ public enum IPCRequest: Equatable {
                 return .failure(ParseError("apps: expected list, refresh, or add"))
             }
         case "launch":
-            // launch [--focus] (--base64 B64 | NAME [ARGS...]), shell-quoted words.
+            // launch [--focus] [--window ID] (--base64 B64 | NAME [ARGS...]), shell-quoted words.
             var args = words(rest)
             let focus = removeFlag("--focus", from: &args)
+            let window: String?
+            switch takeOption("--window", from: &args) {
+            case .failure(let error): return .failure(error)
+            case .success(let value): window = value
+            }
             let text: String
             switch takeOption("--base64", from: &args) {
             case .failure(let error): return .failure(error)
@@ -420,7 +425,7 @@ public enum IPCRequest: Equatable {
             }
             guard let parts = shellWords(text) else { return .failure(ParseError("launch: unbalanced quotes")) }
             guard !parts.isEmpty else { return .failure(ParseError("launch: name an app")) }
-            return .success(.launch(parts, focus: focus))
+            return .success(.launch(parts, focus: focus, window: window))
         case "version": return .success(.version)
         case "debug": return .success(.debug)
         case "caption": return .success(.caption(rest))

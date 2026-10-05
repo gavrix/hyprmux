@@ -292,7 +292,7 @@ hud {
 
 - **Config errors:** one red notice that updates on every save and goes away
   once the config is clean.
-- **Warnings:** such as "no booted simulator" or "no running Android emulator".
+- **Warnings:** such as "Couldn't open NAME." or "No app named NAME."
 - **Terminal notifications:** a program can send one with OSC 9
   (`printf '\e]9;Build done\a'`) or OSC 777
   (`printf '\e]777;notify;Title;Body\a'`). Clicking it focuses that terminal.
@@ -373,10 +373,9 @@ What comes back:
 - **Agent sessions:** an agent that reported its session (below) resumes with the
   command from `resume`.
 - **Web tiles:** the page they were on.
-- **Simulators:** the same device, if it's still booted. If not, the tile is
-  skipped and a warning says so.
-- **Android emulators:** the same stable AVD id, with its name as a fallback.
-  The AVD must already be running. Otherwise, Hyprmux skips it and shows a warning.
+- **App tiles:** the app opens again and gets each window's restore token.
+  What comes back is up to the app. [Mobile](APPS.md#mobile) brings back the
+  devices that still run, and skips the rest.
 
 Anything else comes back as an empty terminal or a start page. A restored launch
 skips `exec-once` and `exec`, so startup terminals don't appear twice.
@@ -429,7 +428,7 @@ format as the session file.
   Summoning twice never opens a second copy.
 
 What a layout keeps: the split tree, floating windows, groups, each terminal's
-directory, programs from `session:programs`, web pages, simulators, and Android AVDs. An agent
+directory, programs from `session:programs`, web pages, and app tiles. An agent
 is kept by kind only, so summoning starts a new session with `session:start:KIND`
 instead of reopening the one it was saved from.
 
@@ -453,8 +452,10 @@ even), and two `children`; `tabs` makes a group:
 }
 ```
 
-An Android tile uses `{"kind":"android","avd":"stable-id","avdName":"Display name"}`.
-Hyprmux only restores it when that AVD is already running.
+An app tile uses `{"kind":"app","appEntry":"APP ID"}`, plus `"restoreToken"` for
+a particular window. A Mobile device is
+`{"kind":"app","appEntry":"dev.gavrix.hyprmux.mobile","restoreToken":"ios:UDID"}`,
+or `android:AVD_ID`. Mobile only brings it back while that device runs.
 
 A `command` in a layout you wrote runs as written (the `programs` list only
 applies to what Hyprmux records). A file can hold several workspaces, each with
@@ -511,10 +512,7 @@ These names work in `bind` lines and with `hyprmuxctl dispatch`.
 | `web` / `openurl` | [url or search] | New web tile. Empty: a start page with the address bar focused. |
 | `webnav` | `back` `forward` `reload` `stop` `home` `focusurl` `inspect` | Navigation in the focused web tile. |
 | `fillcredential` | [provider id] | Choose a credential and fill the exact focused field in a WebKit or Chromium tile, or type a password into a terminal's password prompt. Empty queries the configured providers. |
-| `sim` / `simulator` | [udid, name, or `booted`] | Show an iOS Simulator. Empty: attach the only running iOS or Android device, or show a combined picker. |
-| `android` / `avd` | [AVD id or name] | Attach a running Android AVD. Empty: the sole running AVD, or a picker when several are running. Never boots an AVD. |
-| `launch` | [name or id, then arguments] | Open an [app](APPS.md) in a new tile. The text names an app whole, or its first word does and the rest are arguments. Empty: the launcher. |
-| `simbutton` | `home` `lock` | Press a simulator hardware button. |
+| `launch` | [name or id, then arguments] | Open an [app](APPS.md) in a new tile. The text names an app whole, or its first word does and the rest are arguments. Empty: the launcher. An app that offers several windows shows a picker. `launch, Mobile` shows simulators and emulators; `launch, Mobile iPhone 17` opens that device. |
 | `killactive` | | Close the focused window. |
 | `movefocus` | `l` `r` `u` `d` | Focus the neighbor in that direction. |
 | `movewindow` | `l` `r` `u` `d` | Move the window in the layout (or to the screen edge if floating). |
@@ -547,7 +545,7 @@ A bind applies window dispatchers to the focused window. They are `killactive`,
 `movefocus`, `movewindow`, `swapwindow`, `resizeactive`, `moveactive`,
 `movetoworkspace`, `movetoworkspacesilent`, `togglefloating`, `fullscreen`,
 `togglesplit`, `swapsplit`, `splitratio`, `cyclenext`, `centerwindow`, `webnav`,
-`fillcredential`, `simbutton`, and the group dispatchers.
+`fillcredential`, and the group dispatchers.
 `hyprmuxctl dispatch --surface N` applies them to another window without focusing it.
 Only dispatchers about focus (`movefocus`, `cyclenext`) or following a window
 (`movetoworkspace`) move focus. A layout dispatcher on a hidden group tab acts on its
@@ -582,7 +580,7 @@ See [Terminal automation](AUTOMATION.md) for workflows, limits, and agent skill 
 |---|---|
 | `skill install\|status\|path\|source\|uninstall [--force]` | Manages the bundled agent skill under `~/.agents/skills`. This command is local and needs no socket. |
 | `dispatch [--surface ID] <dispatcher> [args]` | Runs a dispatcher. With `--surface`, a window dispatcher acts on that surface instead of the focused one; other dispatchers reject it. |
-| `new-surface [--type terminal\|web\|sim\|android] [--workspace WS] [--focus] [--floating] [--cwd DIR] [--input TEXT] [ARG...]` | Opens a surface and replies with its JSON entry. `WS` uses workspace syntax (`3`, `name:NAME`, `special:NAME`, `empty`). ARG is a terminal command (default: the shell), a URL, or a device. `--input` types into the new shell. |
+| `new-surface [--type terminal\|web\|app] [--workspace WS] [--focus] [--floating] [--cwd DIR] [--input TEXT] [ARG...]` | Opens a surface and replies with its JSON entry. `WS` uses workspace syntax (`3`, `name:NAME`, `special:NAME`, `empty`). ARG is a terminal command (default: the shell), a URL, or an app (an executable, `.app`, `.hmapp`, or bundle id, then its arguments). An app replies once its window opens. `--input` types into the new shell. |
 | `close-surface [--surface ID]` | Closes a surface, like `killactive`. |
 | `focus-surface [--surface ID]` | Focuses a surface, switching to its workspace and showing a hidden tab. |
 | `move-surface [--surface ID] --workspace WS [--focus]` | Moves a surface and its group to a workspace, and replies with its JSON entry. `--focus` follows it. |
@@ -597,7 +595,7 @@ See [Terminal automation](AUTOMATION.md) for workflows, limits, and agent skill 
 | `reload` | Reloads the config. |
 | `apps [list\|refresh] [--json]` | The [apps](APPS.md) Hyprmux can open: id, name, kind, source, adapter, and target, plus load errors and both folders. `refresh` regenerates the generated apps and replies when done. |
 | `apps add NAME PATH [ARGS...]` | Writes an installed `.hmapp` for an `.app` (checked like a generated one) or an executable, and replies with it. |
-| `launch [--focus] NAME\|ID [ARGS...]` | Opens an app in a new tile and replies with its JSON entry, like `new-surface`. |
+| `launch [--focus] [--window ID] NAME\|ID [ARGS...]` | Opens an app in a new tile and replies with its JSON entry, like `new-surface`, once the window opens. An app that offers several windows replies with them (`{"app", "windows": [{id, title, detail}]}`) and opens none; `--window ID` opens one. |
 | `adapters [list\|match APP\|reload] [--json]` | The adapter registry: loaded adapters, manifest errors, and launched instances. `match` shows which adapter would lift an `.app` or bundle id, and runs its probe. See [Adapters](ADAPTERS.md). |
 | `broker [status\|register\|unregister] [--json]` | The helper app tiles connect through. `status`: whether macOS runs this copy's agent or waits for approval, what Hyprmux did on launch, whether the lookup service answers, which program launchd runs and who loaded it, and this instance's registration. `register` and `unregister` change the agent with macOS, for testing and support. See [Client protocol](CLIENT_PROTOCOL.md#3-transport). |
 | `sendtext <text>` | Legacy command that types into the focused terminal (`\n` = Enter). |

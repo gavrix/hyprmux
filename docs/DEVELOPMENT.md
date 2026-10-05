@@ -53,7 +53,8 @@ defines `play()` and optionally `setup()`, which runs before recording starts, a
 `caption` come from `lib.sh`. `caption "Title | subtitle"` shows a caption panel
 at the top of the window (the `caption` IPC command); `caption` with no text
 hides it. The simulator clip creates a throwaway simulator and deletes it
-afterwards. It opens the simulator by UDID, because ⌘I would list every booted
+afterwards. It opens the simulator by UDID (`launch --window ios:UDID Mobile`),
+because ⌘I would offer every booted
 one. For the config clip, record.sh writes the default config and the demo
 overrides into one file, `/tmp/hyprmux-demo/hyprmux.conf`, so nvim can edit it
 and each save reloads live.
@@ -179,13 +180,16 @@ GitHub exposes its secrets to the job.
   goes in `HyprmuxCore`, with a unit test. It has no AppKit, so it's fast to
   test and can't depend on view state.
 - **Execution in the app.** `Hyprmux` executes: it applies snapshots,
-  animates, and bridges to libghostty, CEF, and SimulatorKit. When the app
+  animates, and bridges to libghostty and CEF. When the app
   needs the model to do something, it dispatches. When the model needs the app
   to do something, it emits an `Effect`.
 - **New tile kinds** conform to `Surface`. A new web engine subclasses
-  `BrowserSurface`.
+  `BrowserSurface`. Content that another program can draw is a client app
+  instead, like Mobile: Hyprmux stays free of app-specific code.
+- **First-party apps** are `.hmapp`s in `Resources/apps`, with their program as
+  an executable target that `bundle.sh` copies into `Contents/MacOS`.
 - **Android Emulator protocol code** stays in `AndroidEmulatorBridge`.
-  The app target sees endpoint, frame, and client types, not generated messages.
+  Mobile sees endpoint, frame, and client types, not generated messages.
 - **Private or C APIs** sit behind a small Objective-C bridge
   (`ChromiumBridge`, `SimulatorBridge`) with a plain Objective-C header for
   Swift. Look up private classes and functions at runtime
@@ -392,6 +396,27 @@ Testing app tiles from a background instance has limits:
   text input. Its `surfaces` entry shows `textInput`, with the last key's
   input-method result.
 
+### Mobile
+
+Mobile runs from the bundle you test, as a built-in app. Without rebundling,
+start the test instance with `HYPRMUX_ADAPTER_BIN="$(swift build --show-bin-path)"`
+and `swift build --product hyprmux-mobile`: the bare `exec` name then resolves to
+the debug build.
+
+```sh
+"$(swift build --show-bin-path)/hyprmux-mobile" list         # the devices it would offer
+"$(swift build --show-bin-path)/hyprmux-mobile" info UDID    # a simulator's framebuffer size and format
+hyprmuxctl launch Mobile                                     # the offer, as JSON
+hyprmuxctl launch --window ios:UDID Mobile                   # one tile; read-only on your own simulators
+hyprmuxctl surfaces                                          # "subsurfaces": each device screen's rect
+hyprmuxctl snapshot --surface N /tmp/mobile.png              # the bar and the screen, composited
+```
+
+`snapshot` composites subsurfaces over the toplevel's buffer, so it shows what
+the tile shows. Hyprmux keeps only the last line of Mobile's stderr, for a launch
+that fails. Mobile started from a shell gets no launch and quits after 10
+seconds: launch it from Hyprmux.
+
 ### Test tools
 
 | Tool | Use |
@@ -411,7 +436,7 @@ Testing app tiles from a background instance has limits:
 
 **Coordinate caution:** the test window opens on whichever display it last
 used, so its size changes between runs. Compute click positions from
-`hyprmuxctl surfaces` (tile frames, the simulator's `pixels`), never hard-code
+`hyprmuxctl surfaces` (tile frames, an app tile's `subsurfaces`), never hard-code
 them. Several "bugs" during development were clicks landing outside the
 window.
 

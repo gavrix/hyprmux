@@ -21,9 +21,12 @@ final class AppRequestTests: XCTestCase {
     }
 
     func testParsesLaunchRequests() throws {
-        XCTAssertEqual(try IPCRequest.parse("launch Reactotron").get(), .launch(["Reactotron"], focus: false))
+        XCTAssertEqual(try IPCRequest.parse("launch Reactotron").get(), .launch(["Reactotron"], focus: false, window: nil))
         XCTAssertEqual(try IPCRequest.parse("launch --focus --base64 \(b64("'Zed (dev)' /tmp/zedtest"))").get(),
-                       .launch(["Zed (dev)", "/tmp/zedtest"], focus: true))
+                       .launch(["Zed (dev)", "/tmp/zedtest"], focus: true, window: nil))
+        XCTAssertEqual(try IPCRequest.parse("launch --window ios:ABC --base64 \(b64("Mobile"))").get(),
+                       .launch(["Mobile"], focus: false, window: "ios:ABC"))
+        XCTAssertThrowsError(try IPCRequest.parse("launch --window").get())
         XCTAssertThrowsError(try IPCRequest.parse("launch").get())
         XCTAssertThrowsError(try IPCRequest.parse("launch --base64 \(b64("'unbalanced"))").get())
     }

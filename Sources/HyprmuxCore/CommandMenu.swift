@@ -41,6 +41,9 @@ public enum CommandMenu {
         }
     }
 
+    /// The first-party app that shows simulators and emulators (Resources/apps/Mobile.hmapp).
+    public static let mobileApp = "Mobile"
+
     /// The rows, in menu order. A trailing "…" means the row opens another picker.
     public static let entries: [Entry] = [
         Entry("workspace", "Go to workspace…", .picker(.workspace)),
@@ -52,7 +55,7 @@ public enum CommandMenu {
         Entry("apps", "Open app…", .picker(.apps), aliases: [.launch("")]),
         Entry("terminal", "New terminal", .exec("")),
         Entry("web", "New web tile", .web("")),
-        Entry("device", "Show device…", .sim("")),
+        Entry("device", "Show device…", .launch(mobileApp)),
         Entry("fillcredential", "Fill credential…", .fillCredential(nil), requires: .credentialTile),
         Entry("reload", "Reload config", .reload),
         Entry("exit", "Quit Hyprmux", .exit),

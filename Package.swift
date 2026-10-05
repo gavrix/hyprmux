@@ -12,6 +12,7 @@ let package = Package(
         .executable(name: "hyprmux-broker", targets: ["hyprmux-broker"]),
         .executable(name: "hyprmux-demo-client", targets: ["hyprmux-demo-client"]),
         .executable(name: "hyprmux-electron-bridge", targets: ["hyprmux-electron-bridge"]),
+        .executable(name: "hyprmux-mobile", targets: ["hyprmux-mobile"]),
         .executable(name: "hyprmux-credential-1password", targets: ["hyprmux-credential-1password"]),
         .library(name: "HyprmuxClientKit", targets: ["HyprmuxClientKit"]),
     ],
@@ -32,8 +33,8 @@ let package = Package(
         // AppKit shell: window, compositor views, animations, libghostty surfaces.
         .executableTarget(
             name: "Hyprmux",
-            dependencies: ["HyprmuxCore", "HyprmuxCredentialSupport", "GhosttyKit", "ChromiumBridge", "SimulatorBridge",
-                           "AndroidEmulatorBridge", "HyprmuxClientProtocol"],
+            dependencies: ["HyprmuxCore", "HyprmuxCredentialSupport", "GhosttyKit", "ChromiumBridge",
+                           "HyprmuxClientProtocol"],
             exclude: ["Credentials"],
             swiftSettings: [.swiftLanguageMode(.v5)],
             linkerSettings: [
@@ -67,6 +68,14 @@ let package = Package(
             dependencies: ["HyprmuxClientKit"],
             swiftSettings: [.swiftLanguageMode(.v5)],
             linkerSettings: [.linkedFramework("IOSurface")]
+        ),
+        // Mobile.hmapp (Resources/apps): iOS Simulators and Android Emulators as client
+        // windows, one process for every device.
+        .executableTarget(
+            name: "hyprmux-mobile",
+            dependencies: ["HyprmuxClientKit", "SimulatorBridge", "AndroidEmulatorBridge"],
+            swiftSettings: [.swiftLanguageMode(.v5)],
+            linkerSettings: [.linkedFramework("IOSurface"), .linkedFramework("Accelerate")]
         ),
         .target(
             name: "HyprmuxCredentialSupport",

@@ -37,6 +37,7 @@ swift build -c "$CONFIG" --product hyprmuxctl
 swift build -c "$CONFIG" --product hyprmux-tour
 swift build -c "$CONFIG" --product hyprmux-broker
 swift build -c "$CONFIG" --product hyprmux-electron-bridge
+swift build -c "$CONFIG" --product hyprmux-mobile
 swift build -c "$CONFIG" --product hyprmux-credential-1password
 BIN_DIR="$(swift build -c "$CONFIG" --show-bin-path)"
 BIN="$BIN_DIR/Hyprmux"
@@ -44,6 +45,7 @@ CTL_BIN="$BIN_DIR/hyprmuxctl"
 TOUR_BIN="$BIN_DIR/hyprmux-tour"
 BROKER_BIN="$BIN_DIR/hyprmux-broker"
 EBRIDGE_BIN="$BIN_DIR/hyprmux-electron-bridge"
+MOBILE_BIN="$BIN_DIR/hyprmux-mobile"
 CREDENTIAL_1PASSWORD_BIN="$BIN_DIR/hyprmux-credential-1password"
 
 # HYPRMUX_APP builds the bundle somewhere else (test copies, demo recordings).
@@ -57,6 +59,9 @@ cp "$TOUR_BIN" "$APP/Contents/MacOS/hyprmux-tour"
 # Client-protocol broker and its launchd job (docs/CLIENT_PROTOCOL.md, section 3).
 cp "$BROKER_BIN" "$APP/Contents/MacOS/hyprmux-broker"
 cp "$EBRIDGE_BIN" "$APP/Contents/MacOS/hyprmux-electron-bridge"
+# First-party apps (docs/APPS.md, Built-in apps): bundles in Resources/apps, their
+# programs here, so they resolve by bare name and are signed with the app.
+cp "$MOBILE_BIN" "$APP/Contents/MacOS/hyprmux-mobile"
 cp "$CREDENTIAL_1PASSWORD_BIN" "$APP/Contents/MacOS/hyprmux-credential-1password"
 cp "$ROOT/Resources/electron-hook.js" "$APP/Contents/Resources/electron-hook.js"
 rm -rf "$APP/Contents/Resources/adapters"
@@ -64,6 +69,8 @@ cp -R "$ROOT/Resources/adapters" "$APP/Contents/Resources/adapters"
 # Built-in hooks (docs/HOOKS.md): the tour's first-launch offer.
 rm -rf "$APP/Contents/Resources/hooks"
 cp -R "$ROOT/Resources/hooks" "$APP/Contents/Resources/hooks"
+rm -rf "$APP/Contents/Resources/apps"
+cp -R "$ROOT/Resources/apps" "$APP/Contents/Resources/apps"
 rm -rf "$APP/Contents/Resources/credential-providers"
 cp -R "$ROOT/Resources/credential-providers" "$APP/Contents/Resources/credential-providers"
 mkdir -p "$APP/Contents/Library/LaunchAgents"
@@ -145,6 +152,7 @@ sign "$APP/Contents/MacOS/hyprmuxctl"
 sign "$APP/Contents/MacOS/hyprmux-tour"
 sign "$APP/Contents/MacOS/hyprmux-broker"
 sign "$APP/Contents/MacOS/hyprmux-electron-bridge"
+sign "$APP/Contents/MacOS/hyprmux-mobile"
 sign "$APP/Contents/MacOS/hyprmux-credential-1password"
 sign "$APP"
 if [[ "$SIGN" == "-" ]]; then

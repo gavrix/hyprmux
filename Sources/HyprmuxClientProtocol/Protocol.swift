@@ -49,6 +49,16 @@ public enum HMOp {
     public static let surfaceCommit = "surface.commit"
     public static let surfaceDestroy = "surface.destroy"
     public static let surfaceFrameDone = "surface.frame_done"
+    // subsurface: a child surface drawn above its parent, scaled to a rect
+    public static let subsurfaceCreate = "subsurface.create"
+    public static let subsurfaceSetRect = "subsurface.set_rect"
+    public static let subsurfaceDestroy = "subsurface.destroy"
+    // launches: Hyprmux asks for windows, the app opens or offers them
+    public static let launch = "launch"
+    public static let launchOffer = "launch.offer"
+    public static let launchOpen = "launch.open"
+    public static let launchCancel = "launch.cancel"
+    public static let launchDone = "launch.done"
     // toplevel
     public static let toplevelCreate = "toplevel.create"
     public static let toplevelSetTitle = "toplevel.set_title"
@@ -110,6 +120,41 @@ public enum HMMenuItemType {
     public static let submenu = "submenu"
     public static let checkbox = "checkbox"
     public static let radio = "radio"
+}
+
+/// One window a launch offers (`launch.offer`). It travels as JSON (`windows_json`):
+/// `[{id, title, detail}]`. `id` is a string the client picks; `launch.open` returns it.
+/// `detail` is optional.
+public struct HMWindowOffer: Equatable, Sendable {
+    public var id: String
+    public var title: String
+    public var detail: String
+
+    public init(id: String, title: String, detail: String = "") {
+        self.id = id
+        self.title = title
+        self.detail = detail
+    }
+
+    public static func encode(_ windows: [HMWindowOffer]) -> String {
+        let list = windows.map { w -> [String: String] in
+            var o = ["id": w.id, "title": w.title]
+            if !w.detail.isEmpty { o["detail"] = w.detail }
+            return o
+        }
+        return (try? JSONSerialization.data(withJSONObject: list)).flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
+    }
+
+    /// Entries without an id are skipped. A missing title shows the id.
+    public static func decode(_ json: String?) -> [HMWindowOffer] {
+        guard let data = json?.data(using: .utf8),
+              let list = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]] else { return [] }
+        return list.compactMap { o in
+            guard let id = o["id"] as? String, !id.isEmpty else { return nil }
+            let title = (o["title"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? id
+            return HMWindowOffer(id: id, title: title, detail: o["detail"] as? String ?? "")
+        }
+    }
 }
 
 /// `toplevel.configure` states.

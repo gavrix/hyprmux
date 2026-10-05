@@ -1,8 +1,6 @@
-import AndroidEmulatorBridge
 import AppKit
 import ChromiumBridge
 import HyprmuxCore
-import SimulatorBridge
 
 /// Where the session is saved. HYPRMUX_SESSION moves it (a test instance must not
 /// overwrite the real one).
@@ -102,11 +100,6 @@ extension Compositor {
             var tile = SessionTile(kind: "web", title: title)
             if let u = b.restorableURL, !u.hasPrefix("about:"), !u.hasPrefix("data:") { tile.url = u }
             return tile
-        case let s as SimulatorSurface:
-            return SessionTile(kind: "sim", title: title, sim: s.display.udid)
-        case let android as AndroidSurface:
-            return SessionTile(kind: "android", title: title,
-                               avd: android.endpoint.avdID, avdName: android.endpoint.name)
         case let app as ClientSurface:
             // Only launched apps can be relaunched; a client that connected on its own can't.
             // Apps from the catalog come back by id.
@@ -128,66 +121,20 @@ extension Compositor {
     func restoreSession() -> Bool {
         defer { sessionSavingEnabled = true }
         guard config.session.enabled, let s = SessionStore.load(), !s.workspaces.isEmpty else { return false }
-        var missingSims: [String] = []
-        var missingAndroid: [String] = []
-        let runningAndroid = AndroidEmulatorDiscovery.running()
-        let made = wm.restoreSession(s) { [weak self] tile in
-            guard let self else { return nil }
-            return self.restoreTile(tile, missingSims: &missingSims,
-                                    missingAndroid: &missingAndroid, runningAndroid: runningAndroid)
-        }
-        guard !made.isEmpty else {
-            // Startup creates its fallback terminal after this returns. Defer the warning
-            // until that first layout gives the notification HUD a non-empty work area.
-            DispatchQueue.main.async { [weak self] in
-                self?.warnAboutMissingDevices(simulators: missingSims, android: missingAndroid)
-            }
-            return false
-        }
+        let made = wm.restoreSession(s) { [weak self] tile in self?.restoreTile(tile) }
+        guard !made.isEmpty else { return false }
         log.info("session: restored \(made.count) windows")
         apply(animated: false)
-        warnAboutMissingDevices(simulators: missingSims, android: missingAndroid)
         return true
     }
 
-    private func warnAboutMissingDevices(simulators: [String], android: [String]) {
-        if !simulators.isEmpty {
-            flash(simulators.count == 1
-                  ? "Simulator \(simulators[0]) isn't available; its tile was skipped."
-                  : "\(simulators.count) simulators weren't available; their tiles were skipped.")
-        }
-        if !android.isEmpty {
-            flash(android.count == 1
-                  ? "Android AVD \(android[0]) isn't running; its tile was skipped."
-                  : "\(android.count) Android AVDs weren't running; their tiles were skipped.")
-        }
-    }
-
-    /// Creates a tile's surface and view. Nil skips it (a simulator that's gone).
-    func restoreTile(_ t: SessionTile, missingSims: inout [String],
-                     missingAndroid: inout [String], runningAndroid: [AndroidEmulatorEndpoint]) -> ClientID? {
+    /// Creates a tile's surface and view. Nil skips it (an app tile with nothing to relaunch).
+    func restoreTile(_ t: SessionTile) -> ClientID? {
         switch t.kind {
         case "web":
             let web = makeWeb(t.url ?? "")
             adopt(web)
             return web.clientID
-        case "sim":
-            guard let q = t.sim, let display = try? HMSimDisplay(query: q) else {
-                missingSims.append(t.title ?? t.sim ?? "?")
-                return nil
-            }
-            let sim = makeSim(display)
-            adopt(sim)
-            return sim.clientID
-        case "android":
-            let endpoint = t.avd.flatMap { AndroidEmulatorDiscovery.match($0, in: runningAndroid) }
-                ?? t.avdName.flatMap { AndroidEmulatorDiscovery.match($0, in: runningAndroid) }
-            guard let endpoint, let android = try? makeAndroid(endpoint) else {
-                missingAndroid.append(t.avdName ?? t.title ?? t.avd ?? "?")
-                return nil
-            }
-            adopt(android)
-            return android.clientID
         case "app":
             guard let app = restoreAppTile(t) else { return nil }
             adopt(app)

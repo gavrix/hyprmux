@@ -44,6 +44,16 @@ final class ClientSurface: FlippedView, Surface {
     private var frameCallbacks: [UInt64] = []
     // Buffers replaced by a newer commit; released once Core Animation stops using them.
     private var retiring: [ClientConnection.Buffer] = []
+    /// Subsurfaces, in stacking order: each shows a buffer scaled to a rect in the
+    /// toplevel's points.
+    private final class Child {
+        let id: UInt64
+        let view = PassthroughView()
+        var buffer: ClientConnection.Buffer?
+        var rect = CGRect.zero
+        init(id: UInt64) { self.id = id }
+    }
+    private var children: [Child] = []
     private var link: CADisplayLink?
     private var lastTick: CFTimeInterval = 0
     private var watchdogScheduled = false
@@ -64,6 +74,8 @@ final class ClientSurface: FlippedView, Surface {
     private var pointerInside = false
     private var inputSerial: UInt64 = 0
     private(set) var framesShown = 0
+    /// Runs once, at the first commit with a buffer: the window's title and size are in.
+    var onFirstFrame: (() -> Void)?
     /// IME state (ClientSurface+TextInput).
     let textInput = TextInputState()
 
@@ -97,6 +109,7 @@ final class ClientSurface: FlippedView, Surface {
 
     private func layoutContent() {
         screen.frame = bounds
+        layoutChildren()
         placeholder.sizeToFit()
         placeholder.frame.origin = CGPoint(x: (bounds.width - placeholder.frame.width) / 2,
                                            y: (bounds.height - placeholder.frame.height) / 2)
@@ -196,6 +209,15 @@ final class ClientSurface: FlippedView, Surface {
         if let appEntry { result["entry"] = appEntry }
         if let restoreToken { result["restoreToken"] = restoreToken }
         if let b = currentBuffer { result["pixels"] = [b.width, b.height]; result["scale"] = Double(currentScale) }
+        if !children.isEmpty {
+            result["subsurfaces"] = children.map { c -> [String: Any] in
+                let f = c.view.frame
+                var o: [String: Any] = ["id": c.id, "rect": [c.rect.minX, c.rect.minY, c.rect.width, c.rect.height],
+                                        "frame": [f.minX, f.minY, f.width, f.height], "visible": !c.view.isHidden]
+                if let b = c.buffer { o["pixels"] = [b.width, b.height] }
+                return o
+            }
+        }
         // Frame pacing, for stalls: callbacks waiting for a display-link tick.
         result["frames"] = ["pendingCallbacks": frameCallbacks.count, "linkPaused": link?.isPaused ?? true,
                             "occluded": occluded, "retiring": retiring.count]
@@ -214,7 +236,20 @@ final class ClientSurface: FlippedView, Surface {
     /// its IOSurface, so it needs no screen-recording permission.
     func writeSnapshot(to url: URL) throws {
         guard let surface = currentBuffer?.surface else { throw SnapshotError.noFrame }
-        let image = CIImage(ioSurface: surface)
+        var image = CIImage(ioSurface: surface)
+        // Subsurfaces on top, in the buffer's pixels. Core Image's origin is bottom-left.
+        let height = image.extent.height
+        for c in children where !c.view.isHidden {
+            guard let b = c.buffer else { continue }
+            let child = CIImage(ioSurface: b.surface)
+            let r = CGRect(x: c.rect.minX * currentScale, y: height - c.rect.maxY * currentScale,
+                           width: c.rect.width * currentScale, height: c.rect.height * currentScale)
+            let scaled = child.transformed(by: CGAffineTransform(scaleX: r.width / child.extent.width,
+                                                                y: r.height / child.extent.height))
+                .transformed(by: CGAffineTransform(translationX: r.minX, y: r.minY))
+            image = scaled.composited(over: image)
+        }
+        image = image.cropped(to: CGRect(x: 0, y: 0, width: CGFloat(IOSurfaceGetWidth(surface)), height: height))
         let space = CGColorSpace(name: CGColorSpace.sRGB)!
         try CIContext().writePNGRepresentation(of: image, to: url, format: .RGBA8, colorSpace: space)
     }
@@ -258,8 +293,11 @@ final class ClientSurface: FlippedView, Surface {
     func commit(buffer: ClientConnection.Buffer?, scale: CGFloat, callbacks: [UInt64]) {
         guard !closed else { return }
         frameCallbacks += callbacks
-        if let buffer, buffer !== currentBuffer {
-            if let old = currentBuffer { retiring.append(old) }
+        if let buffer {
+            // The buffer on screen again: its pixels changed (a simulator's framebuffer,
+            // shown by reference). It stays current and isn't released.
+            if buffer !== currentBuffer, let old = currentBuffer { retiring.append(old) }
+            let resized = currentBuffer.map { $0.width != buffer.width || $0.height != buffer.height } ?? true
             currentBuffer = buffer
             currentScale = scale
             buffer.busy = true
@@ -269,10 +307,87 @@ final class ClientSurface: FlippedView, Surface {
             screen.layer?.contents = nil
             screen.layer?.contents = buffer.surface
             screen.layer?.contentsScale = scale
+            if resized { layoutChildren() }
+            CATransaction.commit()
+            framesShown += 1
+            if let first = onFirstFrame {
+                onFirstFrame = nil
+                first()
+            }
+        }
+        updateLink()
+    }
+
+    // MARK: Subsurfaces, from ClientConnection
+
+    private func child(_ id: UInt64) -> Child {
+        if let c = children.first(where: { $0.id == id }) { return c }
+        let c = Child(id: id)
+        c.view.wantsLayer = true
+        c.view.layer?.contentsGravity = .resize
+        c.view.layer?.magnificationFilter = .linear
+        c.view.layer?.minificationFilter = .trilinear
+        c.view.isHidden = true
+        addSubview(c.view, positioned: .below, relativeTo: placeholder)
+        children.append(c)
+        return c
+    }
+
+    /// A subsurface committed. Like the toplevel's own buffer, the one on screen again
+    /// means its pixels changed.
+    func commitChild(_ id: UInt64, buffer: ClientConnection.Buffer?, callbacks: [UInt64]) {
+        guard !closed else { return }
+        frameCallbacks += callbacks
+        if let buffer {
+            let c = child(id)
+            if buffer !== c.buffer, let old = c.buffer { retiring.append(old) }
+            c.buffer = buffer
+            buffer.busy = true
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            c.view.layer?.contents = nil
+            c.view.layer?.contents = buffer.surface
             CATransaction.commit()
             framesShown += 1
         }
         updateLink()
+    }
+
+    /// Applied at the toplevel's commit: where each subsurface sits, in its points.
+    func setChildRect(_ id: UInt64, _ rect: CGRect) {
+        guard !closed else { return }
+        child(id).rect = rect
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        layoutChildren()
+        CATransaction.commit()
+    }
+
+    func removeChild(_ id: UInt64) {
+        guard let i = children.firstIndex(where: { $0.id == id }) else { return }
+        let c = children.remove(at: i)
+        if let b = c.buffer { retiring.append(b) }
+        c.view.removeFromSuperview()
+        updateLink()
+    }
+
+    /// The toplevel's points to tile points: the client's last buffer is drawn scaled to
+    /// fit until it catches up with a resize, and subsurfaces scale with it.
+    private var contentTransform: (scale: CGFloat, origin: CGPoint) {
+        guard let b = currentBuffer, currentScale > 0, b.width > 0, b.height > 0 else { return (1, .zero) }
+        let w = CGFloat(b.width) / currentScale, h = CGFloat(b.height) / currentScale
+        let s = min(bounds.width / w, bounds.height / h)
+        return (s, CGPoint(x: (bounds.width - w * s) / 2, y: (bounds.height - h * s) / 2))
+    }
+
+    private func layoutChildren() {
+        let t = contentTransform
+        for c in children {
+            let r = c.rect
+            c.view.isHidden = r.width <= 0 || r.height <= 0 || c.buffer == nil
+            c.view.frame = CGRect(x: t.origin.x + r.minX * t.scale, y: t.origin.y + r.minY * t.scale,
+                                  width: r.width * t.scale, height: r.height * t.scale)
+        }
     }
 
     /// A buffer the client destroyed: stop showing it.
@@ -281,6 +396,11 @@ final class ClientSurface: FlippedView, Surface {
         if currentBuffer === buffer {
             currentBuffer = nil
             screen.layer?.contents = nil
+        }
+        for c in children where c.buffer === buffer {
+            c.buffer = nil
+            c.view.layer?.contents = nil
+            c.view.isHidden = true
         }
     }
 
@@ -341,6 +461,11 @@ final class ClientSurface: FlippedView, Surface {
         retiring.removeAll()
         if let b = currentBuffer { release(b) }
         currentBuffer = nil
+        for c in children {
+            if let b = c.buffer { release(b) }
+            c.buffer = nil
+            c.view.layer?.contents = nil
+        }
         frameCallbacks.removeAll()
         screen.layer?.contents = nil
     }

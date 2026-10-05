@@ -161,18 +161,15 @@ final class SessionTests: XCTestCase {
         XCTAssertEqual(float.frame, CGRect(x: 160, y: 100, width: 800, height: 500))
     }
 
-    func testAndroidTileSchemaPreservesStableAVDIdentity() throws {
-        let json = #"{"workspaces":[{"id":"1","tiled":{"kind":"android","avd":"Pixel_8_API_36","avdName":"Pixel 8"}}]}"#
+    func testAppTileKeepsItsRestoreToken() throws {
+        let json = #"{"workspaces":[{"id":"1","tiled":{"kind":"app","appEntry":"dev.gavrix.hyprmux.mobile","restoreToken":"ios:ABC"}}]}"#
         let state = try SessionState.decode(Data(json.utf8))
-        guard case .slot(let slot)? = state.workspaces.first?.tiled else { return XCTFail("expected Android slot") }
+        guard case .slot(let slot)? = state.workspaces.first?.tiled else { return XCTFail("expected a slot") }
         let tile = try XCTUnwrap(slot.tabs.first)
-        XCTAssertEqual(tile.kind, "android")
-        XCTAssertEqual(tile.avd, "Pixel_8_API_36")
-        XCTAssertEqual(tile.avdName, "Pixel 8")
-
+        XCTAssertEqual(tile.appEntry, "dev.gavrix.hyprmux.mobile")
+        XCTAssertEqual(tile.restoreToken, "ios:ABC")
         let encoded = String(decoding: try state.encoded(), as: UTF8.self)
-        XCTAssertTrue(encoded.contains(#""avd" : "Pixel_8_API_36""#))
-        XCTAssertTrue(encoded.contains(#""avdName" : "Pixel 8""#))
+        XCTAssertTrue(encoded.contains(#""restoreToken" : "ios:ABC""#))
     }
 }
 

@@ -172,7 +172,7 @@ hud {
 }
 
 # Session restore. On launch, Hyprmux brings back the workspaces, their layout,
-# terminal directories, web pages, and simulators from when it last quit. The
+# terminal directories, web pages, and app windows from when it last quit. The
 # shells themselves start fresh. A restored launch skips exec-once and exec.
 session {
     restore = true
@@ -269,12 +269,10 @@ bind = $mod CTRL SHIFT, L, moveintogroup, r
 bind = $mod, B, web,
 bind = $mod, O, webnav, focusurl
 
-# Devices: show a booted iOS Simulator or running Android Emulator in a tile.
-# A combined picker appears when several are available. Click/drag = touch; typing goes to the device.
-bind = $mod, I, sim,
-# iOS-only Home and Lock controls for the focused tile.
-bind = $mod, escape, simbutton, home
-bind = $mod SHIFT, escape, simbutton, lock
+# Devices: open Mobile, which shows a booted iOS Simulator or a running Android
+# Emulator in a tile. It asks which one when several are running.
+# Click and drag to touch; typing goes to the device.
+bind = $mod, I, launch, Mobile
 bind = $mod ALT, left, webnav, back
 bind = $mod ALT, right, webnav, forward
 bind = $mod ALT, R, webnav, reload

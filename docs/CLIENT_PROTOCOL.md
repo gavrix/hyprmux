@@ -31,8 +31,9 @@ Wayland's wire format. See [Decisions](#12-decisions).
   Flutter apps (its embedder API targets custom surfaces), and wgpu, Metal, or
   SDL apps.
 - **Bridges:** clients that translate an app that doesn't know about Hyprmux.
-  Examples: the Electron bridge (an injected hook plus a helper), and later
-  the iOS Simulator, the Android Emulator, and window capture.
+  Examples: the Electron bridge (an injected hook plus a helper), Mobile (iOS
+  Simulators and Android Emulators, see [APPS.md](APPS.md#mobile)), and later
+  window capture.
 - **Poor fits:** ordinary AppKit and SwiftUI apps. AppKit draws into
   WindowServer windows. No public API renders a view tree into our surface
   without losing fidelity.
@@ -126,8 +127,9 @@ server → welcome { version: 0, server_capabilities: [..], scale, monitor }
   without a bundle.
 - The compositor reads the caller's pid, uid, and team ID from the XPC audit
   token. `app_id` is only a hint.
-- `launch_token` binds this connection to a tile Hyprmux is waiting to fill.
-  See [Launch and restore](#10-launch-and-restore).
+- `launch_token` names the launch that started this process. Hyprmux answers
+  it with a `launch` message right after `welcome`. See
+  [Launch and restore](#10-launch-and-restore).
 - Capabilities are strings like `text-input`, `cursor-image`, and `popups`. Each side uses only what both sides listed.
 
 Errors are fatal. The compositor sends `error { code, message, id? }` and
@@ -143,7 +145,8 @@ client.
 connection
  ├ buffer        (iosurface)
  └ surface
-    └ toplevel   (role)
+    ├ toplevel   (role)
+    └ subsurface (role: a child of a toplevel's surface)
 ```
 
 ### 5.1 `buffer`
@@ -183,6 +186,11 @@ server → surface.frame_done { callback, time, target_time }
 
 - **Commit:** pending state becomes current atomically. The new buffer,
   damage, and scale show together.
+- **The same buffer again:** attaching and committing the buffer already on
+  screen means its pixels changed. Hyprmux reads it again; it stays busy and
+  gets no `release`. This shows pixels by reference: Mobile registers a
+  simulator's own framebuffer, which the simulator keeps drawing into, and
+  commits it on every frame. Nothing is copied, and a frame can tear.
 - **Size:** the buffer size divided by scale gives the surface size in points.
 - **Damage** is a hint. The compositor may redraw more.
 - **Frame callbacks:** `frame` asks for one `frame_done` when it's a good time
@@ -195,13 +203,32 @@ server → surface.frame_done { callback, time, target_time }
 - **Opaque:** `set_opaque(true)` lets the compositor skip blending. Tiles with
   inactive opacity still apply their opacity.
 
-### 5.3 `toplevel`
+### 5.3 `subsurface`
+
+```
+client → subsurface.create { id, surface, parent }
+client → subsurface.set_rect { id, x, y, w, h }      pending, applied at the parent's commit
+client → subsurface.destroy { id }
+```
+
+- **Role:** `surface` becomes a child of `parent`, a surface with the
+  `toplevel` role. A subsurface can't have subsurfaces.
+- **Drawing:** it shows its buffer scaled to the rect, in the parent's points,
+  above the parent, in creation order. A zero size hides it. Until the client
+  catches up with a resize, the rect scales with the parent's last buffer.
+- **Input** stays with the toplevel: pointer events carry the toplevel's
+  surface and points.
+- **Why:** pixels that come from elsewhere, at their own size and rate. A
+  device screen updates 60 times a second; the bar under it, only on resize.
+  Wayland's `wl_subsurface` plus `wp_viewporter`, without sync modes.
+
+### 5.4 `toplevel`
 
 A toplevel is a tile. The compositor decides where it goes. The client
 suggests, the compositor decides.
 
 ```
-client → toplevel.create { id, surface }
+client → toplevel.create { id, surface, restore_token?, launch_token? }
 client → toplevel.set_title { id, title }
 client → toplevel.set_restore_token { id, token }     ≤ 4 KiB, opaque
 client → toplevel.set_min_size { id, w, h }           points
@@ -214,6 +241,8 @@ server → toplevel.configure { id, serial, w, h, scale, states: [..] }
 server → toplevel.close_requested { id }
 ```
 
+- **Launch:** `launch_token` names the launch this window answers (section
+  10). Without one, the window belongs to the launch that started the process.
 - **Configure:** the compositor sends a size in points, the backing scale, and
   a state set. Clients ack the serial, then commit a buffer of
   `w×scale` by `h×scale`.
@@ -358,26 +387,61 @@ AccessKit trees, and Chromium has its own accessibility tree to translate.
 
 ## 10. Launch and restore
 
-- **Launching a client:** the launcher and `hyprmuxctl launch` (an app's
-  `.hmapp`, see [APPS.md](APPS.md)), the `launch` dispatcher, or
+```
+server → launch { launch_token, args: [..], restore_tokens: [..] }
+client → launch.offer { launch_token, windows_json }     [{id, title, detail}]
+server → launch.open { launch_token, window }
+server → launch.cancel { launch_token }
+client → launch.done { launch_token }
+```
+
+- **Launching:** the launcher and `hyprmuxctl launch` (an app's `.hmapp`, see
+  [APPS.md](APPS.md)), the `launch` dispatcher, or
   `hyprmuxctl new-surface --type app -- <bundle id or path> [args]`.
-  1. Hyprmux reserves a tile slot and makes a one-time `launch_token`.
-  2. It starts the client with `HYPRMUX_LAUNCH_TOKEN` in the environment.
-  3. The first toplevel that arrives with that token fills the slot.
-  4. A slot with no toplevel after a timeout shows an error notice and
-     closes.
+  1. Hyprmux makes a launch with a one-time token. It records the workspace the
+     launch started on. No tile exists yet.
+  2. A single-instance app that's running gets `launch` over its connection.
+     Otherwise Hyprmux starts the app with `HYPRMUX_LAUNCH_TOKEN` in the
+     environment, and sends `launch` once it says hello.
+  3. The app answers in one of three ways:
+     - **A window:** a toplevel with that `launch_token`. It gets a tile on the
+       launch's workspace. It takes focus only if that workspace is still in
+       view, so a late window doesn't pull the user away.
+     - **An offer:** `launch.offer` lists windows it can open. With one, Hyprmux
+       sends `launch.open` at once. With several, the user picks in a picker;
+       `hyprmuxctl launch` replies with the list instead, and
+       `launch --window ID` picks one. The app then creates the toplevel.
+       Sending the offer again replaces the list in an open picker.
+     - **Nothing:** `launch.done` with no window ends the launch quietly.
+  4. `launch.cancel` means nobody waits anymore: the user dismissed the picker,
+     or the launch timed out. A window that comes later is the app's own.
+  5. The launch fails after 20 seconds without an answer, or 120 while the
+     process Hyprmux started still runs. The picker pauses the clock; a pick
+     restarts it.
+- **The picker:** a launch from the launcher, a bind, or Finder shows "Opening
+  NAME…" until the app answers. An offer of several windows fills it. Escape
+  cancels the launch.
+- **Copies:** picking the same window again opens another copy. Hyprmux never
+  deduplicates; whether a second copy makes sense is the app's call.
+- **Arguments:** `args` are the ones given at launch, without the `.hmapp`'s
+  `args` template. The first launch's arguments are also on the command line.
+- **`launch.done`** also says the app made every window it will for the
+  launch. Hyprmux drops restored tiles still waiting for it.
 - **Unsolicited clients:** a client that connects without a token gets a new
-  tile, the same way a new terminal does.
-- **Session restore:** Hyprmux stores the tile as a `SessionTile` with
-  `client: { app_id, launch, restore_token }`.
-  - On restore, it relaunches with `HYPRMUX_LAUNCH_TOKEN` and
-    `HYPRMUX_RESTORE_TOKEN`.
-  - The client uses the token to reopen the same document, folder, or URL.
-  - A client that's already running gets the restore token over its
-    connection instead (`restore { token, launch_token }`).
+  tile, the same way a new terminal does. So does a window an app opens on its
+  own after its launch settled.
+- **Session restore** is best effort. Hyprmux stores the tile as a `SessionTile`
+  with the app's id or launch text, and the toplevel's restore token.
+  - On restore, it makes the tiles first, waiting. Tiles of one app share one
+    launch, whose `launch` message carries their `restore_tokens`.
+  - A toplevel with a matching restore token fills its tile. The app may
+    ignore the tokens; `launch.done` drops the tiles it didn't bring back, and
+    otherwise they go after the timeout.
+  - An offer can't restore a window, so a restoring launch that offers ends
+    and drops its tiles.
 - **Reconnecting:** when Hyprmux restarts, a client can reconnect and resend
   its toplevels with their restore tokens. Hyprmux matches them to saved
-  tiles.
+  tiles. (Not implemented yet.)
 - **Activation policy:** a client with no real windows should switch to
   `NSApplication.ActivationPolicy.accessory`, which hides its Dock icon and
   ⌘Tab entry. The SDK does this by default.
@@ -446,9 +510,19 @@ AccessKit trees, and Chromium has its own accessibility tree to translate.
     drag as it starts and accepts no drops (`StartDragging` ends it at once,
     `GetDropData` is null). Dragging tabs or files inside the app, and dropping
     files from Finder, need an emulation in the page; there is none yet.
-- **Built-in sources:** the iOS Simulator and Android Emulator surfaces can
-  later become in-process implementations of the same interface. That leaves
-  one `ClientSurface` in the app instead of one surface class per source.
+- **Mobile:** `Sources/hyprmux-mobile`, the program of the bundled
+  `Mobile.hmapp`. One process for every device window
+  (`"instances": "single"`).
+  - It answers each `launch` by offering the running devices, by opening the
+    one its arguments name, or with a window that says none are running.
+  - **iOS Simulator:** the framebuffer is an IOSurface that CoreSimulator
+    shares. Mobile registers that surface as a subsurface buffer, and commits
+    it again on each frame callback from the simulator: zero copies.
+  - **Android Emulator:** the emulator streams RGBA pixels over gRPC. Mobile
+    writes each frame once into a three-buffer subsurface swapchain, swapping
+    the channels to BGRA on the way.
+  - The toplevel's own surface is the black background and the button bar,
+    drawn again only on resize. Errors draw inside the window.
 
 ## 12. Decisions
 
@@ -537,10 +611,14 @@ Milestone 1 is in place. Code:
 
 - `Sources/HyprmuxClientProtocol`: service names and ops.
 - `Sources/hyprmux-broker`: the broker.
-- `Sources/Hyprmux/Clients`: `ClientServer`, `ClientConnection`, and
-  `ClientSurface`.
-- `Sources/HyprmuxClientKit`: the Swift kit.
+- `Sources/Hyprmux/Clients`: `ClientServer`, `ClientConnection`,
+  `ClientSurface`, and `AppLaunch`.
+- `Sources/Hyprmux/Compositor/Compositor+Clients.swift`: launches, the launch
+  picker, and restore.
+- `Sources/HyprmuxClientKit`: the Swift kit, with `onLaunch`, `HMLaunch`, and
+  `HMSubsurface`.
 - `Sources/hyprmux-demo-client`: the demo client.
+- `Sources/hyprmux-mobile`: Mobile.
 
 Measured on a 60 Hz display, with the demo at 2518×2760 px: about 58 fps while
 the demo spends 7 ms drawing each frame on the CPU.
@@ -561,6 +639,9 @@ Differences from the text above:
   popups.
 - **Session restore** of app tiles works: tiles relaunch their app and match
   windows by restore token.
+- **Launches in the Rust client:** it has no `launch`, `launch.offer`, or
+  subsurfaces yet. Its toplevels belong to the launch that started the process,
+  which is what Zed needs.
 - **Text input:** `enable`, `disable`, `set_cursor_rect`, and the four server
   events are implemented. `set_surrounding` and `commit_state` aren't; ranges
   count characters committed since `enable`, which is enough for

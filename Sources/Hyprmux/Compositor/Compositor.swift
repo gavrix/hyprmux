@@ -84,7 +84,8 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         self.runtime = runtime
         self.config = config
         let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
-        var frame = screen.insetBy(dx: screen.width * 0.04, dy: screen.height * 0.04)
+        // First launch fills the screen; later launches restore the autosaved frame.
+        var frame = screen
         if let size = Self.fixedWindowSize {
             frame = NSRect(x: screen.midX - size.width / 2, y: screen.midY - size.height / 2, width: size.width, height: size.height)
         }

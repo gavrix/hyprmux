@@ -180,7 +180,7 @@ Groups hold several windows as tabs in one tile.
 | Option | Default | Meaning |
 |---|---|---|
 | `background_color` | transparent | Behind the windows. An alpha below 1 makes Hyprmux see-through; `rgba(00000000)` shows the desktop in the gaps. |
-| `fullscreen_style` | `fill` | `fill`: full screen on the normal desktop, so the wallpaper stays visible. `native`: macOS full screen on its own Space. |
+| `fullscreen_style` | `fill` | `fill`: full screen on the normal desktop, so the wallpaper stays visible. Hyprmux starts in fill on first launch, then remembers whether you quit filled. `native`: macOS full screen on its own Space. |
 | `register_broker` | `true` | App tiles connect through `hyprmux-broker`, a small helper macOS runs for Hyprmux. `true`: Hyprmux registers it on launch, and macOS may ask you to allow Hyprmux in Login Items. `false`: Hyprmux leaves it alone, for people who load the broker themselves. Turning it off doesn't remove a registered helper; `hyprmuxctl broker unregister` does. |
 
 ### `web`

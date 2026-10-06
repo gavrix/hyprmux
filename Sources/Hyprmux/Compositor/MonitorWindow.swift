@@ -62,5 +62,6 @@ final class MonitorWindow: NSWindow {
         setFrame(screen.frame, display: true)
     }
 
-    static var wasFilledAtQuit: Bool { UserDefaults.standard.bool(forKey: "HyprmuxFill") }
+    /// A first launch (nothing saved yet) starts filled.
+    static var wasFilledAtQuit: Bool { UserDefaults.standard.object(forKey: "HyprmuxFill") as? Bool ?? true }
 }

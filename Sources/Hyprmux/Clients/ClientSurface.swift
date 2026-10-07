@@ -47,9 +47,10 @@ final class ClientSurface: FlippedView, Surface {
     weak var terminalHost: TerminalViewHost?
     /// The title changed (a terminal's own title, shown while the client sets none).
     var onTitleChange: ((ClientSurface) -> Void)?
-    /// `toplevel.set_status`: what the content is doing (`HMToplevelStatus`).
+    /// `toplevel.set_status`: what the content is doing (`HMToplevelStatus`). The tile
+    /// draws it (ClientView.setStatus).
     private(set) var status: String?
-    private let statusBadge = StatusBadge()
+    var onStatusChange: ((ClientSurface) -> Void)?
 
     // Surface state (current, after the last commit).
     private var currentBuffer: ClientConnection.Buffer?
@@ -109,8 +110,6 @@ final class ClientSurface: FlippedView, Surface {
         placeholder.alignment = .center
         placeholder.stringValue = launchToken == nil ? "" : "Starting \(label)…"
         addSubview(placeholder)
-        statusBadge.isHidden = true
-        addSubview(statusBadge)
         layoutContent()
     }
 
@@ -125,8 +124,6 @@ final class ClientSurface: FlippedView, Surface {
     private func layoutContent() {
         screen.frame = bounds
         terminal?.frame = bounds
-        statusBadge.sizeToFit()
-        statusBadge.frame.origin = CGPoint(x: bounds.width - statusBadge.frame.width - 8, y: 8)
         layoutChildren()
         placeholder.sizeToFit()
         placeholder.frame.origin = CGPoint(x: (bounds.width - placeholder.frame.width) / 2,
@@ -216,7 +213,7 @@ final class ClientSurface: FlippedView, Surface {
             self.terminalExited(term, status: Int(status))
         }
         term.frame = bounds
-        addSubview(term, positioned: .below, relativeTo: statusBadge)
+        addSubview(term, positioned: .below, relativeTo: placeholder)
         placeholder.stringValue = ""
         layer?.backgroundColor = term.backdrop.cgColor
         framesShown += 1
@@ -227,9 +224,9 @@ final class ClientSurface: FlippedView, Surface {
     }
 
     func setStatus(_ status: String?) {
+        guard status != self.status else { return }
         self.status = status
-        statusBadge.show(status)
-        layoutContent()
+        onStatusChange?(self)
     }
 
     /// The toplevel was destroyed, or the client disconnected.
@@ -749,42 +746,4 @@ extension ClientSurface: TerminalViewHost {
     func terminal(_ view: TerminalView, notifyTitle title: String, body: String) {
         terminalHost?.terminal(view, notifyTitle: title, body: body)
     }
-}
-
-/// A small pill in a tile's top-right corner: what its content is doing.
-final class StatusBadge: NSTextField {
-    init() {
-        super.init(frame: .zero)
-        isEditable = false
-        isSelectable = false
-        isBordered = false
-        drawsBackground = false
-        font = .systemFont(ofSize: 11, weight: .semibold)
-        textColor = .white
-        alignment = .center
-        wantsLayer = true
-        layer?.cornerRadius = 8
-        layer?.masksToBounds = true
-    }
-
-    required init?(coder: NSCoder) { fatalError("not supported") }
-
-    func show(_ status: String?) {
-        let (text, color): (String, NSColor) = switch status {
-        case HMToplevelStatus.working: ("working", .systemOrange)
-        case HMToplevelStatus.blocked: ("needs you", .systemRed)
-        case HMToplevelStatus.done: ("done", .systemGreen)
-        default: ("", .clear)
-        }
-        stringValue = text
-        layer?.backgroundColor = color.withAlphaComponent(0.85).cgColor
-        isHidden = text.isEmpty
-    }
-
-    override func sizeToFit() {
-        super.sizeToFit()
-        frame.size = CGSize(width: frame.width + 16, height: max(16, frame.height + 2))
-    }
-
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }

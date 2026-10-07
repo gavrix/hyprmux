@@ -78,7 +78,7 @@ public struct HyprmuxEvent: Equatable, Sendable, CustomStringConvertible {
         "workspace", "workspacev2", "createworkspace", "destroyworkspace", "renameworkspace", "activespecial",
         "openwindow", "closewindow", "movewindow", "activewindow", "activewindowv2", "windowtitle", "windowtitlev2",
         "changefloatingmode", "fullscreen", "togglegroup", "moveintogroup", "moveoutofgroup",
-        "submap", "configreloaded", "dispatch", "appactive", "launch", "firstlaunch",
+        "submap", "configreloaded", "dispatch", "appactive", "launch", "firstlaunch", "agent",
     ]
 }
 

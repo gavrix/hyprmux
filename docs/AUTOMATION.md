@@ -245,6 +245,43 @@ hyprmuxctl events | grep -m1 '^closewindow>>7$'   # surface:7 closed
 See [Events and hooks](HOOKS.md) for every event, and for hooks: commands Hyprmux
 runs when an event happens.
 
+## Agent state
+
+A coding agent in a Hyprmux terminal, or a hook it runs, says what it's doing:
+
+```sh
+hyprmuxctl agent-state working --kind claude
+hyprmuxctl agent-state blocked --kind claude --message "Allow rm -rf build?"
+hyprmuxctl agent-state idle --kind claude
+```
+
+- **States:** `working`, `blocked` (it waits for you: a question, an approval),
+  and `idle` (ready for input).
+- **Shown on the tile:** a pill in its top-right corner, "working", "needs you",
+  or "done", and a dot on its tab when the tile is in a group. Idle shows nothing.
+- **Done:** a turn that ends while you're not looking at the terminal shows as
+  "done" until you focus it. Looking means its tile has focus while Hyprmux is in
+  front.
+- **Notices:** "needs you" (with the message) and "done" post a notice, unless
+  you're looking at the terminal. Clicking it goes to the tile.
+- **Which terminal:** `HYPRMUX_CLIENT`, set in every Hyprmux terminal. Outside one,
+  `agent-state` does nothing, so a hook can call it anywhere. It prints nothing.
+- **Which process:** the report counts while the agent runs in the terminal's
+  foreground, as `resume` reports do. `--pid` defaults to the caller's process
+  group, which is the agent's when a hook runs it. When the agent exits, the tile
+  is a plain terminal again within a couple of seconds.
+- **More fields:** `--title` (what it works on), `--session` (its session, for
+  restore; see [Agent sessions](CONFIGURATION.md)).
+
+`hyprmuxctl surfaces` shows a terminal's agent as
+`"agent": {"kind", "state", "title", "message"}` and the tile's pill as `status`.
+`hyprmuxctl events` sends `agent>>ID,KIND,STATE` when the shown state changes, with
+an empty STATE when the agent goes away. On the socket, the report is one line:
+
+```json
+agent {"client": 12, "pid": 4711, "kind": "claude", "state": "blocked", "message": "Allow rm?"}
+```
+
 ## Recommended agent workflow
 
 1. Run `surfaces` and inspect `kind`, `workspace`, `title`, and `capabilities`.

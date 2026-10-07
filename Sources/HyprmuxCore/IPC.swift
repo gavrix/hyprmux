@@ -191,6 +191,8 @@ public enum IPCRequest: Equatable {
     case snapshot(surface: SurfaceReference?, path: String)
     /// An agent says how to bring its terminal back: `resume {"client":…, ...}`.
     case resume(ResumeReport)
+    /// An agent says what it's doing: `agent {"client":…, "pid":…, "kind":…, "state":…}`.
+    case agent(AgentReport)
     /// Demo recordings: a caption at the top of the window. Empty clears it.
     case caption(String)
     /// Tests: performs a main-menu item by title, as a click on it would.
@@ -433,6 +435,11 @@ public enum IPCRequest: Equatable {
             let title = rest.trimmingCharacters(in: .whitespaces)
             guard !title.isEmpty else { return .failure(ParseError("sendmenu: name a menu item")) }
             return .success(.sendMenu(title))
+        case "agent":
+            guard let r = try? JSONDecoder().decode(AgentReport.self, from: Data(rest.utf8)) else {
+                return .failure(ParseError("agent: expected JSON with client, pid, kind, and state (working, blocked, idle)"))
+            }
+            return .success(.agent(r))
         case "resume":
             guard let r = try? JSONDecoder().decode(ResumeReport.self, from: Data(rest.utf8)) else {
                 return .failure(ParseError("resume: expected JSON with client, pid, kind, session"))

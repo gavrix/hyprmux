@@ -34,6 +34,9 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
     let apps = AppRuntime()
     /// Agents' resume reports, by terminal (see `hyprmuxctl resume`).
     var resumeReports: [ClientID: ResumeReport] = [:]
+    /// Agents in terminals and the state shown for them (Compositor+Agents).
+    var agents = AgentTracker()
+    var agentWatchScheduled = false
     let credentialProviders = CredentialProviderRuntime()
     /// The active credential picker flow. It contains no item or field data.
     var credentialRequest: UUID?
@@ -156,6 +159,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
             // Back from System Settings: the user may have allowed the broker.
             self?.broker.recheck()
             self?.emit(.appActive(true))
+            self?.agentFocusChanged()
         }
         nc.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
             self?.emit(.appActive(false))
@@ -502,6 +506,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
     /// Gives a surface its view, without placing it in the layout (session restore places it).
     func adopt(_ surface: Surface) {
         let v = ClientView(id: surface.clientID, surface: surface, decoration: Decoration(config))
+        (surface as? ClientSurface)?.onStatusChange = { [weak self] s in self?.refreshStatus(s.clientID) }
         v.isHidden = true
         root.addSubview(v, positioned: .below, relativeTo: bar)
         views[surface.clientID] = v
@@ -517,6 +522,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
     func removeClient(_ id: ClientID) {
         guard let v = views.removeValue(forKey: id) else { return }
         resumeReports[id] = nil
+        agentClientRemoved(id)
         wm.removeClient(id)
         closing[id] = v
         let out = config.animation("windowsOut")
@@ -708,7 +714,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
             return s.title.isEmpty ? s.kind : s.title
         }
         let active = info.members.firstIndex(of: info.active) ?? 0
-        v.setGroupBar((titles, active), style: GroupBarStyle(config))
+        v.setGroupBar((titles, info.members.map(tileStatus), active), style: GroupBarStyle(config))
         let members = info.members
         v.onSelectTab = { [weak self] i in
             guard let self, i < members.count else { return }
@@ -718,7 +724,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
     }
 
     /// Titles changed: refresh the tab strips without touching layout.
-    private func refreshGroupBars() {
+    func refreshGroupBars() {
         guard let last else { return }
         for p in last.placements where p.group != nil {
             if let v = views[p.id] { updateGroupBar(v, p.group) }
@@ -809,6 +815,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         let changed = snap.focused != lastFocusApplied
         if changed { log.debug("focus \(self.lastFocusApplied?.raw ?? 0) -> \(snap.focused?.raw ?? 0)") }
         lastFocusApplied = snap.focused
+        if changed { agentFocusChanged() }
         guard let id = snap.focused, let s = views[id]?.surface else {
             if window.firstResponder !== root { window.makeFirstResponder(root) }
             return
@@ -1094,6 +1101,8 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
                 return "ok"
             case .sendMenu(let title):
                 return Self.performMenuItem(title) ? "ok" : "error: no enabled menu item \(title)"
+            case .agent(let r):
+                return handleAgentReport(r)
             case .resume(let r):
                 let id = ClientID(r.client)
                 guard views[id]?.surface is TerminalView else { return "error: no terminal \(r.client)" }
@@ -1239,6 +1248,8 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
             "capabilities": s?.automationCapabilities ?? [],
         ]
         for (k, v) in s?.info ?? [:] { info[k] = v }
+        if let a = agentInfo(p.id) { info["agent"] = a }
+        if let st = views[p.id]?.status { info["status"] = st }
         if let c = s as? ClientSurface, let pid = c.connection?.pid, let a = adapterName(forPid: pid) { info["adapter"] = a }
         if let g = p.group {
             info["group"] = ["id": g.id.raw, "members": g.members.map(\.raw), "active": g.active.raw]

@@ -21,6 +21,8 @@ struct GroupBarStyle: Equatable {
 final class GroupBarView: NSView {
     var onSelect: ((Int) -> Void)?
     private var titles: [String] = []
+    /// Each tab's status (TileStatus), drawn as a dot before its title.
+    private var statuses: [String?] = []
     private var active = 0
     private var style: GroupBarStyle?
     /// Horizontal inset so the first and last tab clear rounded corners.
@@ -30,9 +32,10 @@ final class GroupBarView: NSView {
     override var mouseDownCanMoveWindow: Bool { false }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
-    func update(titles: [String], active: Int, style: GroupBarStyle) {
-        guard titles != self.titles || active != self.active || style != self.style else { return }
+    func update(titles: [String], statuses: [String?] = [], active: Int, style: GroupBarStyle) {
+        guard titles != self.titles || statuses != self.statuses || active != self.active || style != self.style else { return }
         self.titles = titles
+        self.statuses = statuses
         self.active = active
         self.style = style
         needsDisplay = true
@@ -65,8 +68,15 @@ final class GroupBarView: NSView {
             ]
             let text = (title.isEmpty ? "—" : title) as NSString
             let h = text.size(withAttributes: attrs).height
-            text.draw(with: CGRect(x: r.minX + 6, y: r.midY - h / 2, width: r.width - 12, height: h),
-                      options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine], attributes: attrs)
+            var textRect = CGRect(x: r.minX + 6, y: r.midY - h / 2, width: r.width - 12, height: h)
+            if i < statuses.count, let dot = TileStatus.color(statuses[i]) {
+                let d: CGFloat = 7
+                dot.setFill()
+                NSBezierPath(ovalIn: CGRect(x: r.minX + 7, y: r.midY - d / 2, width: d, height: d)).fill()
+                textRect.origin.x += d + 5
+                textRect.size.width -= d + 5
+            }
+            text.draw(with: textRect, options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine], attributes: attrs)
         }
     }
 

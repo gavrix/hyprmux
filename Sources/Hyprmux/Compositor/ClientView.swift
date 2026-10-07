@@ -10,6 +10,8 @@ final class ClientView: DecoratedView {
     let id: ClientID
     let surface: Surface
     private let dimView = PassthroughView()
+    private let statusBadge = StatusBadge()
+    private(set) var status: String?
     private lazy var surfaceMenu: NSMenu = {
         let reference = SurfaceReference(id.raw).description
         let menu = NSMenu(title: "Surface")
@@ -32,8 +34,16 @@ final class ClientView: DecoratedView {
     private var groupBarHeight: CGFloat = 20
     var onSelectTab: ((Int) -> Void)?
 
+    /// What the tile's content is doing (TileStatus): a pill in its top-right corner.
+    func setStatus(_ status: String?) {
+        guard status != self.status else { return }
+        self.status = status
+        statusBadge.show(status)
+        layoutContent()
+    }
+
     /// Shows (or removes, with nil) the tab strip.
-    func setGroupBar(_ tabs: (titles: [String], active: Int)?, style: GroupBarStyle) {
+    func setGroupBar(_ tabs: (titles: [String], statuses: [String?], active: Int)?, style: GroupBarStyle) {
         guard let tabs else {
             if groupBar != nil {
                 groupBar?.removeFromSuperview()
@@ -53,7 +63,7 @@ final class ClientView: DecoratedView {
         }
         let heightChanged = groupBarHeight != style.height
         groupBarHeight = style.height
-        bar.update(titles: tabs.titles, active: tabs.active, style: style)
+        bar.update(titles: tabs.titles, statuses: tabs.statuses, active: tabs.active, style: style)
         if heightChanged || bar.frame.height != style.height { layoutContent() }
     }
 
@@ -75,6 +85,11 @@ final class ClientView: DecoratedView {
             radius: Double(innerR), power: Double(decoration.roundingPower), depth: 15))
         let content = CGRect(x: 0, y: bh, width: w, height: h - bh)
         if surface.view.frame != content { surface.view.frame = content }
+        statusBadge.sizeToFit()
+        // Clear of the top-right corner's curve.
+        let corner = CGFloat(RoundedShape.edgeInset(radius: Double(innerR), power: Double(decoration.roundingPower),
+                                                    depth: Double(statusBadge.frame.height)))
+        statusBadge.frame.origin = CGPoint(x: w - statusBadge.frame.width - max(8, corner), y: bh + 8)
     }
 
     init(id: ClientID, surface: Surface, decoration: Decoration) {
@@ -91,6 +106,8 @@ final class ClientView: DecoratedView {
         dimView.layer?.backgroundColor = NSColor.black.cgColor
         dimView.alphaValue = 0
         clip.addSubview(dimView)
+        statusBadge.isHidden = true
+        clip.addSubview(statusBadge)
         finishSetup()
     }
 

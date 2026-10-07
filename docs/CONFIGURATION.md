@@ -414,6 +414,10 @@ when `file` is given, while that file exists. So an agent you exited comes back 
 a plain shell. For pi, `~/.pi/agent/extensions/hyprmux-session.ts` sends the
 report on every session start (launch, `/new`, `/resume`, fork).
 
+An agent that reports its state (`agent {…}`, see
+[Agent state](AUTOMATION.md#agent-state)) can include its session in the same
+report, with `session`, `cwd`, and `file`.
+
 ### Layouts
 
 A layout is a workspace template: a saved arrangement of windows you can summon

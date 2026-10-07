@@ -293,7 +293,8 @@ client → notification.post { title, body, toplevel? }
   wait for a key, as it does for a terminal tile's command.
 - **Title:** the client's title, else the program's own (OSC 0/2).
 - **Status** is a pill in the tile's top-right corner: "working", "needs you",
-  "done". `hyprmuxctl surfaces` shows it as `status`.
+  "done", the same pill a terminal's agent gets, and a dot on the tile's tab in a
+  group. `hyprmuxctl surfaces` shows it as `status`.
 - **Automation:** `read-screen`, `read-selection`, `send --surface`, and
   `send-key --surface` work on the tile as on a terminal tile.
 - **Notifications** show in Hyprmux's HUD, like a terminal's OSC 9. With

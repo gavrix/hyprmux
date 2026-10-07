@@ -77,6 +77,7 @@ These are Hyprmux's own:
 | `appactive` | `0` or `1` | Hyprmux became the front app, or stopped being it. |
 | `launch` | (empty) | Hyprmux started, after the session came back or the startup programs ran. |
 | `firstlaunch` | (empty) | Hyprmux started and wrote a new config file. Comes just before `launch`. |
+| `agent` | `ID,KIND,STATE` | A terminal's agent changed state: `working`, `blocked`, `done`, or `idle`. STATE is empty when the agent went away. See [Agent state](AUTOMATION.md#agent-state). |
 
 `dispatch` SOURCE says what caused it:
 

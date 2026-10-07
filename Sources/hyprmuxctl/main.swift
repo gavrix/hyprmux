@@ -47,6 +47,10 @@ guard !args.isEmpty, args[0] != "-h", args[0] != "--help" else {
                                       the helper app tiles connect through: whether macOS runs it,
                                       which program launchd starts, and this instance's registration;
                                       register / unregister its launch agent with macOS
+      agent-state working|blocked|idle --kind <kind> [--message <text>] [--title <text>]
+                  [--session <id>] [--pid <pid>]
+                                      an agent (or its hook) says what it's doing in this
+                                      terminal; prints nothing, and does nothing outside Hyprmux
       events                         stream events as they happen, one NAME>>DATA line each
                                       (Hyprland's socket2 format; see docs/HOOKS.md)
       workspaces | activewindow | version
@@ -327,6 +331,52 @@ func dispatchLine(_ arguments: [String]) throws -> String {
 }
 
 var unwrapTextResponse: String?
+/// `agent-state` runs from agents' hooks: quiet on success.
+var quietOK = false
+
+/// `agent-state`: the `agent {…}` report for the terminal this runs in. Without
+/// HYPRMUX_CLIENT (outside a Hyprmux terminal) it exits quietly, so hooks can call it
+/// anywhere. The pid defaults to this process's group: the job the shell runs, the
+/// agent, whose hooks share its group.
+func agentStateLine(_ arguments: [String]) throws -> String? {
+    guard let raw = ProcessInfo.processInfo.environment["HYPRMUX_CLIENT"], let client = UInt64(raw), client > 0 else {
+        return nil
+    }
+    var state: String?
+    var fields: [String: Any] = ["client": client, "pid": Int(getpgrp())]
+    var index = 0
+    func value(_ flag: String) throws -> String {
+        guard index + 1 < arguments.count else { throw CLIError(message: "agent-state: \(flag) needs a value") }
+        index += 1
+        return arguments[index]
+    }
+    while index < arguments.count {
+        let a = arguments[index]
+        switch a {
+        case "--kind": fields["kind"] = try value(a)
+        case "--message": fields["message"] = try value(a)
+        case "--title": fields["title"] = try value(a)
+        case "--session": fields["session"] = try value(a)
+        case "--cwd": fields["cwd"] = try value(a)
+        case "--pid":
+            guard let pid = Int32(try value(a)), pid > 0 else { throw CLIError(message: "agent-state: --pid needs a process id") }
+            fields["pid"] = Int(pid)
+        default:
+            guard !a.hasPrefix("--"), state == nil else { throw CLIError(message: "agent-state: unexpected \(a)") }
+            guard ["working", "blocked", "idle", "done"].contains(a) else {
+                throw CLIError(message: "agent-state: state is working, blocked, or idle, not \(a)")
+            }
+            state = a
+        }
+        index += 1
+    }
+    guard let state else { throw CLIError(message: "agent-state: name a state: working, blocked, or idle") }
+    guard fields["kind"] != nil else { throw CLIError(message: "agent-state: --kind names the agent, like pi or claude") }
+    fields["state"] = state
+    let json = try JSONSerialization.data(withJSONObject: fields, options: [.sortedKeys])
+    quietOK = true
+    return "agent " + String(decoding: json, as: UTF8.self)
+}
 /// `adapters` prints tables unless --json; the reply is always JSON.
 var adaptersView: String?
 
@@ -701,6 +751,9 @@ func commandLine() throws -> String {
     case "events":
         guard commandArgs.isEmpty else { throw CLIError(message: "events takes no arguments") }
         return command
+    case "agent-state":
+        guard let line = try agentStateLine(commandArgs) else { exit(0) }
+        return line
     default:
         return args.joined(separator: " ")
     }
@@ -818,6 +871,8 @@ if failed {
     FileHandle.standardOutput.write(Data(text.utf8))
 } else if brokerView, let text = renderBroker(output) {
     FileHandle.standardOutput.write(Data(text.utf8))
+} else if quietOK {
+    // Nothing on success: hooks print into the agent's terminal.
 } else {
     FileHandle.standardOutput.write(output)
 }

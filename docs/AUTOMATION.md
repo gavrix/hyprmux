@@ -273,6 +273,13 @@ hyprmuxctl agent-state idle --kind claude
 - **More fields:** `--title` (what it works on), `--session` (its session, for
   restore; see [Agent sessions](CONFIGURATION.md)).
 
+**pi:** `Resources/agents/pi/hyprmux.ts` (inside the app: `Hyprmux.app/Contents/Resources/agents/pi/`)
+is a pi extension that reports working while pi runs a turn and idle when it
+settles, with its session for restore. It replaces `hyprmux-session.ts`. Copy it
+to `~/.pi/agent/extensions/`. Another extension can mark pi blocked with
+`pi.events.emit("hyprmux:blocked", { active: true, label: "Allow rm?" })` and
+`{ active: false }` when answered.
+
 `hyprmuxctl surfaces` shows a terminal's agent as
 `"agent": {"kind", "state", "title", "message"}` and the tile's pill as `status`.
 `hyprmuxctl events` sends `agent>>ID,KIND,STATE` when the shown state changes, with

@@ -69,6 +69,9 @@ cp -R "$ROOT/Resources/adapters" "$APP/Contents/Resources/adapters"
 # Built-in hooks (docs/HOOKS.md): the tour's first-launch offer.
 rm -rf "$APP/Contents/Resources/hooks"
 cp -R "$ROOT/Resources/hooks" "$APP/Contents/Resources/hooks"
+# Agent integrations (docs/AUTOMATION.md, Agent state): files agents load to report their state.
+rm -rf "$APP/Contents/Resources/agents"
+cp -R "$ROOT/Resources/agents" "$APP/Contents/Resources/agents"
 rm -rf "$APP/Contents/Resources/apps"
 cp -R "$ROOT/Resources/apps" "$APP/Contents/Resources/apps"
 rm -rf "$APP/Contents/Resources/credential-providers"

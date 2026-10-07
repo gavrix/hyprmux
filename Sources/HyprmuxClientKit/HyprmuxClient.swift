@@ -3,6 +3,7 @@
 // and delivers configure, frame, and input events on one queue.
 //
 // A C ABI for C++ and Rust clients comes later; this kit is the reference for it.
+import AppKit
 import Foundation
 @_exported import HyprmuxClientProtocol
 import IOSurface
@@ -106,6 +107,10 @@ public final class HMClient {
     /// before `connect()`. Answer with `makeToplevel(…, launch:)`, `offer`, or `done`.
     /// Without a handler, launches are ignored, as clients written before launches did.
     public var onLaunch: ((HMLaunch) -> Void)?
+    /// A client whose windows are its tiles stays out of the Dock and ⌘Tab
+    /// (`NSApplication.ActivationPolicy.accessory`), set at `connect()`. Clear it
+    /// before connecting if the client also opens real windows.
+    public var hidesFromDock = true
 
     public init(appID: String, name: String, instance: String = HMProtocol.currentInstance, queue: DispatchQueue = .main) {
         self.appID = appID
@@ -116,6 +121,7 @@ public final class HMClient {
 
     /// Looks up the compositor and says hello. Blocks briefly.
     public func connect() throws {
+        if hidesFromDock { Self.becomeAccessory() }
         let broker = xpc_connection_create_mach_service(HMProtocol.lookupService, nil, 0)
         xpc_connection_set_event_handler(broker) { _ in }
         xpc_connection_resume(broker)
@@ -148,6 +154,13 @@ public final class HMClient {
             throw HMClientError.handshake(welcome.isDictionary ? (welcome.string("message") ?? "rejected") : "no reply")
         }
         connection = c
+    }
+
+    /// Without this, a client that draws with AppKit (text, SF Symbols) turns into an
+    /// ordinary app the first time it does, with its own Dock icon and ⌘Tab entry.
+    private static func becomeAccessory() {
+        let set = { _ = NSApplication.shared.setActivationPolicy(.accessory) }
+        if Thread.isMainThread { set() } else { DispatchQueue.main.sync(execute: set) }
     }
 
     /// A new tile. Wait for its first `onConfigure` before drawing. A `restoreToken`

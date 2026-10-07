@@ -480,7 +480,9 @@ client → launch.done { launch_token }
   tiles. (Not implemented yet.)
 - **Activation policy:** a client with no real windows should switch to
   `NSApplication.ActivationPolicy.accessory`, which hides its Dock icon and
-  ⌘Tab entry. The SDK does this by default.
+  ⌘Tab entry. The Swift kit does this when it connects; set
+  `HMClient.hidesFromDock = false` first for a client that also opens real
+  windows.
 
 ## 11. SDK and bridges
 

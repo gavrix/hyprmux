@@ -56,6 +56,11 @@ final class TerminalView: NSView, NSTextInputClient {
     private(set) var passwordInput = false
     /// Terminal background, set by the compositor (see Surface.backdropColor).
     var backdrop: NSColor = .black
+    /// Keyboard focus came or went. A client's terminal toplevel tells its app.
+    var onFocusChange: ((Bool) -> Void)?
+    /// The command exited, with its status. When set, Ghostty doesn't wait for a key
+    /// ("Process exited"): the handler decides what happens next.
+    var onChildExited: ((UInt32) -> Void)?
 
     private var markedText = NSMutableAttributedString()
     private var keyTextAccumulator: [String]?
@@ -344,6 +349,7 @@ final class TerminalView: NSView, NSTextInputClient {
         focused = f
         if f { focusedSince = ProcessInfo.processInfo.systemUptime }
         ghostty_surface_set_focus(s, f)
+        onFocusChange?(f)
     }
 
     // MARK: Size and scale

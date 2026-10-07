@@ -20,6 +20,10 @@ public enum HMProtocol {
     public static let defaultInstance = "default"
     /// Binds a launched client's first toplevel to the tile reserved for it.
     public static let launchTokenVariable = "HYPRMUX_LAUNCH_TOKEN"
+    /// A folder for the app's own settings, next to Hyprmux's config:
+    /// `<config dir>/app-config/<app id>/`. Hyprmux never reads it, and may not have
+    /// created it yet.
+    public static let appConfigDirVariable = "HYPRMUX_APP_CONFIG_DIR"
 
     public static var currentInstance: String {
         let v = ProcessInfo.processInfo.environment[instanceVariable] ?? ""
@@ -67,6 +71,17 @@ public enum HMOp {
     public static let toplevelDestroy = "toplevel.destroy"
     public static let toplevelConfigure = "toplevel.configure"
     public static let toplevelCloseRequested = "toplevel.close_requested"
+    /// Focus a toplevel. Needs an activation token: the serial of a recent button press
+    /// or key press Hyprmux sent to one of the client's toplevels, or the token of a
+    /// launch the client is answering (`launch_token`).
+    public static let toplevelRequestActivate = "toplevel.request_activate"
+    // terminal toplevels: a tile showing a Hyprmux terminal that runs the client's command
+    public static let toplevelCreateTerminal = "toplevel.create_terminal"
+    public static let toplevelTerminalExited = "toplevel.terminal_exited"
+    /// What a tile's content is doing, drawn on the tile (`HMToplevelStatus`).
+    public static let toplevelSetStatus = "toplevel.set_status"
+    // notifications in Hyprmux's HUD
+    public static let notificationPost = "notification.post"
     // input
     public static let pointerEnter = "pointer.enter"
     public static let pointerLeave = "pointer.leave"
@@ -163,6 +178,16 @@ public enum HMToplevelState {
     public static let occluded = "occluded"
     public static let fullscreen = "fullscreen"
     public static let floating = "floating"
+}
+
+/// `toplevel.set_status` states. An empty state clears the status.
+public enum HMToplevelStatus {
+    public static let working = "working"
+    /// Waits for the user: a question, an approval.
+    public static let blocked = "blocked"
+    /// Finished, and the user hasn't looked yet.
+    public static let done = "done"
+    public static let all = [working, blocked, done]
 }
 
 /// Cursor names for `pointer.set_cursor`.

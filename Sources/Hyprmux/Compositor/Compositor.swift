@@ -258,6 +258,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         }
         for v in views.values {
             (v.surface as? TerminalView)?.backdrop = runtime.backgroundColor
+            (v.surface as? ClientSurface)?.refreshTerminalBackdrop(runtime.backgroundColor)
             v.refreshBackdrop()
         }
         hint.stringValue = hintText()
@@ -352,10 +353,16 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         return env
     }
 
-    /// A terminal surface with Hyprmux's environment, not yet managed.
-    func makeTerminal(_ options: SurfaceOptions) -> TerminalView? {
+    /// The terminal a surface shows: a terminal tile, or an app's terminal toplevel.
+    static func terminal(in surface: Surface) -> TerminalView? {
+        (surface as? TerminalView) ?? (surface as? ClientSurface)?.terminal
+    }
+
+    /// A terminal surface with Hyprmux's environment, not yet managed. `id` is the tile's
+    /// when the terminal fills an existing tile (an app's terminal toplevel).
+    func makeTerminal(_ options: SurfaceOptions, id: ClientID? = nil) -> TerminalView? {
         guard let app = runtime.app else { return nil }
-        let id = allocateID()
+        let id = id ?? allocateID()
         var opts = options
         opts.env["HYPRMUX_CLIENT"] = "\(id.raw)"
         opts.env["HYPRMUX_SURFACE_ID"] = "\(id.raw)"
@@ -1122,7 +1129,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
                 return "ok"
             case .readSelection(let reference, let wantsJSON):
                 guard let (id, surface) = automationTarget(reference) else { return "error: surface not found" }
-                guard let term = surface as? TerminalView else { return "error: surface \(id.raw) is not a terminal" }
+                guard let term = Self.terminal(in: surface) else { return "error: surface \(id.raw) is not a terminal" }
                 guard let selection = term.readTerminalSelection() else {
                     return "error: terminal \(id.raw) has no selected text"
                 }
@@ -1137,7 +1144,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
                 return selection.text
             case .readScreen(let reference, let scrollback, let lines, let wantsJSON):
                 guard let (id, surface) = automationTarget(reference) else { return "error: surface not found" }
-                guard let term = surface as? TerminalView else { return "error: surface \(id.raw) is not a terminal" }
+                guard let term = Self.terminal(in: surface) else { return "error: surface \(id.raw) is not a terminal" }
                 guard let text = term.readTerminalText(includeScrollback: scrollback, lines: lines) else {
                     return "error: failed to read terminal \(id.raw)"
                 }
@@ -1152,16 +1159,16 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
                 return text
             case .sendSurfaceText(let reference, let text):
                 guard let (id, surface) = automationTarget(reference) else { return "error: surface not found" }
-                if let app = surface as? ClientSurface {
+                if let app = surface as? ClientSurface, app.terminal == nil {
                     // App tiles type through text input, the path dictation uses.
                     return app.commitText(text) ? "ok" : "error: surface \(id.raw) doesn't accept text input"
                 }
-                guard let term = surface as? TerminalView else { return "error: surface \(id.raw) is not a terminal" }
+                guard let term = Self.terminal(in: surface) else { return "error: surface \(id.raw) is not a terminal" }
                 term.sendText(text)
                 return "ok"
             case .sendSurfaceKey(let reference, let key):
                 guard let (id, surface) = automationTarget(reference) else { return "error: surface not found" }
-                guard let term = surface as? TerminalView else { return "error: surface \(id.raw) is not a terminal" }
+                guard let term = Self.terminal(in: surface) else { return "error: surface \(id.raw) is not a terminal" }
                 guard term.sendTerminalKey(key) else { return "error: failed to send key to terminal \(id.raw)" }
                 return "ok"
             case .hitTest(let p):

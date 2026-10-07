@@ -9,6 +9,10 @@ import QuartzCore
 /// The compositor creates one per toplevel. A tile opened with `new-surface --type app`
 /// exists before its client connects: it waits, with a launch token, for the first
 /// toplevel that presents that token.
+///
+/// A terminal toplevel (`toplevel.create_terminal`) shows a Hyprmux terminal instead of
+/// the client's buffers. The client runs the command and owns the tile; the terminal
+/// handles its own input.
 final class ClientSurface: FlippedView, Surface {
     let clientID: ClientID
     /// Set while the tile waits for a launched client.
@@ -36,6 +40,16 @@ final class ClientSurface: FlippedView, Surface {
     private let placeholder = NSTextField(labelWithString: "")
     private var clientTitle = ""
     private var closed = false
+
+    /// A terminal toplevel's terminal. It has this tile's id.
+    private(set) var terminal: TerminalView?
+    /// Gets the terminal's callbacks this tile doesn't handle itself (the compositor).
+    weak var terminalHost: TerminalViewHost?
+    /// The title changed (a terminal's own title, shown while the client sets none).
+    var onTitleChange: ((ClientSurface) -> Void)?
+    /// `toplevel.set_status`: what the content is doing (`HMToplevelStatus`).
+    private(set) var status: String?
+    private let statusBadge = StatusBadge()
 
     // Surface state (current, after the last commit).
     private var currentBuffer: ClientConnection.Buffer?
@@ -72,7 +86,6 @@ final class ClientSurface: FlippedView, Surface {
     private var cursorName = "arrow"
     private var tracking: NSTrackingArea?
     private var pointerInside = false
-    private var inputSerial: UInt64 = 0
     private(set) var framesShown = 0
     /// Runs once, at the first commit with a buffer: the window's title and size are in.
     var onFirstFrame: (() -> Void)?
@@ -96,6 +109,8 @@ final class ClientSurface: FlippedView, Surface {
         placeholder.alignment = .center
         placeholder.stringValue = launchToken == nil ? "" : "Starting \(label)…"
         addSubview(placeholder)
+        statusBadge.isHidden = true
+        addSubview(statusBadge)
         layoutContent()
     }
 
@@ -109,6 +124,9 @@ final class ClientSurface: FlippedView, Surface {
 
     private func layoutContent() {
         screen.frame = bounds
+        terminal?.frame = bounds
+        statusBadge.sizeToFit()
+        statusBadge.frame.origin = CGPoint(x: bounds.width - statusBadge.frame.width - 8, y: 8)
         layoutChildren()
         placeholder.sizeToFit()
         placeholder.frame.origin = CGPoint(x: (bounds.width - placeholder.frame.width) / 2,
@@ -184,6 +202,36 @@ final class ClientSurface: FlippedView, Surface {
         layoutContent()
     }
 
+    /// A terminal toplevel's terminal fills the tile.
+    func attachTerminal(_ term: TerminalView) {
+        terminal = term
+        term.host = self
+        term.onFocusChange = { [weak self] focused in
+            guard let self else { return }
+            self.activated = focused
+            self.sendConfigureIfNeeded()
+        }
+        term.onChildExited = { [weak self, weak term] status in
+            guard let self, let term else { return }
+            self.terminalExited(term, status: Int(status))
+        }
+        term.frame = bounds
+        addSubview(term, positioned: .below, relativeTo: statusBadge)
+        placeholder.stringValue = ""
+        layer?.backgroundColor = term.backdrop.cgColor
+        framesShown += 1
+        if let first = onFirstFrame {
+            onFirstFrame = nil
+            first()
+        }
+    }
+
+    func setStatus(_ status: String?) {
+        self.status = status
+        statusBadge.show(status)
+        layoutContent()
+    }
+
     /// The toplevel was destroyed, or the client disconnected.
     func clientLeft() {
         guard !closed else { return }
@@ -196,14 +244,23 @@ final class ClientSurface: FlippedView, Surface {
     // MARK: Surface
 
     var view: NSView { self }
-    var focusTarget: NSView { self }
-    var title: String { clientTitle.isEmpty ? launchLabel : clientTitle }
+    var focusTarget: NSView { terminal ?? self }
+    var title: String {
+        if !clientTitle.isEmpty { return clientTitle }
+        if let t = terminal?.title, !t.isEmpty { return t }
+        return launchLabel
+    }
     var kind: String { "app" }
-    var automationCapabilities: [String] { textInput.enabled ? ["send_text"] : [] }
-    var backdropColor: NSColor { NSColor(white: 0.08, alpha: 1) }
+    var automationCapabilities: [String] {
+        if let terminal { return terminal.automationCapabilities }
+        return textInput.enabled ? ["send_text"] : []
+    }
+    var backdropColor: NSColor { terminal?.backdrop ?? NSColor(white: 0.08, alpha: 1) }
     var info: [String: Any] {
         var result: [String: Any] = ["app": appID.isEmpty ? launchLabel : appID, "state": connection == nil ? "pending" : "connected",
                                      "framesShown": framesShown]
+        if terminal != nil { result["content"] = "terminal" }
+        if let status { result["status"] = status }
         if let c = connection { result["pid"] = Int(c.pid) }
         if let launchArgument { result["launch"] = launchArgument }
         if let appEntry { result["entry"] = appEntry }
@@ -260,6 +317,7 @@ final class ClientSurface: FlippedView, Surface {
     }
 
     func setOccluded(_ occluded: Bool) {
+        terminal?.setTerminalOccluded(occluded)
         guard occluded != self.occluded else { return }
         self.occluded = occluded
         updateLink()
@@ -276,6 +334,7 @@ final class ClientSurface: FlippedView, Surface {
 
     func destroy() {
         closed = true
+        terminal?.destroy()
         link?.invalidate()
         link = nil
         releaseAllBuffers()
@@ -286,6 +345,13 @@ final class ClientSurface: FlippedView, Surface {
     // MARK: Protocol, from ClientConnection
 
     func setClientTitle(_ title: String) { clientTitle = title }
+
+    /// Applies a new terminal background (a config reload).
+    func refreshTerminalBackdrop(_ color: NSColor) {
+        guard let terminal else { return }
+        terminal.backdrop = color
+        layer?.backgroundColor = color.cgColor
+    }
 
     func ackConfigure(_ serial: UInt64) { ackedSerial = max(ackedSerial, serial) }
 
@@ -519,7 +585,9 @@ final class ClientSurface: FlippedView, Surface {
         tracking = area
     }
 
-    func nextSerial() -> UInt64 { inputSerial += 1; return inputSerial }
+    /// Serials count per connection. A press's serial can activate another of the
+    /// client's toplevels (`toplevel.request_activate`).
+    func nextSerial(activating: Bool = false) -> UInt64 { connection?.nextInputSerial(activating: activating) ?? 0 }
     private func modifierBits(_ flags: NSEvent.ModifierFlags) -> UInt64 {
         UInt64(flags.intersection(.deviceIndependentFlagsMask).rawValue)
     }
@@ -553,7 +621,7 @@ final class ClientSurface: FlippedView, Surface {
     private func button(_ event: NSEvent, down: Bool) {
         let b: UInt64 = event.type == .leftMouseDown || event.type == .leftMouseUp ? 0
             : event.type == .rightMouseDown || event.type == .rightMouseUp ? 1 : UInt64(max(2, event.buttonNumber))
-        sendPointer(HMOp.pointerButton, event, ["serial": nextSerial(), "button": b, "state": down ? "down" : "up",
+        sendPointer(HMOp.pointerButton, event, ["serial": nextSerial(activating: down), "button": b, "state": down ? "down" : "up",
                                                 "click_count": UInt64(max(1, event.clickCount))])
     }
 
@@ -582,7 +650,7 @@ final class ClientSurface: FlippedView, Surface {
 
     private func sendKey(_ event: NSEvent, down: Bool) {
         connection?.send(HMOp.keyboardKey, [
-            "surface": surfaceID, "serial": nextSerial(), "time": event.timestamp,
+            "surface": surfaceID, "serial": nextSerial(activating: down), "time": event.timestamp,
             "key_code": UInt64(event.keyCode), "state": down ? "down" : "up", "repeat": down && event.isARepeat,
             "characters": event.characters ?? "", "characters_ignoring_modifiers": event.charactersIgnoringModifiers ?? "",
             "modifiers": modifierBits(event.modifierFlags),
@@ -641,4 +709,82 @@ final class ClientSurface: FlippedView, Surface {
         if cursorName == "hidden" { NSCursor.arrow.set(); return }
         cursor.set()
     }
+}
+
+
+// MARK: Terminal toplevels
+
+/// The tile's terminal reports here. Closing tells the client; the title is the
+/// tile's; the rest goes to the compositor, as for any terminal.
+extension ClientSurface: TerminalViewHost {
+    func terminalDidRequestFocus(_ view: TerminalView) { terminalHost?.terminalDidRequestFocus(view) }
+
+    func terminalTitleDidChange(_ view: TerminalView) { onTitleChange?(self) }
+
+    func terminalDidClose(_ view: TerminalView, processAlive: Bool) { terminalExited(view, status: nil) }
+
+    /// The command exited, or the terminal closed. The client decides what happens to the
+    /// tile; without a client, the tile goes.
+    func terminalExited(_ view: TerminalView, status: Int?) {
+        guard view === terminal else { return }
+        terminal = nil
+        view.removeFromSuperview()
+        // Not inside Ghostty's callback: it still holds the surface.
+        DispatchQueue.main.async { view.destroy() }
+        placeholder.stringValue = "Exited"
+        layoutContent()
+        if let connection, toplevelID != 0 {
+            var fields: [String: Any] = ["id": toplevelID]
+            if let status { fields["status"] = status }
+            connection.send(HMOp.toplevelTerminalExited, fields)
+        } else {
+            clientLeft()
+        }
+    }
+
+    func terminalDidRequestSpawn(_ view: TerminalView) { terminalHost?.terminalDidRequestSpawn(view) }
+    func terminal(_ view: TerminalView, perform dispatcher: Dispatcher) { terminalHost?.terminal(view, perform: dispatcher) }
+    func terminalDidToggleWindowFullscreen(_ view: TerminalView) { terminalHost?.terminalDidToggleWindowFullscreen(view) }
+    func terminal(_ view: TerminalView, openURL url: URL) -> Bool { terminalHost?.terminal(view, openURL: url) ?? false }
+    func terminal(_ view: TerminalView, notifyTitle title: String, body: String) {
+        terminalHost?.terminal(view, notifyTitle: title, body: body)
+    }
+}
+
+/// A small pill in a tile's top-right corner: what its content is doing.
+final class StatusBadge: NSTextField {
+    init() {
+        super.init(frame: .zero)
+        isEditable = false
+        isSelectable = false
+        isBordered = false
+        drawsBackground = false
+        font = .systemFont(ofSize: 11, weight: .semibold)
+        textColor = .white
+        alignment = .center
+        wantsLayer = true
+        layer?.cornerRadius = 8
+        layer?.masksToBounds = true
+    }
+
+    required init?(coder: NSCoder) { fatalError("not supported") }
+
+    func show(_ status: String?) {
+        let (text, color): (String, NSColor) = switch status {
+        case HMToplevelStatus.working: ("working", .systemOrange)
+        case HMToplevelStatus.blocked: ("needs you", .systemRed)
+        case HMToplevelStatus.done: ("done", .systemGreen)
+        default: ("", .clear)
+        }
+        stringValue = text
+        layer?.backgroundColor = color.withAlphaComponent(0.85).cgColor
+        isHidden = text.isEmpty
+    }
+
+    override func sizeToFit() {
+        super.sizeToFit()
+        frame.size = CGSize(width: frame.width + 16, height: max(16, frame.height + 2))
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }

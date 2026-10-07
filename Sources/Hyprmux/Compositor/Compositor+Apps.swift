@@ -215,10 +215,10 @@ extension Compositor {
         if let exe = c.executable {
             try checkTrust(app, executable: exe)
             return AppCommand(executable: URL(fileURLWithPath: exe), bundle: nil, arguments: c.arguments, label: m.name,
-                              adapterID: adapter, app: m.app, single: single)
+                              adapterID: adapter, app: m.app, single: single, appID: m.id)
         }
         return AppCommand(executable: nil, bundle: c.app.map { URL(fileURLWithPath: $0) }, arguments: c.arguments,
-                          label: m.name, adapterID: nil, app: m.app, single: single)
+                          label: m.name, adapterID: nil, app: m.app, single: single, appID: m.id)
     }
 
     /// `appCommand`, marked so the session restores the tiles by app id.

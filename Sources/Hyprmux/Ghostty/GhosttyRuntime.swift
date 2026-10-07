@@ -241,6 +241,11 @@ final class GhosttyRuntime {
             guard let v else { return false }
             let l = action.action.mouse_over_link
             v.runtimeSetHoveredLink(l.url.flatMap { l.len > 0 ? String(data: Data(bytes: $0, count: Int(l.len)), encoding: .utf8) : nil })
+        case GHOSTTY_ACTION_SHOW_CHILD_EXITED:
+            // A command's exit. Ghostty waits for a key before it closes the surface, unless
+            // someone takes the exit: a client's terminal toplevel does.
+            guard let v, let exited = v.onChildExited else { return false }
+            exited(action.action.child_exited.exit_code)
         case GHOSTTY_ACTION_DESKTOP_NOTIFICATION:
             // OSC 9 / OSC 777 from a program in the terminal.
             guard let v else { return false }

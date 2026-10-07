@@ -20,6 +20,14 @@ protocol ClientServerHost: AnyObject {
     /// The connection a launch went to closed before the launch got a window.
     func clientServer(_ server: ClientServer, lost launch: AppLaunch)
     func clientServer(_ server: ClientServer, titleChanged surface: ClientSurface)
+    /// A terminal for a terminal toplevel's tile, running `command` (argv). It has the
+    /// tile's id. Nil when Ghostty can't make one.
+    func clientServer(_ server: ClientServer, terminalFor tile: ClientSurface, command: [String], cwd: String?,
+                      env: [String: String]) -> TerminalView?
+    /// `toplevel.request_activate` with a valid token: focus the tile.
+    func clientServer(_ server: ClientServer, activate tile: ClientSurface)
+    /// `notification.post`. `tile` is the toplevel it names: clicking the notice finds it.
+    func clientServer(_ server: ClientServer, notify title: String, body: String, from tile: ClientSurface?)
     /// An app tile waits for a client, but Hyprmux isn't registered with the broker.
     /// Called once per launch; the host explains what the user can do.
     func clientServerUnavailable(_ server: ClientServer)
@@ -224,6 +232,30 @@ final class ClientConnection {
     private var toplevels: [UInt64: ClientSurface] = [:]
     private var subsurfaces: [UInt64: SubsurfaceState] = [:]
     private var closed = false
+    private var inputSerial: UInt64 = 0
+    /// Recent press serials, which can activate a toplevel, with when they were sent.
+    private var activationSerials: [(serial: UInt64, time: TimeInterval)] = []
+    /// How long a press can activate a toplevel.
+    static let activationWindow: TimeInterval = 10
+
+    func nextInputSerial(activating: Bool) -> UInt64 {
+        inputSerial += 1
+        if activating {
+            let now = ProcessInfo.processInfo.systemUptime
+            activationSerials.removeAll { now - $0.time > Self.activationWindow }
+            activationSerials.append((inputSerial, now))
+        }
+        return inputSerial
+    }
+
+    /// Uses up an activation token: a press serial from the last few seconds.
+    private func takeActivation(_ token: UInt64) -> Bool {
+        let now = ProcessInfo.processInfo.systemUptime
+        guard let i = activationSerials.firstIndex(where: { $0.serial == token }),
+              now - activationSerials[i].time <= Self.activationWindow else { return false }
+        activationSerials.remove(at: i)
+        return true
+    }
 
     init(peer: xpc_connection_t, server: ClientServer) {
         self.peer = peer
@@ -384,23 +416,56 @@ final class ClientConnection {
             guard toplevels[id] == nil, id != 0 else { return fail("object", "toplevel id \(id) in use") }
             guard s.toplevel == 0 else { return fail("role", "surface \(sid) already has a role") }
             guard s.subsurface == 0 else { return fail("role", "surface \(sid) already has a role") }
-            guard let server, let host = server.host else { return }
-            let restore = m.string("restore_token").flatMap { $0.isEmpty ? nil : $0 }
-            let named = m.string("launch_token").flatMap { $0.isEmpty ? nil : $0 }
-            // A launch answers only through the connection it went to.
-            let launch = server.launch(for: named ?? launchToken).flatMap { $0.connection === self ? $0 : nil }
-            let reserved = launch?.takeReserved(restore: restore)
-            let tile = reserved ?? host.clientServer(server, newSurfaceFor: appID, name: name, launch: launch)
             s.toplevel = id
-            toplevels[id] = tile
-            tile.bind(connection: self, toplevel: id, surface: sid, appID: appID)
-            if let launch {
-                launch.stamp(tile)
-            } else {
-                tile.launchArgument = nil
+            createToplevel(id, surface: sid, m)
+
+        case HMOp.toplevelCreateTerminal:
+            guard toplevels[id] == nil, id != 0 else { return fail("object", "toplevel id \(id) in use") }
+            let command = m.strings("argv")
+            guard !command.isEmpty, !command[0].isEmpty else { return fail("toplevel", "create_terminal needs argv") }
+            var env: [String: String] = [:]
+            for pair in m.strings("env") {
+                guard let eq = pair.firstIndex(of: "="), eq != pair.startIndex else {
+                    return fail("toplevel", "env entries are NAME=VALUE")
+                }
+                env[String(pair[..<eq])] = String(pair[pair.index(after: eq)...])
             }
-            tile.restoreToken = restore
-            if let launch { host.clientServer(server, opened: tile, for: launch) }
+            let cwd = m.string("cwd").flatMap { $0.isEmpty ? nil : $0 }
+            createToplevel(id, surface: 0, m) { [weak self] tile in
+                guard let self, let server = self.server, let host = server.host else { return }
+                if let term = host.clientServer(server, terminalFor: tile, command: command, cwd: cwd, env: env) {
+                    tile.attachTerminal(term)
+                } else {
+                    tile.launchFailed("Couldn't start the terminal")
+                    self.send(HMOp.toplevelTerminalExited, ["id": id])
+                }
+            }
+
+        case HMOp.toplevelRequestActivate:
+            guard let tile = toplevels[id] else { return fail("object", "no toplevel \(id)") }
+            // Without a valid token nothing happens: a client can't steal focus. A token is
+            // a recent press's serial, or a launch the app is answering (the user opened it).
+            let launch = server?.launch(for: m.string("launch_token")).flatMap { $0.connection === self && $0.pending ? $0 : nil }
+            guard launch != nil || takeActivation(m.uint("activation_token")), let server else {
+                clientLog.info("client \(self.pid): activation without a valid token ignored")
+                return
+            }
+            server.host?.clientServer(server, activate: tile)
+
+        case HMOp.toplevelSetStatus:
+            guard let tile = toplevels[id] else { return fail("object", "no toplevel \(id)") }
+            let state = m.string("state") ?? ""
+            guard state.isEmpty || HMToplevelStatus.all.contains(state) else {
+                return fail("toplevel", "unknown status \(state)")
+            }
+            tile.setStatus(state.isEmpty ? nil : state)
+
+        case HMOp.notificationPost:
+            let title = m.string("title") ?? "", body = m.string("body") ?? ""
+            guard !title.isEmpty || !body.isEmpty else { return fail("notification", "empty notification") }
+            let tile = m.uint("toplevel") == 0 ? nil : toplevels[m.uint("toplevel")]
+            guard let server else { return }
+            server.host?.clientServer(server, notify: title, body: body, from: tile)
 
         case HMOp.toplevelSetRestoreToken:
             guard let tile = toplevels[id] else { return fail("object", "no toplevel \(id)") }
@@ -457,6 +522,29 @@ final class ClientConnection {
         default:
             fail("protocol", "unknown op \(op)")
         }
+    }
+
+    /// Gives a new toplevel its tile: a reserved one from its launch (a restore), else a
+    /// new one. `content` fills a terminal toplevel before the launch hears it opened.
+    private func createToplevel(_ id: UInt64, surface sid: UInt64, _ m: xpc_object_t,
+                                content: ((ClientSurface) -> Void)? = nil) {
+        guard let server, let host = server.host else { return }
+        let restore = m.string("restore_token").flatMap { $0.isEmpty ? nil : $0 }
+        let named = m.string("launch_token").flatMap { $0.isEmpty ? nil : $0 }
+        // A launch answers only through the connection it went to.
+        let launch = server.launch(for: named ?? launchToken).flatMap { $0.connection === self ? $0 : nil }
+        let reserved = launch?.takeReserved(restore: restore)
+        let tile = reserved ?? host.clientServer(server, newSurfaceFor: appID, name: name, launch: launch)
+        toplevels[id] = tile
+        tile.bind(connection: self, toplevel: id, surface: sid, appID: appID)
+        if let launch {
+            launch.stamp(tile)
+        } else {
+            tile.launchArgument = nil
+        }
+        tile.restoreToken = restore
+        content?(tile)
+        if let launch { host.clientServer(server, opened: tile, for: launch) }
     }
 
     private func hello(_ m: xpc_object_t) {

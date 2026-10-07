@@ -263,6 +263,42 @@ server → toplevel.close_requested { id }
 - **Placement:** there's no request for a workspace or position. Placement is
   policy, driven by `windowrule` config later, not by the protocol.
 
+### 5.5 Terminal toplevels
+
+A terminal toplevel is a tile that shows a Hyprmux terminal. The client names a
+command, and Hyprmux runs it in a Ghostty terminal, like any terminal tile.
+There are no buffers: Hyprmux draws, and the terminal takes its own keyboard,
+mouse, and text input. The client owns the tile: an app that manages
+terminals elsewhere (a remote shell, a session another program owns) shows
+them as Hyprmux terminals.
+
+```
+client → toplevel.create_terminal { id, argv: [..], env: ["NAME=VALUE", ..], cwd?,
+                                    restore_token?, launch_token? }
+client → toplevel.set_status { id, state }      working | blocked | done | "" (clears)
+server → toplevel.terminal_exited { id, status? }
+
+client → notification.post { title, body, toplevel? }
+```
+
+- **Like a toplevel:** `set_title`, `set_restore_token`, `destroy`,
+  `close_requested`, launches, and restore work as in 5.4. Hyprmux still sends
+  `configure`; its `activated` state says whether the terminal has keyboard
+  focus. There's no surface: the toplevel has no `surface` id.
+- **The command** is argv. Hyprmux quotes it for the shell that runs it. The
+  terminal gets Hyprmux's terminal environment plus `env`.
+- **Exiting:** when the command exits, the tile shows "Exited" and the client gets
+  `terminal_exited`, with the exit status when Ghostty reports one. The tile stays
+  until the client destroys the toplevel. Without a client, it goes. Ghostty doesn't
+  wait for a key, as it does for a terminal tile's command.
+- **Title:** the client's title, else the program's own (OSC 0/2).
+- **Status** is a pill in the tile's top-right corner: "working", "needs you",
+  "done". `hyprmuxctl surfaces` shows it as `status`.
+- **Automation:** `read-screen`, `read-selection`, `send --surface`, and
+  `send-key --surface` work on the tile as on a terminal tile.
+- **Notifications** show in Hyprmux's HUD, like a terminal's OSC 9. With
+  `toplevel`, clicking one finds that tile.
+
 ## 6. Input
 
 The compositor translates `NSEvent`s and sends them to the surface under the
@@ -635,8 +671,12 @@ Differences from the text above:
   Animation redraws the whole layer.
 - **Cursor:** `pointer.set_cursor` applies to every toplevel of the
   connection, and `hidden` shows the arrow.
-- **Not yet:** `request_fullscreen`, `request_activate`, `set_min_size`, and
-  popups.
+- **Not yet:** `request_fullscreen`, `set_min_size`, and popups.
+- **Activation:** `request_activate` takes `activation_token`, the serial of a
+  button press or key press Hyprmux sent to one of the client's toplevels in the
+  last 10 seconds (each works once), or `launch_token`, a launch the client is
+  still answering. Without either, nothing happens. The Swift kit's
+  `requestActivate()` uses the latest press.
 - **Session restore** of app tiles works: tiles relaunch their app and match
   windows by restore token.
 - **Launches in the Rust client:** it has no `launch`, `launch.offer`, or

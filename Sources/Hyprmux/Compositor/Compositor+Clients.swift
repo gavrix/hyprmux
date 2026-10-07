@@ -72,6 +72,8 @@ extension Compositor: ClientServerHost {
         var entryArgs: [String] = []
         /// The `.hmapp` id, when it runs a single process (`"instances": "single"`).
         var single: String?
+        /// The `.hmapp` id, however it was opened: its settings folder is named after it.
+        var appID: String?
     }
 
     func resolveApp(_ argument: String) throws -> AppCommand {
@@ -148,10 +150,18 @@ extension Compositor: ClientServerHost {
         return l
     }
 
+    /// An app's own settings folder: `app-config/<id>/` next to Hyprmux's config. Hyprmux
+    /// never reads it (docs/APPS.md, App settings).
+    static func appConfigDirectory(_ appID: String) -> String {
+        ((AppDelegate.configPath as NSString).deletingLastPathComponent as NSString)
+            .appendingPathComponent("app-config/\(appID)")
+    }
+
     /// Runs the launch's process with its token in the environment.
     private func spawn(_ command: AppCommand, for l: AppLaunch, argument: String) throws {
         let token = l.token
-        let env = [HMProtocol.launchTokenVariable: token, HMProtocol.instanceVariable: clientServer.instance]
+        var env = [HMProtocol.launchTokenVariable: token, HMProtocol.instanceVariable: clientServer.instance]
+        if let id = command.appID { env[HMProtocol.appConfigDirVariable] = Self.appConfigDirectory(id) }
         let label = command.label
 
         if let bundle = command.bundle {
@@ -481,6 +491,29 @@ extension Compositor: ClientServerHost {
 
     func clientServerUnavailable(_ server: ClientServer) {
         explainBrokerUnavailable()
+    }
+
+    func clientServer(_ server: ClientServer, terminalFor tile: ClientSurface, command: [String], cwd: String?,
+                      env: [String: String]) -> TerminalView? {
+        var opts = SurfaceOptions()
+        opts.command = command.map(shellQuote).joined(separator: " ")
+        opts.workingDirectory = cwd
+        opts.env = env
+        guard let term = makeTerminal(opts, id: tile.clientID) else { return nil }
+        tile.terminalHost = self
+        tile.onTitleChange = { [weak self] t in self?.surfaceTitleDidChange(t) }
+        return term
+    }
+
+    func clientServer(_ server: ClientServer, activate tile: ClientSurface) {
+        guard views[tile.clientID] != nil else { return }
+        log.debug("focus reason=client client=\(tile.clientID.raw)")
+        wm.focus(tile.clientID)
+        apply(animated: true)
+    }
+
+    func clientServer(_ server: ClientServer, notify title: String, body: String, from tile: ClientSurface?) {
+        hud.notifications.post(.info, title: title, body, source: tile?.clientID)
     }
 }
 

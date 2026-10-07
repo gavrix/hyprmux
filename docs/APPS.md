@@ -154,6 +154,14 @@ It keeps its own Zed database and session, apart from a normal Zed, and
 shares the settings in `~/.config/zed`. It doesn't update itself: replace
 `Zed.hmapp` with a newer one.
 
+## App settings
+
+An app keeps its own settings, not in `hyprmux.conf`. Hyprmux gives every app it
+starts a folder for them in `HYPRMUX_APP_CONFIG_DIR`:
+`app-config/<app id>/` next to the config file, normally
+`~/.config/hyprmux/app-config/<app id>/`. Hyprmux never reads it or creates it.
+What goes in it is up to the app.
+
 ## Customizing an app
 
 Copy its generated `.hmapp` into the installed folder and edit `Info.json`:

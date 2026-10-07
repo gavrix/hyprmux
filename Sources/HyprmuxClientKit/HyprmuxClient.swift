@@ -96,6 +96,9 @@ public final class HMClient {
     fileprivate var dialogReplies: [UInt64: ([String: Any]) -> Void] = [:]
     fileprivate var menuReplies: [UInt64: (String?) -> Void] = [:]
     fileprivate var subsurfaces: [UInt64: HMSubsurface] = [:]
+    /// The serial of the last button press or key press Hyprmux sent: the activation
+    /// token for `HMToplevel.requestActivate()`.
+    public private(set) var lastPressSerial: UInt64 = 0
     /// Launches still open: offered, or waiting for windows.
     fileprivate var launches: [String: HMLaunch] = [:]
     /// Hyprmux asks for windows: once for the launch that started the process, right
@@ -166,6 +169,30 @@ public final class HMClient {
         return t
     }
 
+    /// A tile showing a Hyprmux terminal that runs `command` (argv). Hyprmux draws and
+    /// handles input; the toplevel has no surface to draw into. `onTerminalExited` says
+    /// when the command ends; the tile stays until you `destroy` it.
+    public func makeTerminal(command: [String], cwd: String? = nil, env: [String: String] = [:], title: String,
+                             restoreToken: String? = nil, launch: HMLaunch? = nil) -> HMToplevel {
+        let id = allocate()
+        var create: [String: Any] = ["id": id, "argv": command, "env": env.map { "\($0.key)=\($0.value)" }.sorted()]
+        if let cwd { create["cwd"] = cwd }
+        if let restoreToken { create["restore_token"] = restoreToken }
+        if let launch { create["launch_token"] = launch.token }
+        send(HMOp.toplevelCreateTerminal, create)
+        let t = HMToplevel(client: self, id: id, surfaceID: 0)
+        toplevels[id] = t
+        t.setTitle(title)
+        return t
+    }
+
+    /// A notice in Hyprmux's HUD. Clicking it finds `toplevel`'s tile.
+    public func postNotification(title: String, body: String, toplevel: HMToplevel? = nil) {
+        var fields: [String: Any] = ["title": title, "body": body]
+        if let toplevel { fields["toplevel"] = toplevel.id }
+        send(HMOp.notificationPost, fields)
+    }
+
     func allocate() -> UInt64 { defer { nextID += 1 }; return nextID }
 
     func send(_ op: String, _ fields: [String: Any]) {
@@ -200,6 +227,9 @@ public final class HMClient {
                 states: Set(m.strings("states")), serial: m.uint("serial")))
         case HMOp.toplevelCloseRequested:
             toplevels[m.uint("id")]?.onCloseRequested?()
+        case HMOp.toplevelTerminalExited:
+            let status = m.value("status") == nil ? nil : Int(m.int("status"))
+            toplevels[m.uint("id")]?.onTerminalExited?(status)
         case HMOp.surfaceFrameDone:
             frameCallbacks.removeValue(forKey: m.uint("callback"))?(m.double("target_time"))
         case HMOp.bufferRelease:
@@ -227,6 +257,7 @@ public final class HMClient {
             toplevelsBySurface[m.uint("surface")]?.onPointer?(.motion(x: m.double("x"), y: m.double("y"),
                                                                      buttons: m.uint("buttons"), modifiers: m.uint("modifiers")))
         case HMOp.pointerButton:
+            if m.string("state") == "down" { lastPressSerial = m.uint("serial") }
             toplevelsBySurface[m.uint("surface")]?.onPointer?(.button(
                 x: m.double("x"), y: m.double("y"), button: Int(m.uint("button")), down: m.string("state") == "down",
                 clickCount: Int(m.uint("click_count")), modifiers: m.uint("modifiers")))
@@ -240,6 +271,7 @@ public final class HMClient {
         case HMOp.keyboardLeave:
             toplevelsBySurface[m.uint("surface")]?.onKeyboardFocus?(false)
         case HMOp.keyboardKey:
+            if m.string("state") == "down" { lastPressSerial = m.uint("serial") }
             toplevelsBySurface[m.uint("surface")]?.onKey?(HMKeyEvent(
                 keyCode: UInt16(m.uint("key_code")), down: m.string("state") == "down", isRepeat: m.bool("repeat"),
                 characters: m.string("characters") ?? "", charactersIgnoringModifiers: m.string("characters_ignoring_modifiers") ?? "",
@@ -273,6 +305,8 @@ public final class HMToplevel {
     public var onKey: ((HMKeyEvent) -> Void)?
     public var onModifiers: ((UInt64) -> Void)?
     public var onKeyboardFocus: ((Bool) -> Void)?
+    /// A terminal toplevel's command exited, with its status when known.
+    public var onTerminalExited: ((Int?) -> Void)?
     /// A swapchain buffer became free. Clients that skip frames while every buffer is
     /// busy should present their latest content here.
     public var onBufferReleased: (() -> Void)?
@@ -290,6 +324,16 @@ public final class HMToplevel {
 
     public func setTitle(_ title: String) { client.send(HMOp.toplevelSetTitle, ["id": id, "title": title]) }
     public func setRestoreToken(_ token: String) { client.send(HMOp.toplevelSetRestoreToken, ["id": id, "token": token]) }
+    /// Focuses this tile, switching to its workspace. Works only right after a press in
+    /// one of this client's tiles (it uses that press as the activation token), or while
+    /// answering `launch`: opening the app again brings its window to you.
+    public func requestActivate(launch: HMLaunch? = nil) {
+        var fields: [String: Any] = ["id": id, "activation_token": client.lastPressSerial]
+        if let launch { fields["launch_token"] = launch.token }
+        client.send(HMOp.toplevelRequestActivate, fields)
+    }
+    /// What the tile's content is doing (`HMToplevelStatus`), drawn on the tile. Nil clears it.
+    public func setStatus(_ status: String?) { client.send(HMOp.toplevelSetStatus, ["id": id, "state": status ?? ""]) }
 
     /// Shows a native dialog over this tile. See `HMDialogKind` for options and results.
     public func openDialog(kind: String, options: [String: Any], reply: @escaping ([String: Any]) -> Void) {
@@ -403,7 +447,8 @@ public final class HMToplevel {
         for sub in children { sub.destroy() }
         children.removeAll()
         client.send(HMOp.toplevelDestroy, ["id": id])
-        client.send(HMOp.surfaceDestroy, ["id": surfaceID])
+        // A terminal toplevel has no surface.
+        if surfaceID != 0 { client.send(HMOp.surfaceDestroy, ["id": surfaceID]) }
         swapchain.destroyAll()
         client.toplevels[id] = nil
         client.toplevelsBySurface[surfaceID] = nil

@@ -14,6 +14,7 @@ extension Compositor {
         }
         if let resume = r.resume {
             resumeReports[id] = resume
+            restoredAgents[id] = nil
             scheduleSessionSave()
         }
         if let change = agents.report(r, seen: agentSeen(id)) { agentChanged(change) }

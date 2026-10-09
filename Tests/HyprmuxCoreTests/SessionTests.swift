@@ -219,6 +219,37 @@ final class RestorePolicyTests: XCTestCase {
         XCTAssertEqual(RestorePolicy.shellQuote("~/x"), "'~/x'")
     }
 
+    func testIsShell() {
+        XCTAssertTrue(RestorePolicy.isShell(argv: ["-zsh"]))
+        XCTAssertTrue(RestorePolicy.isShell(argv: ["/bin/bash", "--login"]))
+        XCTAssertTrue(RestorePolicy.isShell(argv: nil))
+        XCTAssertFalse(RestorePolicy.isShell(argv: ["pi", "--session", "x"]))
+    }
+
+    /// A restored agent survives saves until it starts and while it runs, and goes once
+    /// its job ends or it never starts.
+    func testRestoredAgentStaysUntilItLeaves() {
+        let t0 = Date(timeIntervalSince1970: 1000)
+        var a = RestoredAgent(agent: SessionAgent(kind: "pi", session: "s"), cwd: "/x", since: t0)
+        // Still at the shell: the resume command hasn't started yet.
+        XCTAssertTrue(a.stillPending(foreground: 10, isShell: true, now: t0.addingTimeInterval(5)))
+        // The agent runs.
+        XCTAssertTrue(a.stillPending(foreground: 42, isShell: false, now: t0.addingTimeInterval(10)))
+        XCTAssertEqual(a.job, 42)
+        XCTAssertTrue(a.stillPending(foreground: 42, isShell: false, now: t0.addingTimeInterval(500)))
+        // Something else runs now: the agent left.
+        var other = a
+        XCTAssertFalse(other.stillPending(foreground: 43, isShell: false, now: t0.addingTimeInterval(501)))
+        // Back at the shell after the agent ran.
+        XCTAssertFalse(a.stillPending(foreground: 10, isShell: true, now: t0.addingTimeInterval(20)))
+
+        // Never started.
+        let b = RestoredAgent(agent: SessionAgent(kind: "pi", session: "s"), cwd: nil, since: t0)
+        var late = b
+        XCTAssertFalse(late.stillPending(foreground: 10, isShell: true,
+                                         now: t0.addingTimeInterval(RestoredAgent.grace + 1)))
+    }
+
     func testConfigAndIPC() {
         let c = ConfigParser.parse("""
         session {

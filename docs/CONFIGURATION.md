@@ -409,9 +409,14 @@ resume {"client": 12, "pid": 4711, "kind": "pi", "session": "01a0…", "cwd": "/
 ```
 
 `client` is the terminal's `HYPRMUX_CLIENT`, and `pid` is the agent's process.
-The report counts only while that process runs in the terminal's foreground, and,
-when `file` is given, while that file exists. So an agent you exited comes back as
-a plain shell. For pi, `~/.pi/agent/extensions/hyprmux-session.ts` sends the
+The report counts only while that process runs in the terminal, and, when `file`
+is given, while that file exists. It may sit behind a program it started, or be
+stopped with ctrl-z. So an agent you exited comes back as a plain shell.
+
+A restored agent keeps its session until it reports again. A save that runs while
+it's still starting keeps the session, so a quick second restart doesn't lose it.
+It drops the session once the agent's program ends, or after a minute if it never
+starts. For pi, `~/.pi/agent/extensions/hyprmux-session.ts` sends the
 report on every session start (launch, `/new`, `/resume`, fork).
 
 An agent that reports its state (`agent {…}`, see

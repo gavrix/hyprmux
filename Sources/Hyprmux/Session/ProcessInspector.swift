@@ -41,4 +41,12 @@ enum ProcessInspector {
         guard pid > 0, group > 0, kill(pid, 0) == 0 else { return false }
         return getpgid(pid) == group
     }
+
+    /// Whether `pid` is alive in the same terminal session as `foreground`, even when it
+    /// isn't the foreground job (stopped, or behind a program it started).
+    static func isAlive(_ pid: pid_t, inSessionOf foreground: pid_t) -> Bool {
+        guard pid > 0, foreground > 0, kill(pid, 0) == 0 else { return false }
+        let sid = getsid(pid)
+        return sid > 0 && sid == getsid(foreground)
+    }
 }

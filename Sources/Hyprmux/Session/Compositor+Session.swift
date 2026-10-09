@@ -85,13 +85,26 @@ extension Compositor {
             var tile = SessionTile(kind: "terminal", title: title)
             let fg = t.foregroundPID
             tile.cwd = t.pwd ?? ProcessInspector.cwd(fg)
-            if let r = resumeReports[id], ProcessInspector.isRunning(r.pid, inGroup: fg),
+            let argv = ProcessInspector.argv(fg)
+            if let r = resumeReports[id],
+               ProcessInspector.isRunning(r.pid, inGroup: fg) || ProcessInspector.isAlive(r.pid, inSessionOf: fg),
                r.file.map({ FileManager.default.fileExists(atPath: $0) }) ?? true {
-                // An agent still running in this terminal's foreground.
+                // An agent still running in this terminal: in front, or behind a program it
+                // started or a ctrl-z.
                 tile.agent = SessionAgent(kind: r.kind, session: forLayout ? nil : r.session)
                 if let c = r.cwd { tile.cwd = c }
-            } else if let argv = ProcessInspector.argv(fg),
-                      let cmd = RestorePolicy.programCommand(argv: argv, typed: t.title, settings: config.session) {
+            } else if var pending = restoredAgents[id] {
+                // Restored, and the agent hasn't reported yet: keep it unless it already left.
+                if pending.stillPending(foreground: fg, isShell: RestorePolicy.isShell(argv: argv), now: Date()) {
+                    restoredAgents[id] = pending
+                    tile.agent = forLayout ? SessionAgent(kind: pending.agent.kind) : pending.agent
+                    if let c = pending.cwd { tile.cwd = c }
+                } else {
+                    restoredAgents[id] = nil
+                }
+            }
+            if tile.agent == nil, let argv,
+               let cmd = RestorePolicy.programCommand(argv: argv, typed: t.title, settings: config.session) {
                 tile.command = cmd
                 tile.cwd = ProcessInspector.cwd(fg) ?? tile.cwd
             }
@@ -150,6 +163,9 @@ extension Compositor {
             if let command, !command.isEmpty { opts.initialInput = command + "\n" }
             guard let term = makeTerminal(opts) else { return nil }
             adopt(term)
+            if let agent = t.agent, agent.session != nil, command != nil {
+                restoredAgents[term.clientID] = RestoredAgent(agent: agent, cwd: t.cwd, since: Date())
+            }
             return term.clientID
         }
     }

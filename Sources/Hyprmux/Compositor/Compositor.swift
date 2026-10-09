@@ -34,6 +34,8 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
     let apps = AppRuntime()
     /// Agents' resume reports, by terminal (see `hyprmuxctl resume`).
     var resumeReports: [ClientID: ResumeReport] = [:]
+    /// Agents a restore typed into terminals, until they report (Compositor+Session).
+    var restoredAgents: [ClientID: RestoredAgent] = [:]
     /// Agents in terminals and the state shown for them (Compositor+Agents).
     var agents = AgentTracker()
     var agentWatchScheduled = false
@@ -522,6 +524,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
     func removeClient(_ id: ClientID) {
         guard let v = views.removeValue(forKey: id) else { return }
         resumeReports[id] = nil
+        restoredAgents[id] = nil
         agentClientRemoved(id)
         wm.removeClient(id)
         closing[id] = v
@@ -1107,6 +1110,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
                 let id = ClientID(r.client)
                 guard views[id]?.surface is TerminalView else { return "error: no terminal \(r.client)" }
                 resumeReports[id] = r
+                restoredAgents[id] = nil
                 log.debug("resume report client=\(r.client) kind=\(r.kind, privacy: .public)")
                 scheduleSessionSave()
                 return "ok"

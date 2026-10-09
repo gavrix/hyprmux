@@ -499,9 +499,48 @@ public struct ResumeReport: Codable, Equatable, Sendable {
     }
 }
 
+/// An agent a restore typed into a terminal (its `session:resume:KIND` command), kept for
+/// saving until the agent reports again. Without it, a save that runs before the resumed
+/// agent reports (it can take seconds to start) drops the agent, and a quick second
+/// restart loses the session.
+public struct RestoredAgent: Equatable, Sendable {
+    public var agent: SessionAgent
+    public var cwd: String?
+    public var since: Date
+    /// The foreground job the resume command became. Nil until a save sees it.
+    public var job: Int32?
+
+    /// How long a terminal may sit at its shell before the agent counts as never started.
+    public static let grace: TimeInterval = 60
+
+    public init(agent: SessionAgent, cwd: String?, since: Date, job: Int32? = nil) {
+        self.agent = agent
+        self.cwd = cwd
+        self.since = since
+        self.job = job
+    }
+
+    /// Whether the agent still counts, given the terminal's foreground job now. The first
+    /// program that runs is taken as the agent; the agent is gone once that job is.
+    public mutating func stillPending(foreground: Int32, isShell: Bool, now: Date) -> Bool {
+        if isShell { return job == nil && now.timeIntervalSince(since) < Self.grace }
+        if let job { return job == foreground }
+        job = foreground
+        return true
+    }
+}
+
 public enum RestorePolicy {
     /// A foreground shell means nothing else is running.
     static let shells: Set<String> = ["zsh", "bash", "fish", "sh", "dash", "tcsh", "csh", "ksh", "nu", "xonsh", "login"]
+
+    /// Whether a foreground process is just the shell: nothing runs in the terminal.
+    public static func isShell(argv: [String]?) -> Bool {
+        guard let first = argv?.first, !first.isEmpty else { return true }
+        var name = (first as NSString).lastPathComponent
+        if name.hasPrefix("-") { name.removeFirst() }
+        return shells.contains(name)
+    }
 
     /// The command to relaunch a terminal's foreground program with, or nil when it isn't
     /// allowed (or is just the shell).

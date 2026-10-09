@@ -95,6 +95,9 @@ final class MessageWindow: MobileWindow {
                     color: Draw.note)
         Draw.text(message, in: CGRect(x: x, y: size.height / 2 - 24, width: width, height: 24), size: 15,
                   weight: .semibold)
-        Draw.text(detail, in: CGRect(x: x, y: size.height / 2 + 6, width: width, height: 44), size: 12, color: Draw.note)
+        // Give the detail the rest of the window: it carries the reason discovery failed.
+        let detailHeight = max(44, size.height / 2 - 26)
+        Draw.text(detail, in: CGRect(x: x, y: size.height / 2 + 6, width: width, height: detailHeight), size: 12,
+                  color: Draw.note)
     }
 }

@@ -111,9 +111,18 @@ static NSString *DeveloperDir(void) {
   dispatch_once(&once, ^{
     NSString *dev = DeveloperDir();
     if (!dev.length) { failure = @"no Xcode selected (xcode-select -p)"; return; }
+    // Xcode 27 moved SimulatorKit from Developer/Library/PrivateFrameworks to
+    // Contents/SharedFrameworks. Take whichever this Xcode has.
+    NSString *simKit = [dev stringByAppendingPathComponent:@"Library/PrivateFrameworks/SimulatorKit.framework/SimulatorKit"];
+    NSString *shared = [[dev stringByDeletingLastPathComponent]
+        stringByAppendingPathComponent:@"SharedFrameworks/SimulatorKit.framework/SimulatorKit"];
+    if (![NSFileManager.defaultManager fileExistsAtPath:simKit] &&
+        [NSFileManager.defaultManager fileExistsAtPath:shared]) {
+      simKit = shared;
+    }
     NSArray *paths = @[
       @"/Library/Developer/PrivateFrameworks/CoreSimulator.framework/CoreSimulator",
-      [dev stringByAppendingPathComponent:@"Library/PrivateFrameworks/SimulatorKit.framework/SimulatorKit"],
+      simKit,
     ];
     for (NSString *path in paths) {
       if (!dlopen(path.fileSystemRepresentation, RTLD_NOW | RTLD_GLOBAL)) {

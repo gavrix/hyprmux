@@ -167,3 +167,74 @@ extension HyprmuxEvent {
         HyprmuxEvent("agent", "\(c.id.raw),\(c.kind),\(c.to?.rawValue ?? "")")
     }
 }
+
+/// How many tiles on a workspace are doing something, by status (working, blocked, done:
+/// an agent's state, or what an app tile set). The workspace bar shows it on the pill.
+public struct WorkspaceActivity: Equatable, Sendable {
+    public var blocked = 0
+    public var done = 0
+    public var working = 0
+
+    public init(blocked: Int = 0, done: Int = 0, working: Int = 0) {
+        self.blocked = blocked
+        self.done = done
+        self.working = working
+    }
+
+    public var isEmpty: Bool { blocked + done + working == 0 }
+
+    /// The statuses with tiles in them, most urgent first.
+    public var counts: [(status: String, count: Int)] {
+        [("blocked", blocked), ("done", done), ("working", working)].filter { $0.1 > 0 }.map { ($0.0, $0.1) }
+    }
+
+    /// Counts one tile. Idle and unknown statuses don't count.
+    public mutating func add(_ status: String?) {
+        switch status {
+        case "blocked": blocked += 1
+        case "done": done += 1
+        case "working": working += 1
+        default: break
+        }
+    }
+
+    /// Each workspace's activity, special ones included, from every tile's workspace and
+    /// status. Workspaces with nothing going on are left out.
+    public static func byWorkspace(_ tiles: [(workspace: WorkspaceID?, status: String?)]) -> [WorkspaceID: WorkspaceActivity] {
+        var out: [WorkspaceID: WorkspaceActivity] = [:]
+        for t in tiles {
+            guard let ws = t.workspace else { continue }
+            var a = out[ws] ?? WorkspaceActivity()
+            a.add(t.status)
+            if !a.isEmpty { out[ws] = a }
+        }
+        return out
+    }
+
+    /// Each regular workspace's activity, by number, for the bar's pills. Special
+    /// workspaces have no pill.
+    public static func tally(_ tiles: [(workspace: WorkspaceID?, status: String?)]) -> [Int: WorkspaceActivity] {
+        var out: [Int: WorkspaceActivity] = [:]
+        for (ws, a) in byWorkspace(tiles) {
+            if case .regular(let n) = ws { out[n] = a }
+        }
+        return out
+    }
+
+    /// The tiles that finished between `old` and `new`, by the status each finished from
+    /// ("blocked" or "working"): done went up, and needs-you or working went down by as
+    /// much. Working counts first, since a turn usually ends from working.
+    public static func finished(from old: WorkspaceActivity, to new: WorkspaceActivity) -> [String] {
+        let gained = new.done - old.done
+        guard gained > 0 else { return [] }
+        let fromWorking = min(gained, max(0, old.working - new.working))
+        let fromBlocked = min(gained - fromWorking, max(0, old.blocked - new.blocked))
+        return Array(repeating: "working", count: fromWorking) + Array(repeating: "blocked", count: fromBlocked)
+    }
+
+    /// "2 working, 1 needs you", for a tooltip.
+    public var summary: String {
+        counts.map { "\($0.count) \($0.status == "blocked" ? "need\($0.count == 1 ? "s" : "") you" : $0.status)" }
+            .joined(separator: ", ")
+    }
+}

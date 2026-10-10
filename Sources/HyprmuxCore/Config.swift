@@ -123,6 +123,23 @@ public struct HyprmuxConfig: Sendable {
     public var shadowColor = Color(r: 0.1, g: 0.1, b: 0.1, a: 0.93)
     /// Blur whatever is behind each window (macOS behind-window blur).
     public var blurEnabled = false
+    /// A pill with the tile's title on its top border (decoration:title). Grouped tiles
+    /// keep their titles in the tab strip.
+    public var titleEnabled = false
+    public var titleFontSize: Double = 11
+    /// Lead the title with the surface's id, as `hyprmuxctl --surface` takes it, like
+    /// tmux's pane numbers. Tabs in a group show it too.
+    public var titleShowsID = true
+    /// Tile activity (`activity { }`): what an agent or app in a tile is doing shows in
+    /// these colors, on the title pill, on an unfocused tile's border, and on its
+    /// workspace in the bar.
+    public var activityWorking = Color(r: 1, g: 0.62, b: 0.04, a: 0.93)
+    public var activityBlocked = Color(r: 1, g: 0.27, b: 0.23, a: 0.93)
+    public var activityDone = Color(r: 0.19, g: 0.82, b: 0.35, a: 0.93)
+    /// Color unfocused tiles' borders by their activity.
+    public var activityBorder = true
+    /// Pulse the activity colors. Reduce Motion turns it off too.
+    public var activityPulse = true
     public var animationsEnabled = true
     public var beziers: [String: Bezier] = ["default": .hyprDefault, "linear": .linear]
     public var animations: [String: AnimationSpec] = [:]
@@ -422,6 +439,14 @@ public enum ConfigParser {
             case "decoration:shadow:color", "decoration:col.shadow":
                 if let c = Color.parse(value) { config.shadowColor = c } else { error(file, line, "\(key): bad color") }
             case "decoration:blur:enabled": if let v = bool() { config.blurEnabled = v }
+            case "decoration:title:enabled": if let v = bool() { config.titleEnabled = v }
+            case "decoration:title:font_size": if let v = num() { config.titleFontSize = min(max(v, 6), 24) }
+            case "decoration:title:show_id": if let v = bool() { config.titleShowsID = v }
+            case "activity:col.working": if let g = gradient() { config.activityWorking = g.colors[0] }
+            case "activity:col.blocked": if let g = gradient() { config.activityBlocked = g.colors[0] }
+            case "activity:col.done": if let g = gradient() { config.activityDone = g.colors[0] }
+            case "activity:border": if let v = bool() { config.activityBorder = v }
+            case "activity:pulse": if let v = bool() { config.activityPulse = v }
             case "decoration:blur:size", "decoration:blur:passes", "decoration:blur:noise", "decoration:blur:contrast",
                  "decoration:blur:brightness", "decoration:blur:vibrancy", "decoration:blur:new_optimizations",
                  "decoration:blur:xray", "decoration:blur:ignore_opacity", "decoration:blur:popups":

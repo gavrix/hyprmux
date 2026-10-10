@@ -76,6 +76,7 @@ extension Compositor {
     func refreshStatus(_ id: ClientID) {
         views[id]?.setStatus(tileStatus(id))
         refreshGroupBars()
+        refreshBarActivity()
     }
 
     /// `hyprmuxctl surfaces`: a terminal's agent.

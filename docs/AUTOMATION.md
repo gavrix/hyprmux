@@ -257,8 +257,22 @@ hyprmuxctl agent-state idle --kind claude
 
 - **States:** `working`, `blocked` (it waits for you: a question, an approval),
   and `idle` (ready for input).
-- **Shown on the tile:** a pill in its top-right corner, "working", "needs you",
-  or "done", and a dot on its tab when the tile is in a group. Idle shows nothing.
+- **Shown on the tile:** the title pill on its top border takes the state's
+  color: orange for working, red for needs you, green for done. So does the
+  border while the tile isn't focused; a focused tile keeps its focus border.
+  Both pulse: needs you fast, working steadily, done slowly. With titles off
+  (`decoration:title`), the pill says the state instead ("working"). A tile in a
+  group shows a dot on its tab. Idle shows nothing. The colors and the pulse are
+  in [`activity`](CONFIGURATION.md#activity).
+- **Shown on the workspace:** the workspace's pill in the bar counts its tiles in
+  each state, one bubble per state: red for needs you, green for done, orange for
+  working. Working bubbles wobble and ripple, needs-you bubbles faster, and done
+  bubbles glow. When a tile finishes, a drop hops from its bubble to the done
+  bubble and lands with a splash, and the done count goes up. Hover the pill for
+  the counts in words. The workspace picker (`picker, workspace`) shows the same
+  bubbles on each row, special workspaces included, and they update while it's
+  open. With Reduce Motion (System Settings, Accessibility) the bubbles only fade
+  in and out.
 - **Done:** a turn that ends while you're not looking at the terminal shows as
   "done" until you focus it. Looking means its tile has focus while Hyprmux is in
   front.

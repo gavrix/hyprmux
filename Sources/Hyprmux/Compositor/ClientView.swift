@@ -10,7 +10,8 @@ final class ClientView: DecoratedView {
     let id: ClientID
     let surface: Surface
     private let dimView = PassthroughView()
-    private let statusBadge = StatusBadge()
+    /// The title on the top border; it also shows the activity (TileStatus).
+    private let titlePill = TitlePill()
     private(set) var status: String?
     private lazy var surfaceMenu: NSMenu = {
         let reference = SurfaceReference(id.raw).description
@@ -34,21 +35,64 @@ final class ClientView: DecoratedView {
     private var groupBarHeight: CGFloat = 20
     var onSelectTab: ((Int) -> Void)?
 
-    /// What the tile's content is doing (TileStatus): a pill in its top-right corner.
+    /// What the tile's content is doing (TileStatus): the title pill takes its color, and
+    /// so does the border while the tile is unfocused. Both pulse.
     func setStatus(_ status: String?) {
         guard status != self.status else { return }
         self.status = status
-        statusBadge.show(status)
-        layoutContent()
+        CATransaction.begin()
+        CATransaction.setAnimationDuration(0.3)
+        updateTitlePill()
+        CATransaction.commit()
+        layoutTitlePill()
+        setActivityStatus(status, duration: 0.3)
+    }
+
+    /// The surface's title changed.
+    func titleDidChange() {
+        updateTitlePill()
+        layoutTitlePill()
+    }
+
+    /// Grouped tiles show titles and activity in their tabs.
+    private var showsTitlePill: Bool {
+        groupBar == nil && (decoration.title
+            ? !surface.title.isEmpty || decoration.titleShowsID
+            : TileStatus.label(status) != nil)
+    }
+
+    private func updateTitlePill() {
+        let text = decoration.title ? surface.title : (TileStatus.label(status) ?? "")
+        let border = (isActive ? decoration.activeBorder : decoration.inactiveBorder).colors.first
+        guard let color = TileStatus.rgba(status) ?? border else { return }
+        titlePill.update(string: text, id: decoration.titleShowsID ? id.raw : nil, color: color, status: status,
+                         fontSize: decoration.titleFontSize)
+    }
+
+    /// On the top border, after the corner's curve. As wide as its text, up to a label's
+    /// width: past that the title truncates, so the pill never becomes a bar.
+    private func layoutTitlePill() {
+        let h = TitlePill.height(fontSize: decoration.titleFontSize)
+        let x = max(decoration.rounding, 8) + 6
+        let room = bounds.width - 2 * x
+        let w = min(max(titlePill.preferredWidth, h * 1.6), min(room, max(bounds.width * 0.6, 120), 420))
+        let shown = showsTitlePill && room >= h * 1.6
+        titlePill.isHidden = !shown
+        guard shown else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        titlePill.frame = CGRect(x: x, y: decoration.borderSize / 2 - h / 2, width: w, height: h)
+        CATransaction.commit()
     }
 
     /// Shows (or removes, with nil) the tab strip.
-    func setGroupBar(_ tabs: (titles: [String], statuses: [String?], active: Int)?, style: GroupBarStyle) {
+    func setGroupBar(_ tabs: (titles: [String], statuses: [String?], ids: [UInt64?], active: Int)?, style: GroupBarStyle) {
         guard let tabs else {
             if groupBar != nil {
                 groupBar?.removeFromSuperview()
                 groupBar = nil
                 layoutContent()
+                layoutTitlePill()
             }
             return
         }
@@ -60,10 +104,11 @@ final class ClientView: DecoratedView {
             bar.onSelect = { [weak self] i in self?.onSelectTab?(i) }
             clip.addSubview(bar, positioned: .above, relativeTo: surface.view)
             groupBar = bar
+            layoutTitlePill()
         }
         let heightChanged = groupBarHeight != style.height
         groupBarHeight = style.height
-        bar.update(titles: tabs.titles, statuses: tabs.statuses, active: tabs.active, style: style)
+        bar.update(titles: tabs.titles, statuses: tabs.statuses, ids: tabs.ids, active: tabs.active, style: style)
         if heightChanged || bar.frame.height != style.height { layoutContent() }
     }
 
@@ -85,11 +130,6 @@ final class ClientView: DecoratedView {
             radius: Double(innerR), power: Double(decoration.roundingPower), depth: 15))
         let content = CGRect(x: 0, y: bh, width: w, height: h - bh)
         if surface.view.frame != content { surface.view.frame = content }
-        statusBadge.sizeToFit()
-        // Clear of the top-right corner's curve.
-        let corner = CGFloat(RoundedShape.edgeInset(radius: Double(innerR), power: Double(decoration.roundingPower),
-                                                    depth: Double(statusBadge.frame.height)))
-        statusBadge.frame.origin = CGPoint(x: w - statusBadge.frame.width - max(8, corner), y: bh + 8)
     }
 
     init(id: ClientID, surface: Surface, decoration: Decoration) {
@@ -106,8 +146,8 @@ final class ClientView: DecoratedView {
         dimView.layer?.backgroundColor = NSColor.black.cgColor
         dimView.alphaValue = 0
         clip.addSubview(dimView)
-        statusBadge.isHidden = true
-        clip.addSubview(statusBadge)
+        titlePill.isHidden = true
+        addSubview(titlePill)
         finishSetup()
     }
 
@@ -126,9 +166,12 @@ final class ClientView: DecoratedView {
 
     override func decorationDidApply() {
         dimView.alphaValue = (!isActive && decoration.dimInactive) ? decoration.dimStrength : 0
+        // In the decoration's transaction: the pill recolors with the border.
+        updateTitlePill()
     }
 
     override func chromeDidLayout() {
         dimView.frame = clip.bounds
+        layoutTitlePill()
     }
 }

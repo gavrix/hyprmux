@@ -23,7 +23,9 @@ final class CompositorView: FlippedView {
 }
 
 /// A minimal waybar-like strip: workspaces on the left, focused title in the middle.
-final class BarView: NSView {
+/// A workspace with tiles doing something shows their counts at the end of its pill
+/// (ActivityBadge), and the pill grows to make room.
+final class BarView: NSView, NSViewToolTipOwner {
     var leadingInset: CGFloat = 0 { didSet { if leadingInset != oldValue { pillsChanged() } } }
     var workspaces: [Int] = [] { didSet { if workspaces != oldValue { pillsChanged() } } }
     /// Workspace names, shown after the number (the number always stays, for ⌘1…9).
@@ -36,10 +38,23 @@ final class BarView: NSView {
     var onSelectWorkspace: ((Int) -> Void)?
     /// The area the workspace pills cover, in the bar's coordinates. Called when it changes.
     var onPillsFrame: ((CGRect) -> Void)?
+    /// What each workspace's tiles are doing. Workspaces with nothing going on are absent.
+    var activity: [Int: WorkspaceActivity] = [:] { didSet { if activity != oldValue { activityChanged(from: oldValue) } } }
 
     private struct Pill { let id: Int; let rect: CGRect; let label: NSAttributedString }
     private var pills: [Pill] = []
     private var lastPillsFrame: CGRect?
+    private var badges: [Int: ActivityBadge] = [:]
+    /// The room each pill makes for its badge now. It eases toward the badge's width.
+    private var room: [Int: CGFloat] = [:]
+    private var roomTimer: Timer?
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+    }
+
+    required init?(coder: NSCoder) { fatalError("not supported") }
 
     private static let font = NSFont.monospacedSystemFont(ofSize: 11, weight: .semibold)
     private static let nameFont = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
@@ -63,6 +78,7 @@ final class BarView: NSView {
 
     private func pillsChanged() {
         layoutPills()
+        updateToolTips()
         needsDisplay = true
         let f = pillsFrame
         if f != lastPillsFrame {
@@ -87,13 +103,16 @@ final class BarView: NSView {
                 ]))
             }
             let size = label.size()
-            let w = max(pillH + (isActive ? 10 : 0), size.width + (names[n] == nil ? 12 : 16))
+            let w = max(pillH + (isActive ? 10 : 0), size.width + (names[n] == nil ? 12 : 16)) + (room[n] ?? 0)
             pills.append(Pill(id: n, rect: CGRect(x: x, y: (h - pillH) / 2, width: w, height: pillH), label: label))
             x += w + 5
         }
     }
 
     override func draw(_ dirtyRect: NSRect) {
+        // Here, not when the pills change: the badges then move in the same frame as the
+        // pills they sit on are drawn.
+        positionBadges()
         let font = Self.font
         let h = bounds.height
         for p in pills {
@@ -104,7 +123,8 @@ final class BarView: NSView {
                 path.fill()
             }
             let size = p.label.size()
-            p.label.draw(at: CGPoint(x: r.midX - size.width / 2, y: r.midY - size.height / 2))
+            let labelMidX = r.midX - (room[p.id] ?? 0) / 2
+            p.label.draw(at: CGPoint(x: labelMidX - size.width / 2, y: r.midY - size.height / 2))
         }
         let x = (pills.last?.rect.maxX ?? leadingInset + 8) + 5
         var right: [String] = []
@@ -130,6 +150,97 @@ final class BarView: NSView {
         let tx = max(x + 10, (bounds.width - drawW) / 2)
         t.draw(with: CGRect(x: tx, y: (h - ts.height) / 2, width: drawW, height: ts.height),
                options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine], attributes: titleAttrs)
+    }
+
+    // MARK: Activity
+
+    /// The room a pill needs for its badge: the badge, and a little space after it.
+    private func targetRoom(_ n: Int) -> CGFloat {
+        guard let a = activity[n], !a.isEmpty else { return 0 }
+        return ActivityBadge.width(for: a) + 1
+    }
+
+    private func activityChanged(from old: [Int: WorkspaceActivity]) {
+        let scale = window?.backingScaleFactor ?? 2
+        for (n, badge) in badges where activity[n] == nil {
+            badges[n] = nil
+            badge.leave()
+        }
+        for n in activity.keys where badges[n] == nil {
+            let badge = ActivityBadge()
+            badges[n] = badge
+            layer?.addSublayer(badge)
+        }
+        startRoomAnimation()
+        needsDisplay = true
+        for (n, a) in activity {
+            let finished = WorkspaceActivity.finished(from: old[n] ?? WorkspaceActivity(), to: a)
+            badges[n]?.update(a, scale: scale, finished: finished)
+        }
+    }
+
+    /// The activity colors changed: badges are made again, in the new colors.
+    func resetBadges() {
+        for b in badges.values { b.removeFromSuperlayer() }
+        badges = [:]
+        activityChanged(from: activity)
+    }
+
+    /// Pills grow and shrink smoothly when a badge comes or goes.
+    private func startRoomAnimation() {
+        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            room = Dictionary(uniqueKeysWithValues: workspaces.map { ($0, targetRoom($0)) }.filter { $0.1 > 0 })
+            pillsChanged()
+            return
+        }
+        guard roomTimer == nil else { return }
+        let t = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] _ in self?.stepRoom() }
+        RunLoop.main.add(t, forMode: .common)
+        roomTimer = t
+        stepRoom()
+    }
+
+    private func stepRoom() {
+        var moving = false
+        for n in Set(room.keys).union(activity.keys) {
+            let target = targetRoom(n), current = room[n] ?? 0
+            let next = abs(target - current) < 0.3 ? target : current + (target - current) * 0.3
+            room[n] = next > 0 ? next : nil
+            if next != target { moving = true }
+        }
+        pillsChanged()
+        if !moving {
+            roomTimer?.invalidate()
+            roomTimer = nil
+        }
+    }
+
+    /// Each badge marks the middle of its pill's trailing edge, inside; its bubbles extend left.
+    private func positionBadges() {
+        guard !badges.isEmpty else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        for p in pills {
+            badges[p.id]?.frame = CGRect(x: p.rect.maxX - 2, y: p.rect.midY, width: 0, height: 0)
+        }
+        CATransaction.commit()
+    }
+
+    private func updateToolTips() {
+        removeAllToolTips()
+        for p in pills where activity[p.id] != nil { addToolTip(p.rect, owner: self, userData: nil) }
+    }
+
+    func view(_ view: NSView, stringForToolTip tag: NSView.ToolTipTag, point: NSPoint,
+              userData data: UnsafeMutableRawPointer?) -> String {
+        guard let p = pills.first(where: { $0.rect.contains(point) }), let a = activity[p.id] else { return "" }
+        return a.summary
+    }
+
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        let scale = window?.backingScaleFactor ?? 2
+        for b in badges.values { b.setScale(scale) }
     }
 
     override func mouseDown(with event: NSEvent) {

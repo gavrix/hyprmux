@@ -101,11 +101,14 @@ public struct PickerItem: Equatable, Sendable {
     public var title: String
     /// Secondary text beside or below the title (a runtime, a path, a key). Also searched.
     public var detail: String
+    /// What the row's tiles are doing (a workspace's), drawn as badges at its end.
+    public var activity: WorkspaceActivity?
 
-    public init(id: String, title: String, detail: String = "") {
+    public init(id: String, title: String, detail: String = "", activity: WorkspaceActivity? = nil) {
         self.id = id
         self.title = title
         self.detail = detail
+        self.activity = activity
     }
 }
 
@@ -255,7 +258,9 @@ public struct Picker: Sendable {
 
 /// Rows and results for the workspace pickers (`picker, workspace` and friends).
 public enum WorkspacePicker {
-    public static func items(_ choices: [WindowManager.WorkspaceChoice]) -> [PickerItem] {
+    /// `activity`: what each workspace's tiles are doing, shown as badges on its row.
+    public static func items(_ choices: [WindowManager.WorkspaceChoice],
+                             activity: [WorkspaceID: WorkspaceActivity] = [:]) -> [PickerItem] {
         choices.map { c in
             let title: String
             switch c.id {
@@ -264,7 +269,7 @@ public enum WorkspacePicker {
             }
             var detail = c.windows == 0 ? "empty" : c.windows == 1 ? "1 window" : "\(c.windows) windows"
             if c.active { detail += " · current" }
-            return PickerItem(id: c.id.description, title: title, detail: detail)
+            return PickerItem(id: c.id.description, title: title, detail: detail, activity: activity[c.id])
         }
     }
 

@@ -292,9 +292,11 @@ client → notification.post { title, body, toplevel? }
   until the client destroys the toplevel. Without a client, it goes. Ghostty doesn't
   wait for a key, as it does for a terminal tile's command.
 - **Title:** the client's title, else the program's own (OSC 0/2).
-- **Status** is a pill in the tile's top-right corner: "working", "needs you",
-  "done", the same pill a terminal's agent gets, and a dot on the tile's tab in a
-  group. `hyprmuxctl surfaces` shows it as `status`.
+- **Status** ("working", "needs you", "done") shows like a terminal's agent
+  state: the title pill and the unfocused border take its color and pulse, and a
+  tile in a group gets a dot on its tab. It counts on the workspace's pill in the
+  bar too. `hyprmuxctl surfaces`
+  shows it as `status`.
 - **Automation:** `read-screen`, `read-selection`, `send --surface`, and
   `send-key --surface` work on the tile as on a terminal tile.
 - **Notifications** show in Hyprmux's HUD, like a terminal's OSC 9. With

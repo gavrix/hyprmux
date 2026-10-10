@@ -71,6 +71,9 @@ overrides a few of them (for example `gaps_out = 14`).
 | `shadow:enabled` | true | Drop shadow outside each window. |
 | `shadow:range` | 4 | Shadow size. |
 | `shadow:color` | dark grey | Shadow color. |
+| `title:enabled` | false | A pill with the tile's title, stamped on its top border. Grouped tiles keep their titles in the tab strip. |
+| `title:font_size` | 11 | Title pill text size. |
+| `title:show_id` | true | Lead the title with the surface's number, the one `hyprmuxctl --surface N` takes, like tmux's pane numbers. Tabs in a group show it too. |
 
 Hyprland's blur tuning keys (`blur:size`, `blur:passes`, and similar) are
 accepted and ignored.
@@ -174,6 +177,22 @@ Groups hold several windows as tabs in one tile.
 | `groupbar:font_size` | 11 | Tab title size. |
 | `groupbar:col.active` / `col.inactive` | cyan / dark | Tab colors. |
 | `groupbar:text_color` | white | Tab title color. |
+
+### `activity`
+
+What an agent or app in a tile is doing ([Agent state](AUTOMATION.md#agent-state)):
+working, blocked (needs you), or done (it finished while you weren't looking, until
+you focus the tile). The tile's title pill takes the color; so does its border
+while it isn't focused. The workspace's pill in the bar counts them in the same
+colors.
+
+| Option | Default | Meaning |
+|---|---|---|
+| `col.working` | orange | Working. |
+| `col.blocked` | red | Needs you. |
+| `col.done` | green | Finished, not looked at yet. |
+| `border` | true | Color unfocused tiles' borders by their activity. |
+| `pulse` | true | Pulse the colors. Reduce Motion (System Settings, Accessibility) turns it off too. |
 
 ### `misc`
 

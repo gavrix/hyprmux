@@ -23,6 +23,8 @@ final class GroupBarView: NSView {
     private var titles: [String] = []
     /// Each tab's status (TileStatus), drawn as a dot before its title.
     private var statuses: [String?] = []
+    /// Each tab's surface number, in a small pill before its title (decoration:title:show_id).
+    private var ids: [UInt64?] = []
     private var active = 0
     private var style: GroupBarStyle?
     /// Horizontal inset so the first and last tab clear rounded corners.
@@ -32,10 +34,12 @@ final class GroupBarView: NSView {
     override var mouseDownCanMoveWindow: Bool { false }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
-    func update(titles: [String], statuses: [String?] = [], active: Int, style: GroupBarStyle) {
-        guard titles != self.titles || statuses != self.statuses || active != self.active || style != self.style else { return }
+    func update(titles: [String], statuses: [String?] = [], ids: [UInt64?] = [], active: Int, style: GroupBarStyle) {
+        guard titles != self.titles || statuses != self.statuses || ids != self.ids || active != self.active
+            || style != self.style else { return }
         self.titles = titles
         self.statuses = statuses
+        self.ids = ids
         self.active = active
         self.style = style
         needsDisplay = true
@@ -75,6 +79,26 @@ final class GroupBarView: NSView {
                 NSBezierPath(ovalIn: CGRect(x: r.minX + 7, y: r.midY - d / 2, width: d, height: d)).fill()
                 textRect.origin.x += d + 5
                 textRect.size.width -= d + 5
+            }
+            if i < ids.count, let id = ids[i] {
+                // Dark, with a ring and the number in the tab's text color: apart from the title.
+                let ink = (NSColor(cgColor: style.text.cg) ?? .white).withAlphaComponent(isActive ? 1 : 0.75)
+                let num = NSAttributedString(string: "\(id)", attributes: [
+                    .font: NSFont.monospacedDigitSystemFont(ofSize: style.fontSize - 1, weight: .bold), .foregroundColor: ink,
+                ])
+                let ph = max(10, r.height - 4)
+                let pw = max(ph, ceil(num.size().width) + 10)
+                let pill = CGRect(x: textRect.minX - 2, y: r.midY - ph / 2, width: pw, height: ph)
+                let path = NSBezierPath(roundedRect: pill, xRadius: ph / 2, yRadius: ph / 2)
+                NSColor(white: 0.08, alpha: 0.85).setFill()
+                path.fill()
+                ink.withAlphaComponent(0.6).setStroke()
+                path.lineWidth = 1
+                path.stroke()
+                let ns = num.size()
+                num.draw(at: CGPoint(x: pill.midX - ns.width / 2, y: pill.midY - ns.height / 2))
+                textRect.origin.x += pw + 4
+                textRect.size.width -= pw + 4
             }
             text.draw(with: textRect, options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine], attributes: attrs)
         }

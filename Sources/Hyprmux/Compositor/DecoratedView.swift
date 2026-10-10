@@ -25,6 +25,13 @@ struct Decoration: Equatable {
     var shadowRange: CGFloat = 12
     var shadowColor: HyprmuxCore.Color
     var blur = false
+    /// The title pill on the top border (TitlePill).
+    var title = false
+    var titleFontSize: CGFloat = 11
+    var titleShowsID = true
+    /// Unfocused tiles' borders take their activity's color (TileStatus).
+    var activityBorder = true
+    var activity: TileStatus.Palette
 
     init(_ c: HyprmuxConfig) {
         borderSize = c.wm.borderSize
@@ -40,6 +47,11 @@ struct Decoration: Equatable {
         shadowRange = c.shadowRange
         shadowColor = c.shadowColor
         blur = c.blurEnabled
+        title = c.titleEnabled
+        titleFontSize = c.titleFontSize
+        titleShowsID = c.titleShowsID
+        activityBorder = c.activityBorder
+        activity = TileStatus.Palette(c)
     }
 }
 
@@ -78,6 +90,8 @@ class DecoratedView: NSView, Animatable {
     private var alphaDone: (() -> Void)?
     private(set) var decoration: Decoration
     private(set) var isActive = false
+    /// What the content is doing (TileStatus). While unfocused, the border shows it.
+    private(set) var activityStatus: String?
 
     init(decoration: Decoration, active: Bool = false, blurBlending: NSVisualEffectView.BlendingMode = .behindWindow) {
         self.decoration = decoration
@@ -144,6 +158,19 @@ class DecoratedView: NSView, Animatable {
         if borderChanged { targetFrameDidChange() }
     }
 
+    /// The content's activity changed: the border recolors (unfocused) and pulses.
+    func setActivityStatus(_ status: String?, duration: Double) {
+        guard status != activityStatus else { return }
+        activityStatus = status
+        applyDecoration(animated: duration > 0, duration: duration)
+    }
+
+    /// The border's activity color, when it shows one: unfocused, with a status.
+    var borderActivity: String? {
+        guard decoration.activityBorder, !isActive, TileStatus.rgba(activityStatus) != nil else { return nil }
+        return activityStatus
+    }
+
     private var contentOpacity: CGFloat { isActive ? decoration.activeOpacity : decoration.inactiveOpacity }
 
     private func applyOpacity(animation: (Double, Bezier)?) {
@@ -179,7 +206,8 @@ class DecoratedView: NSView, Animatable {
     }
 
     private func applyDecoration(animated: Bool, duration: Double) {
-        let g = isActive ? decoration.activeBorder : decoration.inactiveBorder
+        var g = isActive ? decoration.activeBorder : decoration.inactiveBorder
+        if let c = TileStatus.rgba(borderActivity) { g = Gradient([c]) }
         let colors = (g.colors.count == 1 ? [g.colors[0], g.colors[0]] : g.colors).map(\.cg)
         // Hyprland angles: 0deg runs left to right; positive angles rotate clockwise.
         let rad = g.angle * .pi / 180
@@ -192,11 +220,27 @@ class DecoratedView: NSView, Animatable {
         borderLayer.endPoint = CGPoint(x: 0.5 + dx, y: 0.5 + dy)
         decorationDidApply()
         CATransaction.commit()
+        updateBorderPulse()
         shadowLayer.shadowOpacity = decoration.shadow ? 1 : 0
         shadowLayer.shadowRadius = decoration.shadowRange / 2
         shadowLayer.shadowColor = decoration.shadowColor.cg
         updateBlur()
         layoutChrome()
+    }
+
+    /// An activity border breathes: it fades toward transparent and back.
+    private func updateBorderPulse() {
+        let period = borderActivity.flatMap(TileStatus.pulsePeriod)
+        let key = "activityPulse"
+        let current = (borderLayer.animation(forKey: key) as? CABasicAnimation)?.duration
+        guard period != current else { return }
+        borderLayer.removeAnimation(forKey: key)
+        guard let period else { return }
+        let a = CABasicAnimation(keyPath: "opacity")
+        a.fromValue = 1
+        a.toValue = 0.3
+        a.duration = period
+        TileStatus.addInPhase(a, to: borderLayer, key: key)
     }
 
     // MARK: Geometry

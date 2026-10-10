@@ -185,6 +185,38 @@ final class ConfigTests: XCTestCase {
         XCTAssertEqual(c.groupBorderSize, 4)
     }
 
+    func testTitleAndActivity() {
+        let d = ConfigParser.parse("")
+        XCTAssertFalse(d.titleEnabled)
+        XCTAssertTrue(d.titleShowsID)
+        XCTAssertTrue(d.activityBorder)
+        XCTAssertTrue(d.activityPulse)
+        let c = ConfigParser.parse("""
+        decoration {
+            title {
+                enabled = true
+                font_size = 13
+                show_id = false
+            }
+        }
+        activity {
+            col.working = rgba(ff000080)
+            col.done = rgb(00ff00)
+            border = false
+            pulse = no
+        }
+        """)
+        XCTAssertEqual(c.errors, [])
+        XCTAssertTrue(c.titleEnabled)
+        XCTAssertEqual(c.titleFontSize, 13)
+        XCTAssertFalse(c.titleShowsID)
+        XCTAssertEqual(c.activityWorking, Color(r: 1, g: 0, b: 0, a: 128.0 / 255))
+        XCTAssertEqual(c.activityDone, Color(r: 0, g: 1, b: 0))
+        XCTAssertEqual(c.activityBlocked, d.activityBlocked)
+        XCTAssertFalse(c.activityBorder)
+        XCTAssertFalse(c.activityPulse)
+    }
+
     func testFullscreenStyle() {
         XCTAssertEqual(ConfigParser.parse("").fullscreenStyle, "fill")
         XCTAssertEqual(ConfigParser.parse("misc {\n    fullscreen_style = native\n}").fullscreenStyle, "native")

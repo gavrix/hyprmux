@@ -95,4 +95,45 @@ final class AgentTests: XCTestCase {
                        "agent>>4,codex,")
         XCTAssertTrue(HyprmuxEvent.names.contains("agent"))
     }
+
+    func testWorkspaceActivityTally() {
+        let tally = WorkspaceActivity.tally([
+            (.regular(1), "working"), (.regular(1), "working"), (.regular(1), "blocked"),
+            (.regular(2), "done"), (.regular(2), nil), (.regular(3), "idle"),
+            (.special("magic"), "working"), (nil, "working"),
+        ])
+        XCTAssertEqual(tally, [1: WorkspaceActivity(blocked: 1, working: 2), 2: WorkspaceActivity(done: 1)])
+        XCTAssertEqual(tally[1]?.counts.map(\.status), ["blocked", "working"])
+        XCTAssertEqual(tally[1]?.summary, "1 needs you, 2 working")
+        XCTAssertEqual(WorkspaceActivity(blocked: 2).summary, "2 need you")
+        XCTAssertTrue(WorkspaceActivity().isEmpty)
+    }
+
+    func testWorkspaceActivityFinished() {
+        typealias A = WorkspaceActivity
+        // A turn ends: working becomes done.
+        XCTAssertEqual(A.finished(from: A(working: 2), to: A(done: 1, working: 1)), ["working"])
+        // Two at once, one of them from needs-you.
+        XCTAssertEqual(A.finished(from: A(blocked: 1, working: 1), to: A(done: 2)), ["working", "blocked"])
+        // A done tile appears with nothing ending (moved here): no drop.
+        XCTAssertEqual(A.finished(from: A(working: 1), to: A(done: 1, working: 1)), [])
+        // An agent exits without finishing, or a done tile is looked at.
+        XCTAssertEqual(A.finished(from: A(working: 1), to: A()), [])
+        XCTAssertEqual(A.finished(from: A(done: 1), to: A()), [])
+    }
+
+    func testWorkspacePickerActivity() {
+        let tiles: [(workspace: WorkspaceID?, status: String?)] = [
+            (.regular(1), "working"), (.special("magic"), "done"), (.regular(2), nil),
+        ]
+        let all = WorkspaceActivity.byWorkspace(tiles)
+        XCTAssertEqual(all, [.regular(1): WorkspaceActivity(working: 1), .special("magic"): WorkspaceActivity(done: 1)])
+        let choices = [
+            WindowManager.WorkspaceChoice(id: .regular(1), name: "code", windows: 1, active: true),
+            WindowManager.WorkspaceChoice(id: .regular(2), name: nil, windows: 1, active: false),
+            WindowManager.WorkspaceChoice(id: .special("magic"), name: nil, windows: 1, active: false),
+        ]
+        let items = WorkspacePicker.items(choices, activity: all)
+        XCTAssertEqual(items.map(\.activity), [WorkspaceActivity(working: 1), nil, WorkspaceActivity(done: 1)])
+    }
 }

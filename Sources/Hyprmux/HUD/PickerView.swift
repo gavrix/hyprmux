@@ -13,7 +13,8 @@ final class PickerField: NSTextField {
 }
 
 /// The rows of a picker, drawn like a terminal list: a pointer on the selected row,
-/// matched characters in the accent color, details faded after the title.
+/// matched characters in the accent color, details faded after the title. A row with
+/// activity (a workspace's tiles at work) ends with the bar's live badges.
 final class PickerListView: FlippedView {
     var picker: Picker
     var theme: HUDTheme
@@ -26,11 +27,14 @@ final class PickerListView: FlippedView {
     var onScroll: ((Int) -> Void)?
     private var scrollAccumulator: CGFloat = 0
     private var tracking: NSTrackingArea?
+    /// The visible rows' activity badges, by item id.
+    private var badges: [String: ActivityBadge] = [:]
 
     init(picker: Picker, theme: HUDTheme) {
         self.picker = picker
         self.theme = theme
         super.init(frame: .zero)
+        wantsLayer = true
     }
 
     required init?(coder: NSCoder) { fatalError("not supported") }
@@ -38,6 +42,8 @@ final class PickerListView: FlippedView {
     override var acceptsFirstResponder: Bool { false }
 
     override func draw(_ dirtyRect: NSRect) {
+        // Here, so the badges move in the same frame as the rows they end.
+        layoutBadges()
         let font = theme.font, bold = theme.boldFont
         let lineH = ceil(font.ascender - font.descender)
         guard !picker.rows.isEmpty else {
@@ -70,7 +76,8 @@ final class PickerListView: FlippedView {
                                      from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
                 x += side + 8
             }
-            let textWidth = bounds.width - x - sidePadding
+            let badgeRoom = item.activity.map { $0.isEmpty ? 0 : ActivityBadge.width(for: $0) + 10 } ?? 0
+            let textWidth = bounds.width - x - sidePadding - badgeRoom
             switch picker.rowLayout {
             case .inline:
                 let line = NSMutableAttributedString(attributedString: title)
@@ -91,6 +98,43 @@ final class PickerListView: FlippedView {
                                 options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
                 }
             }
+        }
+    }
+
+    /// One badge per visible row with activity, at the row's trailing end. A row that
+    /// scrolls or filters out takes its badge with it; one whose activity changes animates
+    /// it, finishing drops included.
+    private func layoutBadges() {
+        var shown = Set<String>()
+        let scale = window?.backingScaleFactor ?? 2
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        for (offset, row) in picker.visibleRows.enumerated() {
+            let item = picker.items[row.index]
+            guard let a = item.activity, !a.isEmpty else { continue }
+            shown.insert(item.id)
+            let badge: ActivityBadge
+            if let b = badges[item.id] {
+                badge = b
+            } else {
+                badge = ActivityBadge()
+                badges[item.id] = badge
+                layer?.addSublayer(badge)
+            }
+            badge.frame = CGRect(x: bounds.width - sidePadding, y: CGFloat(offset) * rowHeight + rowHeight / 2,
+                                 width: 0, height: 0)
+            if badge.activity != a {
+                let finished = WorkspaceActivity.finished(from: badge.activity, to: a)
+                CATransaction.begin()
+                CATransaction.setDisableActions(false)
+                badge.update(a, scale: scale, finished: finished)
+                CATransaction.commit()
+            }
+        }
+        CATransaction.commit()
+        for (id, b) in badges where !shown.contains(id) {
+            b.removeFromSuperlayer()
+            badges[id] = nil
         }
     }
 

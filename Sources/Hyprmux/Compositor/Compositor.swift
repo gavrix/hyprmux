@@ -34,6 +34,8 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
     let apps = AppRuntime()
     /// Agents' resume reports, by terminal (see `hyprmuxctl resume`).
     var resumeReports: [ClientID: ResumeReport] = [:]
+    /// The open workspace picker, whose activity badges update live.
+    var workspacePicker: (request: UUID, choices: [WindowManager.WorkspaceChoice])?
     /// Agents a restore typed into terminals, until they report (Compositor+Session).
     var restoredAgents: [ClientID: RestoredAgent] = [:]
     /// Agents in terminals and the state shown for them (Compositor+Agents).
@@ -257,6 +259,11 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         var paint = bg
         if transparent { paint.a = max(paint.a, 0.01) }
         root.layer?.backgroundColor = paint.cg
+        let palette = TileStatus.Palette(config)
+        if palette != TileStatus.palette {
+            TileStatus.palette = palette
+            bar.resetBadges()
+        }
         barBackdrop.configure(enabled: config.barBackdrop, transparent: transparent)
         barBackdrop.wrap(bar.pillsFrame)
         if let c = config.activeBorder.colors.first {
@@ -428,10 +435,15 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
                 return
             }
             let choices = wm.workspaceChoices(extraSpecials: moving ? scratchpadNames : [])
-            var picker = Picker(title: moving ? "move to" : "workspace", items: WorkspacePicker.items(choices),
+            let activity = WorkspaceActivity.byWorkspace(views.keys.map { (wm.workspace(of: $0), tileStatus($0)) })
+            var picker = Picker(title: moving ? "move to" : "workspace", items: WorkspacePicker.items(choices, activity: activity),
                                 allowsCustom: true, searchesDetail: false, maxVisible: config.hud.pickerMaxRows)
             picker.placeholder = "number or name; a new name makes a workspace"
-            hud.picker.present(picker) { [weak self] r in
+            // Its badges follow the tiles while it's open (refreshBarActivity).
+            let request = UUID()
+            workspacePicker = (request, choices)
+            hud.picker.present(picker, requestID: request) { [weak self] r in
+                if self?.workspacePicker?.request == request { self?.workspacePicker = nil }
                 guard let self, let r, let t = WorkspacePicker.target(for: r) else { return }
                 self.dispatch(moving ? .moveToWorkspace(t, silent: kind == .moveToWorkspaceSilent) : .workspace(t),
                               source: .picker)
@@ -716,13 +728,26 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
             guard let s = views[m]?.surface else { return "" }
             return s.title.isEmpty ? s.kind : s.title
         }
+        // Each tab leads with its surface's number, like the title pill.
+        let ids = config.titleEnabled && config.titleShowsID ? info.members.map { Optional($0.raw) } : []
         let active = info.members.firstIndex(of: info.active) ?? 0
-        v.setGroupBar((titles, info.members.map(tileStatus), active), style: GroupBarStyle(config))
+        v.setGroupBar((titles, info.members.map(tileStatus), ids, active), style: GroupBarStyle(config))
         let members = info.members
         v.onSelectTab = { [weak self] i in
             guard let self, i < members.count else { return }
             self.wm.focus(members[i])
             self.apply(animated: true)
+        }
+    }
+
+    /// The workspace bar's badges, and an open workspace picker's: what each workspace's
+    /// tiles are doing.
+    func refreshBarActivity() {
+        let tiles = views.keys.map { (wm.workspace(of: $0), tileStatus($0)) }
+        bar.activity = WorkspaceActivity.tally(tiles)
+        if let open = workspacePicker {
+            let items = WorkspacePicker.items(open.choices, activity: WorkspaceActivity.byWorkspace(tiles))
+            if !hud.picker.update(items: items, status: nil, icons: [:], requestID: open.request) { workspacePicker = nil }
         }
     }
 
@@ -800,6 +825,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         bar.names = snap.workspaceNames
         bar.active = snap.activeWorkspace
         bar.special = snap.specialVisible
+        refreshBarActivity()
         bar.title = focusedSurface?.title ?? ""
         window.title = "Hyprmux — \(snap.activeWorkspace)"
 
@@ -1443,6 +1469,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
     }
 
     func terminalTitleDidChange(_ view: TerminalView) {
+        views[view.clientID]?.titleDidChange()
         refreshGroupBars()
         if view.clientID == wm.focused { bar.title = view.title }
         emit(HyprmuxEvent.windowTitle(view.clientID, view.title))
@@ -1523,6 +1550,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
 
     /// Refreshes the bar and tab strips after a surface's title changed.
     func surfaceTitleDidChange(_ s: Surface) {
+        views[s.clientID]?.titleDidChange()
         refreshGroupBars()
         if s.clientID == wm.focused { bar.title = s.title }
         emit(HyprmuxEvent.windowTitle(s.clientID, s.title))

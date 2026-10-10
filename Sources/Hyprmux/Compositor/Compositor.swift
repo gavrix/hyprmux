@@ -1198,8 +1198,13 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
                 return "ok"
             case .snapshot(let reference, let path):
                 guard let (id, surface) = automationTarget(reference) else { return "error: surface not found" }
-                guard let tile = surface as? ClientSurface else { return "error: surface \(id.raw) is not an app tile" }
-                do { try tile.writeSnapshot(to: URL(fileURLWithPath: path)) } catch { return "error: \(error.localizedDescription)" }
+                do {
+                    if let tile = surface as? ClientSurface {
+                        try tile.writeSnapshot(to: URL(fileURLWithPath: path))
+                    } else {
+                        try writeWindowSnapshot(of: id, to: URL(fileURLWithPath: path))
+                    }
+                } catch { return "error: \(error.localizedDescription)" }
                 return "ok"
             case .sendScroll(let mods, let lines, let at):
                 // A line-unit CGEvent, like a notched wheel: AppKit derives deltaY and the

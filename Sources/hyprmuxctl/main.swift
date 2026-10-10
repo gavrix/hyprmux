@@ -59,7 +59,8 @@ guard !args.isEmpty, args[0] != "-h", args[0] != "--help" else {
       sendkey <MODS>, <key>          legacy: inject through the app input path
       senddrag <MODS>, <button>, <x1 y1>, <x2 y2>   inject a mouse drag
       sendscroll <MODS>, <lines>, <x y>    inject a notched mouse-wheel scroll (positive = up)
-      snapshot [--surface <id>] <file.png>  write an app tile's current frame to a PNG
+      snapshot [--surface <id>] <file.png>  write a tile to a PNG: an app tile's own frame, or
+                                  any other tile as it shows, decoration included
       sendmenu <title>               perform a menu item by title, e.g. "Open App..."
     """)
     exit(args.isEmpty ? 1 : 0)

@@ -611,7 +611,7 @@ See [Terminal automation](AUTOMATION.md) for workflows, limits, and agent skill 
 | `sendkey <MODS>, <key>` | Legacy test command that injects a key through the normal application path. |
 | `sendmouse down\|drag\|up\|move <MODS>, <button>, <x y>` | Injects one mouse event (holds, hand-timed gestures). Buttons: 272 left, 273 right, 274 middle. |
 | `senddrag <MODS>, <button>, <x1 y1>, <x2 y2>` | Injects a paced drag (about 16 ms per step). |
-| `snapshot [--surface ID] FILE.png` | Writes an app tile's current frame to a PNG. |
+| `snapshot [--surface ID] FILE.png` | Writes a tile to a PNG: an app tile's current frame, or any other tile as it shows, decoration included. |
 | `sendscroll <MODS>, <lines>, <x y>` | Injects a notched mouse-wheel scroll. Positive lines scroll up. |
 | `hittest <x y>` | Which views a click at that point reaches. |
 | `sendmenu <title>` | Performs a menu bar item by title, as a click would (`sendmenu Open App...`). Case doesn't matter, and `...` matches `…`. |

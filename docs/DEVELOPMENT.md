@@ -425,7 +425,7 @@ seconds: launch it from Hyprmux.
 | `hyprmuxctl send --surface ID` / `send-key --surface ID` | Sends terminal input directly without focusing the target or running Hyprmux binds. |
 | `hyprmuxctl sendkey MODS, key` | Presses a key through the focused real path (binds, then the surface). Works in the background. |
 | `hyprmuxctl senddrag` / `sendmouse` | Mouse input, paced like a hand. `sendmouse down` … `up` for holds. |
-| `hyprmuxctl snapshot [--surface ID] FILE.png` | Writes an app tile's current frame to a PNG, straight from the client's IOSurface. Needs no screen-recording permission, so it works where `screencapture` doesn't. |
+| `hyprmuxctl snapshot [--surface ID] FILE.png` | Writes an app tile's current frame to a PNG, straight from the client's IOSurface. Any other tile (a terminal, a web tile) comes from Hyprmux's own window, with its border, title pill, and a margin around it. Needs no screen-recording permission, so it works where `screencapture` doesn't. |
 | `hyprmuxctl sendscroll MODS, LINES, x y` | A notched mouse-wheel scroll, built as a real line-unit event (positive scrolls up). App tiles get it with its raw notch count, like hardware. |
 | `hyprmuxctl sendmenu TITLE` | Performs a menu bar item, as a click would (`sendmenu "Open App..."`). Works in the background. |
 | `hyprmuxctl hittest x y` | Which views a click reaches. This found the dim overlay that swallowed every click. |

@@ -40,7 +40,8 @@ final class TitlePill: NSView {
         for t in [text, idText] {
             t.alignmentMode = .center
             t.truncationMode = .end
-            t.actions = ["contents": NSNull(), "bounds": NSNull(), "position": NSNull(), "hidden": NSNull()]
+            t.actions = ["contents": NSNull(), "bounds": NSNull(), "position": NSNull(), "hidden": NSNull(),
+                         "font": NSNull(), "fontSize": NSNull(), "foregroundColor": NSNull()]
         }
         layer?.addSublayer(idFill)
         layer?.addSublayer(idText)
@@ -85,6 +86,14 @@ final class TitlePill: NSView {
         let ink = luminance > 0.55 ? NSColor(white: 0.08, alpha: 1) : NSColor(white: 1, alpha: 0.95)
         label = NSAttributedString(string: string, attributes: [.font: font, .foregroundColor: ink])
         text.string = label
+        // A truncated line ends in an ellipsis drawn with the layer's own font, size, and
+        // color, not the string's. At the default 36 pt, that line is taller than the
+        // pill, and Core Text draws nothing: long titles showed an empty pill.
+        for (t, f) in [(text, font), (idText, idFont)] {
+            t.font = f
+            t.fontSize = f.pointSize
+            t.foregroundColor = ink.cgColor
+        }
 
         // The id pill: the same color, apart from the title.
         idFill.backgroundColor = c.cg

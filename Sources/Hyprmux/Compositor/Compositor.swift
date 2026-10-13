@@ -75,7 +75,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
     private let barHeight: CGFloat = 30
 
     /// HYPRMUX_WINDOW_SIZE=1600x1000 opens the window at that size, centered, for
-    /// reproducible demo recordings (scripts/demo/record.sh).
+    /// reproducible demo recordings.
     static let fixedWindowSize: CGSize? = {
         guard let v = ProcessInfo.processInfo.environment["HYPRMUX_WINDOW_SIZE"] else { return nil }
         let p = v.lowercased().split(separator: "x").compactMap { Double($0) }

@@ -12,3 +12,6 @@ vendor/cef/
 
 # Local implementation plans.
 plans/
+
+# Demo and clip recording scripts: local only.
+scripts/demo/

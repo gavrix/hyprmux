@@ -33,58 +33,6 @@ After editing the wire-compatible subset, run
 or dependency checkout builds. The subset must retain the field numbers from
 the installed SDK's `emulator/lib/emulator_controller.proto`.
 
-## Demo recording
-
-The README's demo is recorded by a script, so it can be redone after a feature or
-styling change:
-
-```sh
-scripts/demo/record.sh              # -> docs/media/demo.mp4 and demo.gif
-scripts/demo/record.sh --rehearse   # play it without recording; the instance stays open
-scripts/demo/publish.sh             # put the new video in the README
-scripts/demo/record.sh --clip intro # one short clip for posting -> build/clips/intro.mp4
-scripts/demo/record.sh --clip all   # every clip in scripts/demo/clips/
-```
-
-**Clips** (`scripts/demo/clips/*.sh`) are short, 16:9 (1600x900) videos for
-posting, one feature each: `intro`, `config`, `workspaces`, and `simulator`. Each
-defines `play()` and optionally `setup()`, which runs before recording starts, and
-`teardown()`, which runs after it stops. Helpers such as `key`, `type_line`, and
-`caption` come from `lib.sh`. `caption "Title | subtitle"` shows a caption panel
-at the top of the window (the `caption` IPC command); `caption` with no text
-hides it. The simulator clip creates a throwaway simulator and deletes it
-afterwards. It opens the simulator by UDID (`launch --window ios:UDID Mobile`),
-because ⌘I would offer every booted
-one. For the config clip, record.sh writes the default config and the demo
-overrides into one file, `/tmp/hyprmux-demo/hyprmux.conf`, so nvim can edit it
-and each save reloads live.
-
-GitHub plays a README video inline only when it's hosted as an attachment, not
-as a file in the repo. `publish.sh` posts `demo.mp4` to the repo's "README media"
-issue (`gh issue comment --attach`) and points the README at the new attachment.
-Commit the README, the MP4, and the GIF afterwards.
-
-- **`scenario.sh`** is the demo: the real default shortcuts, text typed into
-  terminals, and pauses. The demo config turns on `hud:keycast`, so each
-  shortcut shows on screen as it's pressed. Edit it to show something new.
-- **`hyprmux.conf`** is the default config plus a few overrides: no
-  follow-mouse, no session restore, WebKit, and a plain `zsh` in a fake project
-  under `/tmp/hyprmux-demo`.
-- **`zsh/.zshrc`** gives that shell a neutral prompt and no pager.
-  `HYPRMUX_WINDOW_SIZE` (default 1440x900) fixes the window size.
-- **`recorder.swift`** records only the Hyprmux window with ScreenCaptureKit
-  (even when covered, without the cursor), and `ffmpeg` turns the result into an
-  MP4 and a GIF. `record.sh` wraps it in a small signed app, "Hyprmux Demo
-  Recorder" (`.build/demo/`), started with `open`, so it has its own Screen
-  Recording permission. Allow it once in System Settings → Privacy & Security →
-  Screen & System Audio Recording.
-- **It plays in the background.** Pickers take keys without the app in front,
-  so your keyboard and focus stay yours. In demo mode (`HYPRMUX_WINDOW_SIZE`)
-  the window floats above others, because macOS stops drawing covered windows,
-  and has no title bar, because macOS badges a captured window's title bar.
-- **The web tile** loads the demo page from a local server on a free port, so
-  no file path shows in its address bar.
-
 ## Signing
 
 macOS ties privacy permissions (Screen Recording, Accessibility, folder access)

@@ -59,7 +59,9 @@ extension Dispatcher {
             case .home: return "Home page"
             case .focusurl: return "Address bar"
             case .inspect: return "Web inspector"
+            case .find: return "Find in page"
             }
+        case .find: return "Find"
         case .fillCredential: return "Fill credential"
         case .launch(let a): return a.isEmpty ? "Apps" : "Open \(a)"
         case .killActive: return "Close window"

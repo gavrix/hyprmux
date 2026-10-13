@@ -74,6 +74,24 @@ final class WebKitSurface: BrowserSurface, WKNavigationDelegate, WKUIDelegate {
         _ = inspector?.perform(NSSelectorFromString("show"))
     }
 
+    override func engineFind(_ text: String, forward: Bool, findNext: Bool) {
+        let c = WKFindConfiguration()
+        c.backwards = !forward
+        c.caseSensitive = false
+        c.wraps = true
+        let find: () -> Void = { [weak self] in
+            self?.webView.find(text, configuration: c) { result in
+                self?.engineFindResult(found: result.matchFound)
+            }
+        }
+        if findNext { return find() }
+        // WebKit searches from the end of the selection, which is the previous match.
+        // Typing "a" then "ab" would skip an "ab" at that match, so start from its beginning.
+        webView.evaluateJavaScript("getSelection().collapseToStart()") { _, _ in find() }
+    }
+
+    override func engineStopFinding() {}
+
     override func engineDestroy() {
         observations = []
         webView.stopLoading()

@@ -59,9 +59,10 @@ struct BrowserOptions {
 
 /// A web page in a tile: a slim address bar over an engine view.
 /// Subclasses (WebKit, Chromium) supply the engine; everything else is shared.
-class BrowserSurface: FlippedView, Surface, NSTextFieldDelegate {
+class BrowserSurface: FlippedView, FindableSurface, NSTextFieldDelegate {
     let clientID: ClientID
     weak var host: BrowserSurfaceHost?
+    weak var findHost: FindBarHost?
     let options: BrowserOptions
 
     /// Holds the engine's view. Laid out below the address bar.
@@ -145,6 +146,11 @@ class BrowserSurface: FlippedView, Surface, NSTextFieldDelegate {
     /// `content` got its frame. Engines that don't autoresize their view lay it out here.
     func engineContentDidLayout() {}
     func engineTakeFocus(in window: NSWindow) { window.makeFirstResponder(engineFocusView) }
+    /// Highlight matches of `text` and select one. `findNext` false starts a new search;
+    /// true moves to the next (or previous) match. Report with `engineFindResult`.
+    func engineFind(_ text: String, forward: Bool, findNext: Bool) {}
+    /// Remove match highlights. The active match stays selected.
+    func engineStopFinding() {}
 
     /// Runs a function in an engine-owned world with structured arguments.
     /// Engines must never put argument values into the function source.
@@ -261,6 +267,15 @@ class BrowserSurface: FlippedView, Surface, NSTextFieldDelegate {
         hoveredLink = (link?.isEmpty ?? true) ? nil : link
     }
 
+    /// Result of `engineFind`. `count` and `active` (1-based) are nil if the engine doesn't report them.
+    func engineFindResult(found: Bool, active: Int? = nil, count: Int? = nil) {
+        if let count, let active {
+            findHost?.findStatusChanged("\(count == 0 ? 0 : active)/\(count)")
+        } else {
+            findHost?.findStatusChanged(found ? "" : "No results")
+        }
+    }
+
     func engineProgressChanged(_ p: Double) {
         progress = p
         layoutProgress()
@@ -322,8 +337,21 @@ class BrowserSurface: FlippedView, Surface, NSTextFieldDelegate {
         case .home: open("")
         case .focusurl: focusAddress()
         case .inspect: engineInspect()
+        case .find: break  // the tile opens its find bar (ClientView)
         }
     }
+
+    // MARK: FindableSurface
+
+    func find(_ text: String, forward: Bool, next: Bool) {
+        guard !text.isEmpty else {
+            findHost?.findStatusChanged("")
+            return engineStopFinding()
+        }
+        engineFind(text, forward: forward, findNext: next)
+    }
+
+    func endFind() { engineStopFinding() }
 
     func focusAddress() {
         if !showBar { setAddressBarVisible(true) }

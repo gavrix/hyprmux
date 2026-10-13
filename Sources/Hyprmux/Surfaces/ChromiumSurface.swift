@@ -62,6 +62,10 @@ final class ChromiumSurface: BrowserSurface, HMChromiumBrowserDelegate {
     override func engineStop() { browser?.stopLoad() }
     override func engineContentDidLayout() { browser?.layoutInParent() }
     override func engineInspect() { browser?.showDevTools() }
+    override func engineFind(_ text: String, forward: Bool, findNext: Bool) {
+        browser?.find(text, forward: forward)
+    }
+    override func engineStopFinding() { browser?.stopFinding() }
 
     override func engineCallCredentialFunction(_ source: String, arguments: [String: Any],
                                                completion: @escaping (Result<Any?, Error>) -> Void) {
@@ -139,6 +143,12 @@ final class ChromiumSurface: BrowserSurface, HMChromiumBrowserDelegate {
 
     func chromiumBrowserShouldTakeNavigationFocus(_ b: HMChromiumBrowser) -> Bool {
         host?.browserSurfaceShouldTakeNavigationFocus(self) ?? true
+    }
+
+    func chromiumBrowser(_ b: HMChromiumBrowser, findResultCount count: Int32, activeMatch: Int32, final: Bool) {
+        // Early updates can report a count before an active match is chosen.
+        guard final || activeMatch > 0 else { return }
+        engineFindResult(found: count > 0, active: Int(activeMatch), count: Int(count))
     }
 
     func chromiumBrowserDidClose(_ b: HMChromiumBrowser) {

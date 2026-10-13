@@ -44,6 +44,10 @@ final class TerminalView: NSView, NSTextInputClient {
     let clientID: ClientID
     private(set) var surface: ghostty_surface_t?
     weak var host: TerminalViewHost?
+    weak var findHost: FindBarHost?
+    /// Ghostty's search results: match count and selected match (0-based), when known.
+    private var searchTotal: Int?
+    private var searchSelected: Int?
 
     private(set) var title = ""
     private(set) var pwd: String?
@@ -284,6 +288,33 @@ final class TerminalView: NSView, NSTextInputClient {
     }
 
     func runtimeSetPwd(_ p: String) { pwd = p }
+
+    // Search. Ghostty matches and highlights; the tile's find bar is the UI.
+
+    func runtimeStartSearch(_ needle: String?) { findHost?.surfaceRequestsFind(query: needle) }
+
+    func runtimeEndSearch() {
+        searchTotal = nil
+        searchSelected = nil
+        findHost?.surfaceEndedFind()
+    }
+
+    func runtimeSetSearchTotal(_ total: Int) {
+        searchTotal = total >= 0 ? total : nil
+        reportSearchStatus()
+    }
+
+    func runtimeSetSearchSelected(_ selected: Int) {
+        searchSelected = selected >= 0 ? selected : nil
+        reportSearchStatus()
+    }
+
+    private func reportSearchStatus() {
+        guard let total = searchTotal else { return findHost?.findStatusChanged("") ?? () }
+        if total == 0 { return findHost?.findStatusChanged("0/0") ?? () }
+        // Before Return picks a match, show only the count.
+        findHost?.findStatusChanged(searchSelected.map { "\($0 + 1)/\(total)" } ?? "\(total) found")
+    }
     func runtimeSetPasswordInput(_ on: Bool) { passwordInput = on }
 
     /// The facts credential fill checks before it types a password.

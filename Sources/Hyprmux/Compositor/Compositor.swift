@@ -577,8 +577,12 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
             views[id]?.surface.requestClose()
         case .spawnWeb(let url):
             DispatchQueue.main.async { [weak self] in self?.spawnWeb(url) }
+        case .webNav(let id, .find):
+            if views[id]?.surface is BrowserSurface { views[id]?.showFind() }
         case .webNav(let id, let nav):
             (views[id]?.surface as? BrowserSurface)?.perform(nav)
+        case .find(let id):
+            views[id]?.showFind()
         case .credentialFill(let id, let provider):
             DispatchQueue.main.async { [weak self] in self?.credentialFill(id, providerID: provider) }
         case .submap(let name):
@@ -852,7 +856,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         if let t = s as? TerminalView { lastTerminal = t }
         // Leave focus alone if it is already somewhere inside the surface (e.g. a web
         // page's address bar), unless the focused window just changed.
-        if !changed && s.ownsFirstResponder(in: window) { return }
+        if !changed && (views[id]?.ownsFirstResponder(in: window) ?? false) { return }
         if window.firstResponder !== s.focusTarget { s.takeFocus(in: window) }
     }
 
@@ -918,12 +922,24 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         if let tile = focusedAppTile, appPasses(tile, mods, e.keyCode) { return e }
         guard let bind = config.binds.first(where: {
             $0.submap == submap && !$0.flags.contains("m") && $0.mods == mods && $0.trigger == .key(e.keyCode)
+                && bindApplies($0.dispatcher)
         }) else { return e }
         consumedKeyUps.insert(e.keyCode)
         if e.isARepeat && !bind.flags.contains("e") { return nil }
         hud.keycast.press(chord: KeyChord.display(bind.mods, bind.trigger), label: bind.label)
         dispatch(bind.dispatcher, source: .key)
         return bind.flags.contains("n") ? e : nil
+    }
+
+    /// Binds for something the focused tile can't do pass the key through to it:
+    /// `webnav` outside web tiles (so CTRL+F still reaches a terminal), `find` in tiles without search.
+    private func bindApplies(_ d: Dispatcher) -> Bool {
+        let s = wm.focused.flatMap { views[$0]?.surface }
+        switch d {
+        case .webNav: return s is BrowserSurface
+        case .find: return s is FindableSurface
+        default: return true
+        }
     }
 
     private func point(_ e: NSEvent) -> CGPoint { root.convert(e.locationInWindow, from: nil) }
@@ -1069,6 +1085,8 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
                 switch d {
                 case .webNav where !(surface is BrowserSurface):
                     return "error: surface \(id.raw) is not a web surface"
+                case .find where !(surface is FindableSurface):
+                    return "error: surface \(id.raw) can't search"
                 default:
                     dispatch(d, target: id, source: .ipc)
                     return "ok"
@@ -1285,6 +1303,9 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         for (k, v) in s?.info ?? [:] { info[k] = v }
         if let a = agentInfo(p.id) { info["agent"] = a }
         if let st = views[p.id]?.status { info["status"] = st }
+        if let v = views[p.id], s is FindableSurface {
+            info["find"] = ["open": v.isFinding, "query": v.findQuery, "status": v.findStatus]
+        }
         if let c = s as? ClientSurface, let pid = c.connection?.pid, let a = adapterName(forPid: pid) { info["adapter"] = a }
         if let g = p.group {
             info["group"] = ["id": g.id.raw, "members": g.members.map(\.raw), "active": g.active.raw]

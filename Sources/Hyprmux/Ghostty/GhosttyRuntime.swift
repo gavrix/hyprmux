@@ -252,6 +252,23 @@ final class GhosttyRuntime {
             let n = action.action.desktop_notification
             v.host?.terminal(v, notifyTitle: n.title.map { String(cString: $0) } ?? "",
                              body: n.body.map { String(cString: $0) } ?? "")
+        // Search. Ghostty may send these while it holds surface locks, so the UI
+        // (which calls back into the surface) updates after this returns.
+        case GHOSTTY_ACTION_START_SEARCH:
+            guard let v else { return false }
+            let needle = action.action.start_search.needle.map { String(cString: $0) }
+            DispatchQueue.main.async { [weak v] in v?.runtimeStartSearch(needle.flatMap { $0.isEmpty ? nil : $0 }) }
+        case GHOSTTY_ACTION_END_SEARCH:
+            guard let v else { return false }
+            DispatchQueue.main.async { [weak v] in v?.runtimeEndSearch() }
+        case GHOSTTY_ACTION_SEARCH_TOTAL:
+            guard let v else { return false }
+            let total = Int(action.action.search_total.total)
+            DispatchQueue.main.async { [weak v] in v?.runtimeSetSearchTotal(total) }
+        case GHOSTTY_ACTION_SEARCH_SELECTED:
+            guard let v else { return false }
+            let selected = Int(action.action.search_selected.selected)
+            DispatchQueue.main.async { [weak v] in v?.runtimeSetSearchSelected(selected) }
         case GHOSTTY_ACTION_RING_BELL:
             NSSound.beep()
         case GHOSTTY_ACTION_RENDER:

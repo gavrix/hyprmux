@@ -6,7 +6,7 @@ import HyprmuxCore
 ///
 /// During geometry animations the terminal jumps to its final size once and the
 /// clip animates around it. That avoids sending a resize to the shell every frame.
-final class ClientView: DecoratedView {
+final class ClientView: DecoratedView, FindBarHost {
     let id: ClientID
     let surface: Surface
     private let dimView = PassthroughView()
@@ -34,6 +34,13 @@ final class ClientView: DecoratedView {
     private var barHeight: CGFloat { groupBar == nil ? 0 : groupBarHeight }
     private var groupBarHeight: CGFloat = 20
     var onSelectTab: ((Int) -> Void)?
+
+    /// Find bar along the bottom, for surfaces that can search. Made on first use.
+    private var findBar: FindBar?
+    private var findable: FindableSurface? { surface as? FindableSurface }
+    var isFinding: Bool { findBar.map { !$0.isHidden } ?? false }
+    var findQuery: String { findBar?.query ?? "" }
+    var findStatus: String { findBar?.status ?? "" }
 
     /// What the tile's content is doing (TileStatus): the title pill takes its color, and
     /// so does the border while the tile is unfocused. Both pulse.
@@ -130,6 +137,93 @@ final class ClientView: DecoratedView {
             radius: Double(innerR), power: Double(decoration.roundingPower), depth: 15))
         let content = CGRect(x: 0, y: bh, width: w, height: h - bh)
         if surface.view.frame != content { surface.view.frame = content }
+        // Over the bottom of the content, so the terminal doesn't resize when it opens.
+        findBar?.frame = CGRect(x: 0, y: content.maxY - FindBar.height, width: w, height: FindBar.height)
+        findBar?.sideInset = CGFloat(RoundedShape.edgeInset(
+            radius: Double(innerR), power: Double(decoration.roundingPower), depth: Double(FindBar.height) / 2))
+    }
+
+    // MARK: Find
+
+    /// Opens the find bar, or selects its query if it's already open.
+    func showFind() {
+        guard let findable else { return }
+        let bar = findBar ?? makeFindBar()
+        if bar.isHidden {
+            bar.isHidden = false
+            bar.status = ""
+            layoutContent()
+            // Reopened with the old query: highlight its matches again.
+            if !bar.query.isEmpty { findable.find(bar.query, forward: true, next: false) }
+        }
+        bar.focusField()
+    }
+
+    func closeFind() {
+        guard let bar = findBar, !bar.isHidden else { return }
+        hideFindBar()
+        findable?.endFind()
+    }
+
+    private func hideFindBar() {
+        guard let bar = findBar, let window else { return }
+        let hadFocus = Self.responder(window.firstResponder, isIn: bar)
+        bar.isHidden = true
+        if hadFocus { surface.takeFocus(in: window) }
+    }
+
+    private func makeFindBar() -> FindBar {
+        let bar = FindBar()
+        bar.isHidden = true
+        bar.onChange = { [weak self] text in self?.findable?.find(text, forward: true, next: false) }
+        bar.onNavigate = { [weak self, weak bar] forward in
+            guard let self, let bar, !bar.query.isEmpty else { return }
+            findable?.find(bar.query, forward: forward, next: true)
+        }
+        bar.onClose = { [weak self] in self?.closeFind() }
+        // Above the content, below the inactive dim.
+        clip.addSubview(bar, positioned: .above, relativeTo: surface.view)
+        findBar = bar
+        return bar
+    }
+
+    /// True if the window's first responder is in this tile: its surface or its find bar.
+    func ownsFirstResponder(in window: NSWindow) -> Bool {
+        surface.ownsFirstResponder(in: window) || findBar.map { Self.responder(window.firstResponder, isIn: $0) } ?? false
+    }
+
+    private static func responder(_ r: NSResponder?, isIn view: NSView) -> Bool {
+        guard let v = r as? NSView else { return false }
+        // Field editors live outside the view tree; use their delegate (the text field).
+        if let tv = v as? NSTextView, tv.isFieldEditor, let owner = tv.delegate as? NSView {
+            return owner.isDescendant(of: view)
+        }
+        return v.isDescendant(of: view)
+    }
+
+    // MARK: FindBarHost
+
+    func findStatusChanged(_ status: String) {
+        guard let bar = findBar, !bar.isHidden, !bar.query.isEmpty || status.isEmpty else { return }
+        bar.status = status
+    }
+
+    func surfaceRequestsFind(query: String?) {
+        // Ghostty also reports searches the bar started; leave the bar alone then.
+        if isFinding {
+            if let query, query != findQuery, let bar = findBar {
+                bar.query = query
+                findable?.find(query, forward: true, next: false)
+            }
+            return
+        }
+        if let query { (findBar ?? makeFindBar()).query = query }
+        showFind()
+    }
+
+    func surfaceEndedFind() {
+        guard isFinding else { return }
+        hideFindBar()
     }
 
     init(id: ClientID, surface: Surface, decoration: Decoration) {
@@ -149,6 +243,7 @@ final class ClientView: DecoratedView {
         titlePill.isHidden = true
         addSubview(titlePill)
         finishSetup()
+        findable?.findHost = self
     }
 
     required init?(coder: NSCoder) { fatalError("not supported") }

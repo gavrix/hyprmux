@@ -157,7 +157,8 @@ class HMClient : public CefClient,
                  public CefDisplayHandler,
                  public CefLoadHandler,
                  public CefFocusHandler,
-                 public CefRequestHandler {
+                 public CefRequestHandler,
+                 public CefFindHandler {
  public:
   explicit HMClient(HMChromiumBrowser *owner) : owner_(owner) {}
 
@@ -166,6 +167,7 @@ class HMClient : public CefClient,
   CefRefPtr<CefLoadHandler> GetLoadHandler() override { return this; }
   CefRefPtr<CefFocusHandler> GetFocusHandler() override { return this; }
   CefRefPtr<CefRequestHandler> GetRequestHandler() override { return this; }
+  CefRefPtr<CefFindHandler> GetFindHandler() override { return this; }
 
   // Life span
 
@@ -271,6 +273,14 @@ class HMClient : public CefClient,
       return true;
     }
     return false;
+  }
+
+  // Find
+
+  void OnFindResult(CefRefPtr<CefBrowser> browser, int identifier, int count, const CefRect &selectionRect,
+                    int activeMatchOrdinal, bool finalUpdate) override {
+    HMChromiumBrowser *o = owner_;
+    [o.delegate chromiumBrowser:o findResultCount:count activeMatch:activeMatchOrdinal final:finalUpdate];
   }
 
   bool loading() const { return loading_; }
@@ -483,6 +493,17 @@ class HMClient : public CefClient,
 
 - (void)setFocused:(BOOL)focused {
   if (_browser) _browser->GetHost()->SetFocus(focused);
+}
+
+- (void)find:(NSString *)text forward:(BOOL)forward {
+  // CEF calls the last argument findNext, but it's Chromium's find_match: true selects
+  // a match. Without it a new search only highlights. Chromium starts a new search
+  // itself when the text changes or after StopFinding.
+  if (_browser) _browser->GetHost()->Find(text.UTF8String ?: "", forward, false, true);
+}
+
+- (void)stopFinding {
+  if (_browser) _browser->GetHost()->StopFinding(false);
 }
 
 - (void)callIsolatedFunction:(NSString *)source

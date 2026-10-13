@@ -42,6 +42,8 @@ public enum WebNav: String, Equatable, Sendable, CaseIterable {
     case focusurl
     /// Open Web Inspector.
     case inspect
+    /// Open the find bar. Same as the `find` dispatcher, but only in web tiles.
+    case find
 }
 
 /// Hyprmux's own pickers, opened with `picker, KIND`. No Hyprland equivalent.
@@ -77,6 +79,8 @@ public enum Dispatcher: Equatable, Sendable {
     /// Open a web surface (empty = home page, address bar focused).
     case web(String)
     case webNav(WebNav)
+    /// Open the focused tile's find bar: a web page or terminal scrollback.
+    case find
     /// Fill the focused credential input. Nil selects every enabled provider.
     case fillCredential(String?)
     /// Open an app from the catalog in a new tile: its name or id, then arguments.
@@ -144,6 +148,7 @@ public enum Dispatcher: Equatable, Sendable {
                 return .failure(.init("webnav: expected one of \(WebNav.allCases.map(\.rawValue).joined(separator: ", "))"))
             }
             return .success(.webNav(n))
+        case "find": return .success(.find)
         case "killactive", "kill": return .success(.killActive)
         case "movefocus": return needDirection { .moveFocus($0) }
         case "movewindow": return needDirection { .moveWindow($0) }
@@ -212,7 +217,7 @@ extension Dispatcher {
     /// IPC can name another one (`dispatch --surface N ...`). The rest act on the app or a workspace.
     public var targetsWindow: Bool {
         switch self {
-        case .webNav, .fillCredential, .killActive, .moveFocus, .moveWindow, .swapWindow,
+        case .webNav, .find, .fillCredential, .killActive, .moveFocus, .moveWindow, .swapWindow,
              .resizeActive, .moveActive, .moveToWorkspace, .toggleFloating, .fullscreen,
              .toggleSplit, .swapSplit, .splitRatio, .cycleNext, .centerWindow,
              .toggleGroup, .changeGroupActive, .moveIntoGroup, .moveOutOfGroup, .moveGroupWindow:
@@ -253,6 +258,7 @@ extension Dispatcher {
         case .exec(let c): return ("exec", c)
         case .web(let u): return ("web", u)
         case .webNav(let n): return ("webnav", n.rawValue)
+        case .find: return ("find", "")
         case .fillCredential(let p): return ("fillcredential", p ?? "")
         case .launch(let a): return ("launch", a)
         case .killActive: return ("killactive", "")

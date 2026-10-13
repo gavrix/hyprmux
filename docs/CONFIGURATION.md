@@ -538,7 +538,8 @@ These names work in `bind` lines and with `hyprmuxctl dispatch`.
 |---|---|---|
 | `exec` | [command] | New terminal, optionally running a command. |
 | `web` / `openurl` | [url or search] | New web tile. Empty: a start page with the address bar focused. |
-| `webnav` | `back` `forward` `reload` `stop` `home` `focusurl` `inspect` | Navigation in the focused web tile. |
+| `webnav` | `back` `forward` `reload` `stop` `home` `focusurl` `inspect` `find` | Navigation in the focused web tile. `find` opens the find bar, like the `find` dispatcher. A `webnav` bind acts only when a web tile has focus; in other tiles the key passes through. |
+| `find` | | Open the find bar along the bottom of the focused tile: terminal scrollback or a web page. Return and Shift+Return go to the next and previous match; Esc closes it. Matching is plain text, ignoring case. In a tile that can't search, the key passes through. |
 | `fillcredential` | [provider id] | Choose a credential and fill the exact focused field in a WebKit or Chromium tile, or type a password into a terminal's password prompt. Empty queries the configured providers. |
 | `launch` | [name or id, then arguments] | Open an [app](APPS.md) in a new tile. The text names an app whole, or its first word does and the rest are arguments. Empty: the launcher. An app that offers several windows shows a picker. `launch, Mobile` shows simulators and emulators; `launch, Mobile iPhone 17` opens that device. |
 | `killactive` | | Close the focused window. |

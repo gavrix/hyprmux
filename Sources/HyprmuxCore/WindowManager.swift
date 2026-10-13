@@ -34,6 +34,7 @@ public enum Effect: Equatable, Sendable {
     /// Open a catalog app (docs/APPS.md): a name or id, then arguments.
     case launch(String)
     case webNav(ClientID, WebNav)
+    case find(ClientID)
     case credentialFill(ClientID, String?)
     case close(ClientID)
     case submap(String)
@@ -230,6 +231,7 @@ public final class WindowManager {
         case .web(let url): perform(.spawnWeb(url: url))
         case .launch(let app): perform(.launch(app))
         case .webNav(let n): if let f = subject { perform(.webNav(f, n)) }
+        case .find: if let f = subject { perform(.find(f)) }
         case .fillCredential(let provider): if let f = subject { perform(.credentialFill(f, provider)) }
         case .killActive: if let f = subject { perform(.close(f)) }
         case .moveFocus(let dir): moveFocus(dir, target)

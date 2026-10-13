@@ -45,6 +45,15 @@ extension Surface {
     }
 }
 
+extension TerminalView: FindableSurface {
+    func find(_ text: String, forward: Bool, next: Bool) {
+        // `search:` with empty text cancels the search but keeps it open.
+        performBindingAction(next ? "navigate_search:\(forward ? "next" : "previous")" : "search:\(text)")
+    }
+
+    func endFind() { performBindingAction("end_search") }
+}
+
 extension TerminalView: Surface {
     var view: NSView { self }
     var focusTarget: NSView { self }

@@ -244,6 +244,17 @@ final class ConfigTests: XCTestCase {
         XCTAssertEqual(try? Dispatcher.parse("web", "github.com").get(), .web("github.com"))
         XCTAssertEqual(try? Dispatcher.parse("webnav", "back").get(), .webNav(.back))
         XCTAssertNil(try? Dispatcher.parse("webnav", "sideways").get())
+        XCTAssertEqual(try? Dispatcher.parse("webnav", "find").get(), .webNav(.find))
+        XCTAssertEqual(try? Dispatcher.parse("find", "").get(), .find)
+        XCTAssertEqual(Dispatcher.find.command.name, "find")
+    }
+
+    func testDefaultConfigBindsFind() {
+        let binds = ConfigParser.parse(defaultConfig).binds
+        let web = binds.first { $0.dispatcher == Dispatcher.webNav(.find) }
+        XCTAssertEqual(web?.mods, Modifiers.ctrl)
+        let any = binds.first { $0.dispatcher == Dispatcher.find }
+        XCTAssertEqual(any?.mods, [Modifiers.ctrl, Modifiers.shift])
     }
 
     func testIPCParsing() {

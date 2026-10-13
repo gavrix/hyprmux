@@ -26,6 +26,11 @@ NS_ASSUME_NONNULL_BEGIN
 /// A page load wants keyboard focus. Return NO to refuse, e.g. for a tile opened in the background.
 - (BOOL)chromiumBrowserShouldTakeNavigationFocus:(HMChromiumBrowser *)browser;
 - (void)chromiumBrowserDidClose:(HMChromiumBrowser *)browser;
+/// Progress of -find:forward:. `activeMatch` is 1-based; `final` marks the last update.
+- (void)chromiumBrowser:(HMChromiumBrowser *)browser
+        findResultCount:(int)count
+            activeMatch:(int)activeMatch
+                  final:(BOOL)final;
 @end
 
 /// Process-wide CEF lifecycle. Main thread only.
@@ -68,6 +73,11 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)stopLoad;
 - (void)showDevTools;
 - (void)setFocused:(BOOL)focused;
+/// Find in page and select a match. New text starts a new search; the same text
+/// moves to the next or previous match.
+- (void)find:(NSString *)text forward:(BOOL)forward;
+/// Ends find in page. The active match stays selected.
+- (void)stopFinding;
 /// Fits the browser view to `parentView`. Call after the parent view resizes.
 - (void)layoutInParent;
 /// Calls a JavaScript function in a fresh isolated world. The argument travels as

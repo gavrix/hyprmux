@@ -33,9 +33,7 @@ let wantsChromium = startupConfig.webEngine == "chromium"
 let cefFramework = Bundle.main.privateFrameworksURL?
     .appendingPathComponent("Chromium Embedded Framework.framework").path ?? ""
 // Chromium allows one process per profile; HYPRMUX_CHROMIUM_PROFILE lets a second instance run.
-let cefCache = ProcessInfo.processInfo.environment["HYPRMUX_CHROMIUM_PROFILE"]
-    ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        .appendingPathComponent("Hyprmux/Chromium").path
+let cefCache = ChromiumProfile.path
 
 if wantsChromium, FileManager.default.fileExists(atPath: cefFramework),
    HMChromium.start(withRootCachePath: cefCache, switches: chromiumSwitches(startupConfig)) {

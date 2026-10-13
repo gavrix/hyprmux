@@ -6,6 +6,20 @@ NS_ASSUME_NONNULL_BEGIN
 
 @class HMChromiumBrowser;
 
+/// A certificate's subject or issuer name.
+@interface HMCertificatePrincipal : NSObject
+@property (nonatomic, readonly) NSString *commonName;
+@property (nonatomic, readonly) NSString *locality;
+@property (nonatomic, readonly) NSArray<NSString *> *organizations;
+@property (nonatomic, readonly) NSArray<NSString *> *organizationalUnits;
+@end
+
+/// A client certificate a site may ask for (mutual TLS), as offered to the delegate.
+@interface HMClientCertificate : NSObject
+@property (nonatomic, readonly) HMCertificatePrincipal *subject;
+@property (nonatomic, readonly) HMCertificatePrincipal *issuer;
+@end
+
 @protocol HMChromiumBrowserDelegate <NSObject>
 - (void)chromiumBrowser:(HMChromiumBrowser *)browser titleChanged:(NSString *)title;
 - (void)chromiumBrowser:(HMChromiumBrowser *)browser addressChanged:(NSString *)url;
@@ -26,6 +40,15 @@ NS_ASSUME_NONNULL_BEGIN
 /// A page load wants keyboard focus. Return NO to refuse, e.g. for a tile opened in the background.
 - (BOOL)chromiumBrowserShouldTakeNavigationFocus:(HMChromiumBrowser *)browser;
 - (void)chromiumBrowserDidClose:(HMChromiumBrowser *)browser;
+@optional
+/// A server asks for a client certificate; `certificates` holds only the ones it accepts.
+/// Return an index to send that certificate without asking (a policy chose it), or -1
+/// to let Chromium ask the user. Not implemented: Chromium always asks.
+- (NSInteger)chromiumBrowser:(HMChromiumBrowser *)browser
+    autoSelectClientCertificateForHost:(NSString *)host
+                                  port:(int)port
+                          certificates:(NSArray<HMClientCertificate *> *)certificates;
+@required
 /// Progress of -find:forward:. `activeMatch` is 1-based; `final` marks the last update.
 - (void)chromiumBrowser:(HMChromiumBrowser *)browser
         findResultCount:(int)count

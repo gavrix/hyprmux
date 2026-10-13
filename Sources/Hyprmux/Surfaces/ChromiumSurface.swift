@@ -151,6 +151,16 @@ final class ChromiumSurface: BrowserSurface, HMChromiumBrowserDelegate {
         engineFindResult(found: count > 0, active: Int(activeMatch), count: Int(count))
     }
 
+    /// Chrome's AutoSelectCertificateForUrls policy picks the certificate, as it does in
+    /// Chrome (Shopify's device certificate for its sites). No match: Chromium asks.
+    func chromiumBrowser(_ b: HMChromiumBrowser, autoSelectClientCertificateForHost server: String, port: Int32,
+                         certificates: [HMClientCertificate]) -> Int {
+        let names = certificates.map { CertificateNames(subject: .init($0.subject), issuer: .init($0.issuer)) }
+        let index = ChromeManagedPolicy.certificateAutoSelect.select(host: server, port: Int(port), certificates: names)
+        log.debug("client certificate host=\(server):\(port) auto-selected=\(index.map(String.init) ?? "no")")
+        return index ?? -1
+    }
+
     func chromiumBrowserDidClose(_ b: HMChromiumBrowser) {
         browser = nil
         finishClose()

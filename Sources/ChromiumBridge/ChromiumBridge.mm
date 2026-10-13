@@ -14,6 +14,7 @@
 #include "include/cef_browser.h"
 #include "include/cef_client.h"
 #include "include/cef_values.h"
+#include "include/cef_x509_certificate.h"
 #include "include/wrapper/cef_helpers.h"
 #include "include/wrapper/cef_library_loader.h"
 
@@ -53,6 +54,55 @@ typedef NS_ENUM(NSInteger, HMCredentialDevToolsStage) {
 - (void)finishCredentialCall:(HMCredentialCall *)call value:(nullable id)value error:(nullable NSString *)error;
 - (void)failAllCredentialCalls:(NSString *)error;
 @property (nonatomic) CefRefPtr<CefClient> client;
+@end
+
+// MARK: - Client certificates
+
+static NSArray<NSString *> *NSStrings(const std::vector<CefString> &v) {
+  NSMutableArray<NSString *> *out = [NSMutableArray arrayWithCapacity:v.size()];
+  for (const auto &s : v) [out addObject:NS(s)];
+  return out;
+}
+
+@interface HMCertificatePrincipal ()
+- (instancetype)initWithPrincipal:(CefRefPtr<CefX509CertPrincipal>)p;
+@end
+
+@implementation HMCertificatePrincipal
+- (instancetype)initWithPrincipal:(CefRefPtr<CefX509CertPrincipal>)p {
+  if ((self = [super init])) {
+    if (p) {
+      _commonName = NS(p->GetCommonName());
+      _locality = NS(p->GetLocalityName());
+      std::vector<CefString> names;
+      p->GetOrganizationNames(names);
+      _organizations = NSStrings(names);
+      names.clear();
+      p->GetOrganizationUnitNames(names);
+      _organizationalUnits = NSStrings(names);
+    } else {
+      _commonName = @"";
+      _locality = @"";
+      _organizations = @[];
+      _organizationalUnits = @[];
+    }
+  }
+  return self;
+}
+@end
+
+@interface HMClientCertificate ()
+- (instancetype)initWithCertificate:(CefRefPtr<CefX509Certificate>)cert;
+@end
+
+@implementation HMClientCertificate
+- (instancetype)initWithCertificate:(CefRefPtr<CefX509Certificate>)cert {
+  if ((self = [super init])) {
+    _subject = [[HMCertificatePrincipal alloc] initWithPrincipal:cert->GetSubject()];
+    _issuer = [[HMCertificatePrincipal alloc] initWithPrincipal:cert->GetIssuer()];
+  }
+  return self;
+}
 @end
 
 // MARK: - CefApp
@@ -263,6 +313,24 @@ class HMClient : public CefClient,
 
   // Request
 
+  bool OnSelectClientCertificate(CefRefPtr<CefBrowser> browser, bool isProxy, const CefString &host, int port,
+                                 const X509CertificateList &certificates,
+                                 CefRefPtr<CefSelectClientCertificateCallback> callback) override {
+    HMChromiumBrowser *o = owner_;
+    id<HMChromiumBrowserDelegate> d = o.delegate;
+    if (certificates.empty() ||
+        ![d respondsToSelector:@selector(chromiumBrowser:autoSelectClientCertificateForHost:port:certificates:)]) {
+      return false;
+    }
+    NSMutableArray<HMClientCertificate *> *offered = [NSMutableArray array];
+    for (const auto &c : certificates) [offered addObject:[[HMClientCertificate alloc] initWithCertificate:c]];
+    NSInteger index = [d chromiumBrowser:o autoSelectClientCertificateForHost:NS(host) port:port certificates:offered];
+    // No policy match: false keeps Chromium's default, its certificate dialog.
+    if (index < 0 || (size_t)index >= certificates.size()) return false;
+    callback->Select(certificates[(size_t)index]);
+    return true;
+  }
+
   bool OnOpenURLFromTab(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame,
                         const CefString &target_url, WindowOpenDisposition target_disposition,
                         bool user_gesture) override {
@@ -361,7 +429,29 @@ class HMClient : public CefClient,
     CefQuitMessageLoop();
     return;
   }
-  for (HMChromiumBrowser *b in [gLive copy]) [b close];
+  // Chromium's page dialogs (certificate picker, passkey prompt, HTTP login) are
+  // views windows. Closing a browser destroys their host, but the dialog's own close
+  // is a posted task that later unregisters from that freed host and crashes
+  // (constrained_window::ModalDialogHostObserverViews). Close them first, while
+  // their browsers live, and close the browsers on the next turn.
+  Class dialogClass = NSClassFromString(@"NativeWidgetMacNSWindow");
+  BOOL closedDialog = NO;
+  if (dialogClass) {
+    for (NSWindow *w in [NSApp.windows copy]) {
+      if ([w isKindOfClass:dialogClass]) {
+        [w close];
+        closedDialog = YES;
+      }
+    }
+  }
+  void (^closeBrowsers)(void) = ^{
+    for (HMChromiumBrowser *b in [gLive copy]) [b close];
+  };
+  if (closedDialog) {
+    dispatch_async(dispatch_get_main_queue(), closeBrowsers);
+  } else {
+    closeBrowsers();
+  }
 }
 
 + (void)shutdown {

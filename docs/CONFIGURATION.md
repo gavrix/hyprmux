@@ -234,6 +234,14 @@ colors.
 | `chromium_extensions` | — | Comma-separated unpacked extension folders to load into Chromium. Extensions that need tabs (like 1Password) don't work in tiles. Loaded extensions can read page DOM values, including filled credentials, like page scripts. |
 | `chromium_flags` | — | Space-separated Chromium switches. Credential fill is refused with `remote-debugging-port`, `remote-debugging-pipe`, or `devtools-protocol-log-file` because those switches can expose filled values. |
 
+**Client certificates (Chromium).** Some sites ask the browser for a client
+certificate, such as a company device certificate behind an access gateway.
+Hyprmux follows Google Chrome's `AutoSelectCertificateForUrls` policy when
+device management sets it: a matching certificate is sent without asking, as
+in Chrome. Hyprmux's Chromium doesn't get Chrome's managed policies itself,
+because they're delivered per app. When no rule matches, Chromium asks with its
+own dialog.
+
 ### `credentials`
 
 | Option | Default | Meaning |

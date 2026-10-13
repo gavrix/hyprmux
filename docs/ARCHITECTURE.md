@@ -127,7 +127,9 @@ config's bezier curve: each chrome layer animates from its geometry at the
 start frame to its geometry at the target. The window server runs the
 animations, so a tile is in its final place even when nothing draws (the app
 hidden, a display asleep). Completions, like hiding a tile after it slides out,
-run after the animation's duration.
+run on a timer after the animation's duration. The timer fires a few
+milliseconds late, so `isAnimating` stays true until the completion runs. A
+re-layout in that gap would otherwise move the tile and cancel its completion.
 
 ### `ClientView`
 

@@ -307,6 +307,11 @@ class DecoratedView: NSView {
     private var alphaGeneration = 0
     private var frameAnimationEnd: CFTimeInterval = 0
     private var alphaAnimationEnd: CFTimeInterval = 0
+    /// The generation whose completion is waiting to run. A completion runs on a timer
+    /// that fires a little after the animation ends; until then the view still counts
+    /// as animating, so nothing treats it as settled and supersedes the completion.
+    private var frameCompletionGeneration: Int?
+    private var alphaCompletionGeneration: Int?
 
     /// Layers that are laid out for the final frame and never animated with the chrome,
     /// with everything under them. Tiles return their content (the surface).
@@ -356,7 +361,7 @@ class DecoratedView: NSView {
             return
         }
         frameAnimationEnd = CACurrentMediaTime() + duration
-        after(duration, generation: frameGeneration, current: { $0.frameGeneration }, completion)
+        after(duration, generation: \.frameGeneration, pending: \.frameCompletionGeneration, completion)
     }
 
     /// Sets the whole view's alpha to `to`. With a duration, the screen shows a fade from
@@ -383,18 +388,26 @@ class DecoratedView: NSView {
             layer?.add(animation, forKey: key)
         }
         alphaAnimationEnd = CACurrentMediaTime() + duration
-        after(duration, generation: alphaGeneration, current: { $0.alphaGeneration }, completion)
+        after(duration, generation: \.alphaGeneration, pending: \.alphaCompletionGeneration, completion)
     }
 
-    /// True while the screen still shows a move or fade.
-    var isAnimating: Bool { CACurrentMediaTime() < max(frameAnimationEnd, alphaAnimationEnd) }
+    /// True while the screen still shows a move or fade, or its completion hasn't run.
+    var isAnimating: Bool {
+        CACurrentMediaTime() < max(frameAnimationEnd, alphaAnimationEnd)
+            || frameCompletionGeneration == frameGeneration
+            || alphaCompletionGeneration == alphaGeneration
+    }
 
-    /// Runs `completion` after `delay`, unless a newer move or fade came first.
-    private func after(_ delay: Double, generation: Int, current: @escaping (DecoratedView) -> Int,
-                       _ completion: (() -> Void)?) {
+    /// Runs `completion` after `delay`, unless a newer move or fade came first. Marks it
+    /// pending until then, for `isAnimating`.
+    private func after(_ delay: Double, generation: KeyPath<DecoratedView, Int>,
+                       pending: ReferenceWritableKeyPath<DecoratedView, Int?>, _ completion: (() -> Void)?) {
         guard let completion else { return }
+        let scheduled = self[keyPath: generation]
+        self[keyPath: pending] = scheduled
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-            guard let self, current(self) == generation else { return }
+            guard let self, self[keyPath: generation] == scheduled else { return }
+            self[keyPath: pending] = nil
             completion()
         }
     }

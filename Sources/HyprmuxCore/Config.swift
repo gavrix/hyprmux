@@ -148,6 +148,9 @@ public struct HyprmuxConfig: Sendable {
     /// Bound chords an app gets instead of Hyprmux while its tile has the keyboard, by
     /// app id (`app:<id> { pass = SUPER P, SUPER SHIFT P }`). Binds win everywhere else.
     public var appPass: [String: Set<AppChord>] = [:]
+    /// The same for terminals, by the name the foreground program shows (`ps -o comm`), lowercased
+    /// (`terminal:pi { pass = CTRL SHIFT F }`): a TUI keeps its own shortcuts.
+    public var terminalPass: [String: Set<AppChord>] = [:]
     public var binds: [KeyBind] = []
     public var execOnce: [String] = []
     public var exec: [String] = []
@@ -380,6 +383,20 @@ public enum ConfigParser {
                 guard let g = Gradient.parse(value) else { error(file, line, "\(key): bad color '\(value)'"); return nil }
                 return g
             }
+            /// A `pass` list: "SUPER P, CTRL SHIFT F".
+            func chords(_ k: String) -> Set<AppChord> {
+                var out: Set<AppChord> = []
+                for item in value.split(separator: ",") {
+                    var words = item.split(separator: " ").map(String.init)
+                    guard let keyName = words.popLast(), case .success(let mods) = Modifiers.parse(words.joined(separator: " ")),
+                          case .key(let code)? = KeyCodes.parse(keyName) else {
+                        error(file, line, "\(k): bad chord '\(item.trimmingCharacters(in: .whitespaces))', expected like SUPER SHIFT P")
+                        continue
+                    }
+                    out.insert(AppChord(mods: mods, key: code))
+                }
+                return out
+            }
 
             if key.hasPrefix("ghostty:") {
                 config.ghostty.append("\(key.dropFirst("ghostty:".count)) = \(value)")
@@ -455,17 +472,10 @@ public enum ConfigParser {
             case "input:follow_mouse": if let v = num() { config.followMouse = Int(v) }
             case let k where k.hasPrefix("app:") && k.hasSuffix(":pass") && k.count > "app::pass".count:
                 let id = String(k.dropFirst("app:".count).dropLast(":pass".count))
-                var chords = config.appPass[id] ?? []
-                for item in value.split(separator: ",") {
-                    var words = item.split(separator: " ").map(String.init)
-                    guard let keyName = words.popLast(), case .success(let mods) = Modifiers.parse(words.joined(separator: " ")),
-                          case .key(let code)? = KeyCodes.parse(keyName) else {
-                        error(file, line, "\(k): bad chord '\(item.trimmingCharacters(in: .whitespaces))', expected like SUPER SHIFT P")
-                        continue
-                    }
-                    chords.insert(AppChord(mods: mods, key: code))
-                }
-                config.appPass[id] = chords
+                config.appPass[id, default: []].formUnion(chords(k))
+            case let k where k.hasPrefix("terminal:") && k.hasSuffix(":pass") && k.count > "terminal::pass".count:
+                let program = String(k.dropFirst("terminal:".count).dropLast(":pass".count)).lowercased()
+                config.terminalPass[program, default: []].formUnion(chords(k))
             case "dwindle:preserve_split": if let v = bool() { config.wm.dwindle.preserveSplit = v }
             case "dwindle:force_split": if let v = num() { config.wm.dwindle.forceSplit = Int(v) }
             case "dwindle:split_width_multiplier": if let v = num() { config.wm.dwindle.splitWidthMultiplier = v }

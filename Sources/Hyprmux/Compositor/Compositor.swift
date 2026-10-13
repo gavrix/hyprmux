@@ -898,6 +898,17 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         return pass.contains(AppChord(mods: mods, key: code))
     }
 
+    /// The same for terminals: chords the foreground program's `terminal:NAME` pass list
+    /// claims, while the terminal itself (not its find bar) has the keyboard.
+    private func terminalPasses(_ mods: Modifiers, _ code: UInt16) -> Bool {
+        let chord = AppChord(mods: mods, key: code)
+        // Cheap check first: the foreground program is a syscall.
+        guard submap == "reset", config.terminalPass.values.contains(where: { $0.contains(chord) }),
+              let f = wm.focused, let t = views[f]?.surface as? TerminalView, window.firstResponder === t,
+              let program = t.foregroundProgramName else { return false }
+        return config.terminalPass[program]?.contains(chord) ?? false
+    }
+
     private var focusedAppTile: ClientSurface? {
         guard let f = wm.focused else { return nil }
         return views[f]?.surface as? ClientSurface
@@ -920,6 +931,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         }
         let mods = modifiers(e.modifierFlags)
         if let tile = focusedAppTile, appPasses(tile, mods, e.keyCode) { return e }
+        if terminalPasses(mods, e.keyCode) { return e }
         guard let bind = config.binds.first(where: {
             $0.submap == submap && !$0.flags.contains("m") && $0.mods == mods && $0.trigger == .key(e.keyCode)
                 && bindApplies($0.dispatcher)

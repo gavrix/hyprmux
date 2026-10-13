@@ -148,6 +148,25 @@ The app id is the one `hyprmuxctl apps` shows. While that app's tile has the
 keyboard, the listed chords go to the app; everywhere else, and inside a submap,
 they stay binds.
 
+### `terminal`
+
+Terminals have pass lists too, for programs with their own shortcuts. They're
+keyed by the program in the terminal's foreground: the name it shows, as
+`ps -o comm` prints it (case doesn't matter). That's not always the
+executable: pi runs as `node` but shows `pi`, so `terminal:pi` matches it and
+`terminal:node` doesn't. While that program runs in the
+focused terminal, the listed chords go to it. In a plain shell, they stay binds.
+
+```ini
+terminal:pi {
+    pass = CTRL SHIFT F
+}
+```
+
+The default config passes `CTRL SHIFT F` to pi, which searches its own history
+with it. Ghostty's search only sees what pi has drawn. Over SSH or inside tmux,
+the foreground program is `ssh` or `tmux`.
+
 ### `dwindle`
 
 | Option | Default | Meaning |

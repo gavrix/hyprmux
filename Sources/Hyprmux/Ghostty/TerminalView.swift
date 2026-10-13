@@ -331,6 +331,35 @@ final class TerminalView: NSView, NSTextInputClient {
         guard proc_name(pid, &buffer, UInt32(buffer.count)) > 0 else { return nil }
         return String(cString: buffer)
     }
+
+    /// The name the foreground program shows, lowercased: its argv[0], which `ps -o comm`
+    /// prints. pi runs as `node` but shows `pi`; matching the executable would make
+    /// `terminal:node` catch every Node program. The executable only if argv is unreadable.
+    var foregroundProgramName: String? {
+        let pid = foregroundPID
+        guard pid > 0 else { return nil }
+        return (Self.shownName(pid) ?? foregroundProcessName)?.lowercased()
+    }
+
+    /// argv[0]'s last path component, without a login shell's "-". Nil if unreadable.
+    private static func shownName(_ pid: pid_t) -> String? {
+        var mib: [Int32] = [CTL_KERN, KERN_PROCARGS2, pid]
+        var size = 0
+        guard sysctl(&mib, 3, nil, &size, nil, 0) == 0, size > 4 else { return nil }
+        var buf = [UInt8](repeating: 0, count: size)
+        guard sysctl(&mib, 3, &buf, &size, nil, 0) == 0 else { return nil }
+        // argc (Int32), the executable path, NUL padding, then argv[0].
+        var i = MemoryLayout<Int32>.size
+        while i < size, buf[i] != 0 { i += 1 }
+        while i < size, buf[i] == 0 { i += 1 }
+        let start = i
+        while i < size, buf[i] != 0 { i += 1 }
+        guard i > start else { return nil }
+        var name = String(decoding: buf[start..<i], as: UTF8.self).trimmingCharacters(in: .whitespaces)
+        name = (name as NSString).lastPathComponent
+        if name.hasPrefix("-") { name.removeFirst() }
+        return name.isEmpty ? nil : name
+    }
     /// The link under the pointer while the link modifier (Cmd) is held, else nil.
     private(set) var hoveredLink: String?
     func runtimeSetHoveredLink(_ l: String?) { hoveredLink = l }

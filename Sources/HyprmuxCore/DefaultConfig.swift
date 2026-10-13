@@ -256,6 +256,8 @@ web {
     search = https://duckduckgo.com/?q=%s
     # Cmd+click on a link in a terminal opens it in a web tile instead of your browser.
     open_terminal_links = true
+    # Cmd+click on a link to a local markdown file in a terminal shows it rendered in a web tile.
+    open_markdown = true
     address_bar = true
 }
 

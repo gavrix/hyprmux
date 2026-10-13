@@ -35,6 +35,9 @@ To build it yourself, see [Build from source](#build-from-source).
   - **WebKit engine:** light, but no passkeys.
   - **Chromium engine (CEF):** passkeys from your phone or a USB security key,
     enough for Okta and GitHub sign-in.
+- **Markdown files:** ⌘-click a link to a local `.md` file in a terminal, or
+  open its path in a web tile, to read it rendered. The view follows edits to
+  the file, and `FILE.md:42` scrolls to line 42.
 - **Devices and apps:** iOS Simulators, Android Emulators, VS Code, Cursor,
   and Zed. See [Bonus](#bonus-devices-and-apps).
 

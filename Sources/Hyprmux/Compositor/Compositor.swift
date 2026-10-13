@@ -423,7 +423,9 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
     func makeWeb(_ input: String, focusStartPage: Bool = true) -> BrowserSurface {
         let options = BrowserOptions(config)
         let id = allocateID()
-        let web: BrowserSurface = webEngine == "chromium"
+        // Markdown files render in WebKit (plans/markdown-viewer.md), whatever the engine.
+        let markdown = WebAddress.resolve(input, search: options.search).flatMap { MarkdownFile.viewerURL(for: $0) } != nil
+        let web: BrowserSurface = webEngine == "chromium" && !markdown
             ? ChromiumSurface(id: id, options: options)
             : WebKitSurface(id: id, options: options)
         web.host = self
@@ -1586,6 +1588,11 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
     }
 
     func terminal(_ view: TerminalView, openURL url: URL) -> Bool {
+        if config.webOpenMarkdown, let viewer = MarkdownFile.viewerURL(for: url, relativeTo: view.pwd),
+           let file = MarkdownFile.fileURL(fromViewer: viewer), FileManager.default.fileExists(atPath: file.path) {
+            spawnWeb(viewer.absoluteString)
+            return true
+        }
         guard config.webOpenTerminalLinks, let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else {
             return false
         }

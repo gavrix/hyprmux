@@ -246,6 +246,11 @@ class BrowserSurface: FlippedView, FindableSurface, NSTextFieldDelegate {
     private func displayAddress(_ u: String) -> String {
         if u == "about:blank" || u.hasPrefix("data:") { return "" }
         if let tab = newTabURL, u == tab.absoluteString { return "" }
+        // A markdown page shows its file's path.
+        if let url = URL(string: u), let viewer = MarkdownFile.viewerURL(for: url),
+           let file = MarkdownFile.fileURL(fromViewer: viewer) {
+            return file.path
+        }
         return u
     }
 
@@ -314,7 +319,7 @@ class BrowserSurface: FlippedView, FindableSurface, NSTextFieldDelegate {
         guard let url = WebAddress.resolve(text, search: options.search) else { return }
         engineLoad(url)
         requestedURL = url.absoluteString
-        address.stringValue = url.absoluteString
+        address.stringValue = displayAddress(url.absoluteString)
     }
 
     /// New-tab page: local, no autofocus (a page that autofocuses would steal the address bar).

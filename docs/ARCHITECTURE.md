@@ -171,6 +171,16 @@ handles occlusion, close, and destroy.
   - **`ChromiumSurface`:** CEF through `ChromiumBridge`. Chromium implements
     WebAuthn itself, so phone passkeys (QR code) and USB security keys work.
     See [Chromium](#chromium-cef).
+  - **Markdown files** always open in `WebKitSurface`, whatever the engine.
+    `MarkdownSchemeHandler` serves the `hyprmux-md` scheme:
+    `hyprmux-md://local/PATH.md` is a page that renders the file with
+    markdown-it (`Resources/markdown/viewer.js`), and other paths under `local`
+    are the files it references, such as images. Only `hyprmux-md` pages may
+    load from the scheme, and web pages can't navigate to it, because it reads
+    any local file. Raw HTML in a file goes through DOMPurify, and the page's
+    Content-Security-Policy allows only the viewer's scripts. A `FileWatcher`
+    sends edits to the page, which renders again in place. `MarkdownFile`
+    (HyprmuxCore) turns links and paths into viewer URLs.
 - **`ClientSurface`:** a tile drawn by another process through the client
   protocol. See [Client apps](#client-apps).
 

@@ -1,0 +1,38 @@
+/* Hyprmux's markdown viewer, over github-markdown-dark.css. */
+html, body {
+  margin: 0;
+  background: #0d1117;
+}
+
+.markdown-body {
+  box-sizing: border-box;
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 32px 40px 64px;
+}
+
+@media (max-width: 767px) {
+  .markdown-body { padding: 16px; }
+}
+
+/* highlight.js colors only; the code block keeps the page's background. */
+.markdown-body pre code.hljs,
+.markdown-body pre code {
+  background: transparent;
+  padding: 0;
+}
+
+/* The block a #L42 link points at. */
+.hm-flash {
+  animation: hm-flash 1.6s ease-out;
+  border-radius: 4px;
+}
+
+@keyframes hm-flash {
+  from { background-color: rgba(56, 139, 253, 0.28); }
+  to { background-color: transparent; }
+}
+
+.hm-error {
+  color: #9198a1;
+}

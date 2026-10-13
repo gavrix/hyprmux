@@ -11,6 +11,10 @@ pinned SDK binaries; small runtime resources are checked into this repository.
 | Ghostty shell integration | Bash, Zsh, Fish, Elvish, and Nushell integration bundled under `Resources/ghostty/shell-integration`. Individual files retain their license headers; the Bash and Zsh integrations include GPL-3.0 code derived from Kitty. | GPL-3.0 and MIT |
 | [iTerm2-Color-Schemes](https://github.com/mbadolato/iTerm2-Color-Schemes) | Ghostty-compatible themes bundled under `Resources/ghostty/themes`. | MIT |
 | [Chromium Embedded Framework](https://github.com/chromiumembedded/cef) | Optional Chromium web engine, fetched by `scripts/fetch-cef.sh`. Chromium itself carries many component licenses; see the `CREDITS.html` in CEF distributions. | BSD-3-Clause (CEF), various (Chromium) |
+| [markdown-it](https://github.com/markdown-it/markdown-it) | Markdown rendering in web tiles, bundled under `Resources/markdown`. | MIT |
+| [DOMPurify](https://github.com/cure53/DOMPurify) | Sanitizes HTML in rendered markdown, bundled under `Resources/markdown`. | Apache-2.0 or MPL-2.0 |
+| [highlight.js](https://github.com/highlightjs/highlight.js) | Code highlighting in rendered markdown, with its GitHub Dark theme, bundled under `Resources/markdown`. | BSD-3-Clause |
+| [github-markdown-css](https://github.com/sindresorhus/github-markdown-css) | Styles for rendered markdown, bundled under `Resources/markdown`. | MIT |
 | [idb](https://github.com/facebook/idb) | `Sources/SimulatorBridge/idb/Indigo.h` and `Mach.h` (simulator HID wire format), and the design of the single-touch message builder. | MIT |
 | [grpc-swift](https://github.com/grpc/grpc-swift) | gRPC 1.x client transport for Android Emulator tiles. Resolved by SwiftPM. | Apache-2.0 |
 | [SwiftProtobuf](https://github.com/apple/swift-protobuf) | Protocol Buffers runtime for the Android Emulator client. Resolved by SwiftPM. | Apache-2.0 |

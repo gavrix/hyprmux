@@ -86,6 +86,7 @@ hyprmuxctl new-surface --workspace 3 --cwd ~/src/app     # a shell on workspace 
 hyprmuxctl new-surface --workspace name:agents -- htop   # run a command instead of the shell
 hyprmuxctl new-surface --input 'devx pi\n'               # type into the new shell once it starts
 hyprmuxctl new-surface --type web github.com
+hyprmuxctl new-surface --type web --focus ~/notes/plan.md:42   # markdown, rendered, at line 42
 hyprmuxctl new-surface --type app -- ~/bin/my-client   # a client app; see Open apps
 ref=$(hyprmuxctl new-surface --workspace 2 | jq -r .ref)
 ```

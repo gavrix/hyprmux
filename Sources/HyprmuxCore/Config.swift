@@ -201,6 +201,8 @@ public struct HyprmuxConfig: Sendable {
     public var webSearch = "https://duckduckgo.com/?q=%s"
     /// Open http(s) links clicked in terminals (cmd+click) in a web surface.
     public var webOpenTerminalLinks = true
+    /// Links to local markdown files clicked in terminals open a rendered viewer in a web tile.
+    public var webOpenMarkdown = true
     public var webShowAddressBar = true
     /// "webkit" (light, no passkeys) or "chromium" (CEF; passkeys via phone or security key).
     public var webEngine = "webkit"
@@ -492,6 +494,7 @@ public enum ConfigParser {
             case "web:search":
                 if value.contains("%s") { config.webSearch = value } else { error(file, line, "web:search: needs %s for the query") }
             case "web:open_terminal_links": if let v = bool() { config.webOpenTerminalLinks = v }
+            case "web:open_markdown": if let v = bool() { config.webOpenMarkdown = v }
             case "web:address_bar": if let v = bool() { config.webShowAddressBar = v }
             case "web:chromium_extensions":
                 config.chromiumExtensions = value.split(separator: ",")

@@ -230,6 +230,7 @@ colors.
 | `new_tab` | — | Page for a new empty web tile, like a browser's New Tab page. Unset: a built-in start page. A URL, including an extension page such as `chrome-extension://ID/index.html` (Chromium, with the extension in `chromium_extensions`). The address bar stays empty on it. |
 | `search` | DuckDuckGo | Search URL for address-bar text that isn't a URL; `%s` is the query. |
 | `open_terminal_links` | true | ⌘-click on a link in a terminal opens a web tile instead of your browser. Over a link, ⌘-click opens it even when `$mod` + click is bound to `movewindow`. |
+| `open_markdown` | true | ⌘-click on a link to a local markdown file (`.md`, `.markdown`) in a terminal shows it rendered in a web tile, instead of your default app. A `:LINE` suffix scrolls to that line. Markdown always renders in WebKit, whatever `engine` says. |
 | `address_bar` | true | Show the address bar, with back, forward, and reload buttons. |
 | `chromium_extensions` | — | Comma-separated unpacked extension folders to load into Chromium. Extensions that need tabs (like 1Password) don't work in tiles. Loaded extensions can read page DOM values, including filled credentials, like page scripts. |
 | `chromium_flags` | — | Space-separated Chromium switches. Credential fill is refused with `remote-debugging-port`, `remote-debugging-pipe`, or `devtools-protocol-log-file` because those switches can expose filled values. For agents, use `hyprmuxctl cdp-url` instead of a debugging port ([Automation](AUTOMATION.md#drive-web-tiles)). |

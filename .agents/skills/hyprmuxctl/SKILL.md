@@ -186,6 +186,27 @@ Without `--surface`, `dispatch` acts on the focused window, which may belong to 
 Use `movetoworkspacesilent` or `move-surface` to move a window without following it.
 App and workspace dispatchers such as `exec` and `workspace` reject `--surface`.
 
+## Drive web tiles
+
+Drive Chromium web tiles through CDP with agent-browser or Playwright.
+`hyprmuxctl cdp-url` prints the endpoint's WebSocket URL:
+
+```sh
+agent-browser connect "$(hyprmuxctl cdp-url --surface surface:N)"   # one tile
+agent-browser connect "$(hyprmuxctl cdp-url)"                       # every web tile
+agent-browser snapshot -i
+agent-browser click @e2
+```
+
+Prefer `--surface` with the tile the user means. It keeps you out of their other tiles.
+Pass the URL, not a port: Hyprmux serves no `/json/version`.
+`tab new` opens a background web tile on the focused workspace.
+It needs `web:engine = chromium`; otherwise `cdp-url` replies with an error.
+
+The user sees a banner and your cursor in the tile, and can press Stop.
+After Stop, your next command fails with a message that says so.
+Don't reattach without asking the user.
+
 ## Wait for changes
 
 `hyprmuxctl events` streams one `NAME>>DATA` line per change until it is stopped.
@@ -216,6 +237,7 @@ Do not silently choose another surface when a target closes.
 Terminal surfaces expose `read_text`, `send_text`, and `send_key`.
 App tiles with text input (such as VS Code) expose `send_text`: `send` types into the focused field there.
 Browser and device surfaces do not support `read-screen`, `send`, or `send-key` yet.
+Drive Chromium web tiles through `cdp-url` instead.
 Opening, moving, focusing, closing, and dispatching work for every surface kind.
 
 Avoid destructive commands unless the user explicitly requested them.

@@ -189,6 +189,9 @@ public enum IPCRequest: Equatable {
     case sendScroll(Modifiers, lines: Int, at: CGPoint)
     /// Writes an app tile's current frame to a PNG at `path`, for tests and bug reports.
     case snapshot(surface: SurfaceReference?, path: String)
+    /// The CDP endpoint agents drive Chromium web tiles through (docs/AUTOMATION.md).
+    /// With a surface the endpoint reaches only that tile and the tiles its agent opens.
+    case cdpURL(surface: SurfaceReference?)
     /// An agent says how to bring its terminal back: `resume {"client":…, ...}`.
     case resume(ResumeReport)
     /// An agent says what it's doing: `agent {"client":…, "pid":…, "kind":…, "state":…}`.
@@ -266,6 +269,14 @@ public enum IPCRequest: Equatable {
                 return .failure(ParseError("snapshot: expected an absolute PNG path"))
             }
             return .success(.snapshot(surface: surface, path: path))
+        case "cdp-url":
+            var args = words(rest)
+            switch takeOption("--surface", from: &args) {
+            case .failure(let error): return .failure(error)
+            case .success(let value):
+                guard args.isEmpty else { return .failure(ParseError("cdp-url: unexpected arguments")) }
+                return parseSurface(value).map { .cdpURL(surface: $0) }
+            }
         case "identify":
             var args = words(rest)
             switch takeOption("--surface", from: &args) {

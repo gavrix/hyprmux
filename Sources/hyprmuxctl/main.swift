@@ -62,6 +62,9 @@ guard !args.isEmpty, args[0] != "-h", args[0] != "--help" else {
       snapshot [--surface <id>] <file.png>  write a tile to a PNG: an app tile's own frame, or
                                   any other tile as it shows, decoration included
       sendmenu <title>               perform a menu item by title, e.g. "Open App..."
+      cdp-url [--surface <id>]       the WebSocket URL agents drive Chromium web tiles through
+                                      (agent-browser, Playwright); --surface limits it to one tile
+                                      and the tiles its agent opens
     """)
     exit(args.isEmpty ? 1 : 0)
 }
@@ -724,6 +727,11 @@ func commandLine() throws -> String {
         let parsed = try takeSurface(from: commandArgs)
         guard parsed.remaining.count == 1 else { throw CLIError(message: "snapshot needs one PNG path") }
         return ([command] + targetArguments(parsed.surface) + ["--base64", encodedText(absolutePath(parsed.remaining[0]))]).joined(separator: " ")
+    case "cdp-url":
+        // No default surface: the caller is a terminal, and the endpoint reaches web tiles.
+        let parsed = try takeSurface(from: commandArgs)
+        guard parsed.remaining.isEmpty else { throw CLIError(message: "cdp-url takes only --surface") }
+        return ([command] + (parsed.surface.map { ["--surface", $0] } ?? [])).joined(separator: " ")
     case "identify":
         let parsed = try takeSurface(from: commandArgs)
         guard parsed.remaining.isEmpty else { throw CLIError(message: "identify takes only --surface") }

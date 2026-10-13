@@ -233,6 +233,74 @@ hyprmuxctl send-key --surface surface:7 ctrl+c
 Other examples include `tab`, `shift+tab`, and `escape`.
 Targeted input works for terminals on inactive workspaces and hidden group tabs.
 
+## Drive web tiles
+
+Agents can drive Chromium web tiles with any Chrome DevTools Protocol (CDP) client,
+such as [agent-browser](https://github.com/vercel-labs/agent-browser),
+Playwright's `connectOverCDP`, or Puppeteer's `connect`. It needs
+`web:engine = chromium`.
+
+```sh
+agent-browser connect "$(hyprmuxctl cdp-url)"           # every web tile
+agent-browser connect "$(hyprmuxctl cdp-url --surface surface:7)"   # one tile
+agent-browser snapshot -i
+agent-browser click @e2
+```
+
+`cdp-url` prints a WebSocket URL like
+`ws://127.0.0.1:PORT/devtools/browser/TOKEN`. The first call starts the endpoint.
+The URL stays the same until Hyprmux quits.
+
+- **Targets:** each web tile is one page target. The focused tile is listed first.
+- **`--surface`:** the URL reaches that tile only, plus the tiles its agent opens.
+- **New pages:** `Target.createTarget` (`tab new`, `newPage()`) opens a web tile in
+  the background on the focused workspace. Popups an agent's page opens stay in
+  the background too. Chromium's focus requests from these tiles don't move
+  Hyprmux's focus. The user's own click does.
+- **Focus:** `Target.activateTarget` and `Page.bringToFront` succeed without
+  moving focus. Use `focus-surface` to show a tile.
+- **No quitting:** `Browser.close` only disconnects. Browser contexts aren't
+  supported, because all tiles share one profile.
+
+While an agent is attached, the tile shows a banner, "Agent is controlling this
+tile", with a Stop button. The agent's mouse commands also move a cursor over
+the page. A click waits until the cursor reaches its point, so what the user
+sees matches what happens. Hyprmux draws the banner and the cursor in its own
+views, so the page can't see them.
+
+**Stop** detaches every agent from the tile. Their pending calls fail, and
+their next message says the user stopped them. Auto-attach won't bring them
+back; an explicit `Target.attachToTarget` does, and shows the banner again.
+
+Credential fill is off in a tile while an agent controls it, because the agent
+could read the filled value from the page.
+
+How it works:
+
+- Hyprmux serves the endpoint itself, on the loopback address only. Chromium
+  opens no remote-debugging port, so credential fill keeps working in other tiles.
+- Hyprmux answers the browser-level `Target` and `Browser` methods itself. It
+  passes each tile's messages to that tile's in-process DevTools session.
+- All agents share one DevTools session per tile. When the last agent leaves,
+  Hyprmux undoes what agents changed: it removes their scripts and bindings,
+  clears emulation, and turns their domains off.
+- Requests with an `Origin` header (web pages) are refused, and so is any `Host`
+  that isn't the loopback address.
+- The URL's token is the secret. Only processes that can use Hyprmux's socket
+  learn it.
+- No `/json/version`: pass the WebSocket URL, not a port.
+
+Limits:
+
+- A tile on a workspace that isn't shown draws no frames. CDP still works there,
+  but a client that waits for an animation frame waits for its timeout:
+  agent-browser's `click` takes about 5 seconds. Drive tiles that are on screen.
+- Emulated viewports (`Emulation.setDeviceMetricsOverride`) scale the page, so
+  the cursor can land off the point the agent clicked. The click itself is right.
+
+`HYPRMUX_CDP_LOG=FILE` in Hyprmux's environment logs every message in both
+directions, shortened, for debugging a client.
+
 ## Wait for changes
 
 `hyprmuxctl events` streams a line per change, so a script can wait for something
@@ -311,6 +379,8 @@ agent {"client": 12, "pid": 4711, "kind": "claude", "state": "blocked", "message
 3. Read recent output before sending input.
 4. Send text or one key with an explicit target.
 5. Read the target again and verify the result.
+
+For a web tile, connect a CDP client to `hyprmuxctl cdp-url` (see Drive web tiles).
 
 Terminals advertise `read_text`, `send_text`, and `send_key`. App tiles whose
 client has text input on (such as VS Code through its adapter) advertise

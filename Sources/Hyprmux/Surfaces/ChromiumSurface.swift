@@ -161,6 +161,29 @@ final class ChromiumSurface: BrowserSurface, HMChromiumBrowserDelegate {
         return index ?? -1
     }
 
+    // MARK: Agent control (AgentBrowserControl)
+
+    /// DevTools messages while forwarding: replies and events, as JSON.
+    var onDevToolsMessage: ((Data) -> Void)?
+    var onDevToolsDetached: (() -> Void)?
+
+    /// Chromium created the browser, so DevTools can reach it.
+    var isBrowserReady: Bool { browser?.browserView != nil }
+    var zoomFactor: Double { browser?.zoomFactor ?? 1 }
+
+    func fetchDevToolsTargetID(_ completion: @escaping (String?) -> Void) {
+        guard let browser else { return completion(nil) }
+        browser.fetchDevToolsTargetID(completion)
+    }
+
+    func startDevToolsForwarding() -> Bool { browser?.startDevToolsForwarding() ?? false }
+    func stopDevToolsForwarding() { browser?.stopDevToolsForwarding() }
+    @discardableResult
+    func sendDevToolsMessage(_ message: Data) -> Bool { browser?.sendDevToolsMessage(message) ?? false }
+
+    func chromiumBrowser(_ b: HMChromiumBrowser, devToolsMessage message: Data) { onDevToolsMessage?(message) }
+    func chromiumBrowserDevToolsDetached(_ b: HMChromiumBrowser) { onDevToolsDetached?() }
+
     func chromiumBrowserDidClose(_ b: HMChromiumBrowser) {
         browser = nil
         finishClose()

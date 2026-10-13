@@ -342,6 +342,16 @@ See [HOOKS.md](HOOKS.md) for the list and the manifest format.
 - **Profile:** `~/Library/Application Support/Hyprmux/Chromium`, with
   `use-mock-keychain`, since ad-hoc builds would otherwise hit a keychain
   prompt on every build.
+- **Agent control:** `hyprmuxctl cdp-url` starts a CDP endpoint for agents
+  ([Automation](AUTOMATION.md#drive-web-tiles)). `AgentBrowserServer` serves
+  WebSockets on the loopback address with Network.framework.
+  `AgentBrowserRouter` (HyprmuxCore, tested) emulates the browser-level
+  `Target` methods and multiplexes flattened sessions over each tile's one
+  in-process DevTools session (`-sendDevToolsMessage:`, a forwarding observer).
+  `AgentBrowserControl` runs the router's actions. It holds a click until the
+  tile's `AgentControlOverlay` cursor reaches its point. A tile's target id is
+  Chromium's own (`Target.getTargetInfo`), because clients expect it to equal
+  the main frame's id.
 - **Limits:**
   - Tiles aren't Chrome tabs, so extensions that need `chrome.tabs` or
     `chrome.windows` (1Password, for one) don't work in them.

@@ -225,14 +225,14 @@ colors.
 
 | Option | Default | Meaning |
 |---|---|---|
-| `engine` | `webkit` | `webkit` (light, no passkeys) or `chromium` (bundled CEF; passkeys from a phone or security key). Needs a restart. |
+| `engine` | `webkit` | `webkit` (light, no passkeys) or `chromium` (bundled CEF; passkeys from a phone or security key). Agents drive web tiles only with `chromium` (`hyprmuxctl cdp-url`). Needs a restart. |
 | `home` | DuckDuckGo | Page for `webnav home`. |
 | `new_tab` | — | Page for a new empty web tile, like a browser's New Tab page. Unset: a built-in start page. A URL, including an extension page such as `chrome-extension://ID/index.html` (Chromium, with the extension in `chromium_extensions`). The address bar stays empty on it. |
 | `search` | DuckDuckGo | Search URL for address-bar text that isn't a URL; `%s` is the query. |
 | `open_terminal_links` | true | ⌘-click on a link in a terminal opens a web tile instead of your browser. Over a link, ⌘-click opens it even when `$mod` + click is bound to `movewindow`. |
 | `address_bar` | true | Show the address bar, with back, forward, and reload buttons. |
 | `chromium_extensions` | — | Comma-separated unpacked extension folders to load into Chromium. Extensions that need tabs (like 1Password) don't work in tiles. Loaded extensions can read page DOM values, including filled credentials, like page scripts. |
-| `chromium_flags` | — | Space-separated Chromium switches. Credential fill is refused with `remote-debugging-port`, `remote-debugging-pipe`, or `devtools-protocol-log-file` because those switches can expose filled values. |
+| `chromium_flags` | — | Space-separated Chromium switches. Credential fill is refused with `remote-debugging-port`, `remote-debugging-pipe`, or `devtools-protocol-log-file` because those switches can expose filled values. For agents, use `hyprmuxctl cdp-url` instead of a debugging port ([Automation](AUTOMATION.md#drive-web-tiles)). |
 
 **Client certificates (Chromium).** Some sites ask the browser for a client
 certificate, such as a company device certificate behind an access gateway.

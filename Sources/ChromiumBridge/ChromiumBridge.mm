@@ -7,6 +7,7 @@
 #import <QuartzCore/QuartzCore.h>
 
 #include <climits>
+#include <cmath>
 #include <crt_externs.h>
 
 #include "include/cef_app.h"
@@ -15,6 +16,7 @@
 #include "include/cef_client.h"
 #include "include/cef_values.h"
 #include "include/cef_x509_certificate.h"
+#include "include/cef_version.h"
 #include "include/wrapper/cef_helpers.h"
 #include "include/wrapper/cef_library_loader.h"
 
@@ -49,6 +51,8 @@ typedef NS_ENUM(NSInteger, HMCredentialDevToolsStage) {
 - (void)detach;
 - (void)devToolsMethodResult:(int)messageID success:(BOOL)success data:(NSData *)data;
 - (void)devToolsAgentDetached;
+- (void)forwardedDevToolsMessage:(NSData *)message;
+- (void)forwardedDevToolsDetached;
 - (BOOL)executeCredentialMethod:(NSString *)method params:(CefRefPtr<CefDictionaryValue>)params
                            call:(HMCredentialCall *)call stage:(HMCredentialDevToolsStage)stage;
 - (void)finishCredentialCall:(HMCredentialCall *)call value:(nullable id)value error:(nullable NSString *)error;
@@ -171,6 +175,54 @@ class HMCredentialDevToolsObserver : public CefDevToolsMessageObserver {
  private:
   __weak HMChromiumBrowser *owner_;
   IMPLEMENT_REFCOUNTING(HMCredentialDevToolsObserver);
+};
+
+/// Agent control: every message of the browser's DevTools session, raw, to the delegate.
+class HMForwardingDevToolsObserver : public CefDevToolsMessageObserver {
+ public:
+  explicit HMForwardingDevToolsObserver(HMChromiumBrowser *owner) : owner_(owner) {}
+
+  bool OnDevToolsMessage(CefRefPtr<CefBrowser> browser, const void *message, size_t message_size) override {
+    HMChromiumBrowser *owner = owner_;
+    if (owner && message && message_size) [owner forwardedDevToolsMessage:[NSData dataWithBytes:message length:message_size]];
+    return true;
+  }
+
+  void OnDevToolsAgentDetached(CefRefPtr<CefBrowser> browser) override {
+    HMChromiumBrowser *owner = owner_;
+    [owner forwardedDevToolsDetached];
+  }
+
+ private:
+  __weak HMChromiumBrowser *owner_;
+  IMPLEMENT_REFCOUNTING(HMForwardingDevToolsObserver);
+};
+
+/// One DevTools method call's result, then nothing.
+class HMOneShotDevToolsObserver : public CefDevToolsMessageObserver {
+ public:
+  explicit HMOneShotDevToolsObserver(void (^completion)(NSData *_Nullable)) : completion_(completion) {}
+
+  void set_message_id(int id) { message_id_ = id; }
+
+  void OnDevToolsMethodResult(CefRefPtr<CefBrowser> browser, int message_id, bool success, const void *result,
+                              size_t result_size) override {
+    if (message_id != message_id_ || !completion_) return;
+    void (^completion)(NSData *) = completion_;
+    completion_ = nil;
+    completion(success && result ? [NSData dataWithBytes:result length:result_size] : nil);
+  }
+
+  void Cancel() {
+    void (^completion)(NSData *) = completion_;
+    completion_ = nil;
+    if (completion) completion(nil);
+  }
+
+ private:
+  void (^completion_)(NSData *_Nullable);
+  int message_id_ = -1;
+  IMPLEMENT_REFCOUNTING(HMOneShotDevToolsObserver);
 };
 
 class HMApp : public CefApp, public CefBrowserProcessHandler {
@@ -393,6 +445,11 @@ class HMClient : public CefClient,
 
 + (BOOL)isRunning { return gRunning; }
 
++ (NSString *)chromiumVersion {
+  return [NSString stringWithFormat:@"%d.%d.%d.%d", CHROME_VERSION_MAJOR, CHROME_VERSION_MINOR, CHROME_VERSION_BUILD,
+                                    CHROME_VERSION_PATCH];
+}
+
 + (BOOL)startWithRootCachePath:(NSString *)rootCachePath switches:(NSArray<NSString *> *)switches {
   if (gRunning) return YES;
   gLoader = new CefScopedLibraryLoader();
@@ -473,6 +530,7 @@ class HMClient : public CefClient,
   NSMutableDictionary<NSNumber *, HMCredentialCall *> *_credentialCallsByMessageID;
   NSMutableSet<HMCredentialCall *> *_credentialCalls;
   int _nextDevToolsMessageID;
+  CefRefPtr<CefRegistration> _forwardingRegistration;
 }
 
 - (instancetype)initPendingWithParentView:(NSView *)parentView {
@@ -544,6 +602,7 @@ class HMClient : public CefClient,
 
 - (void)detach {
   [self failAllCredentialCalls:@"The Chromium browser closed before credential filling completed."];
+  _forwardingRegistration = nullptr;
   _devToolsRegistration = nullptr;
   _devToolsObserver = nullptr;
   _browser = nullptr;
@@ -766,6 +825,64 @@ class HMClient : public CefClient,
   for (HMCredentialCall *call in [_credentialCalls copy]) {
     [self finishCredentialCall:call value:nil error:error];
   }
+}
+
+- (BOOL)startDevToolsForwarding {
+  if (_forwardingRegistration) return YES;
+  if (!_browser || !_browser->IsValid()) return NO;
+  _forwardingRegistration = _browser->GetHost()->AddDevToolsMessageObserver(new HMForwardingDevToolsObserver(self));
+  return _forwardingRegistration != nullptr;
+}
+
+- (void)stopDevToolsForwarding {
+  _forwardingRegistration = nullptr;
+}
+
+- (BOOL)sendDevToolsMessage:(NSData *)message {
+  if (!_browser || !_browser->IsValid() || !message.length) return NO;
+  return _browser->GetHost()->SendDevToolsMessage(message.bytes, message.length);
+}
+
+- (void)forwardedDevToolsMessage:(NSData *)message {
+  if (_forwardingRegistration) [self.delegate chromiumBrowser:self devToolsMessage:message];
+}
+
+- (void)forwardedDevToolsDetached {
+  if (_forwardingRegistration) [self.delegate chromiumBrowserDevToolsDetached:self];
+}
+
+- (void)fetchDevToolsTargetID:(void (^)(NSString *_Nullable))completion {
+  if (!_browser || !_browser->IsValid()) return completion(nil);
+  __block CefRefPtr<CefRegistration> registration;
+  __block BOOL done = NO;
+  void (^finish)(NSString *) = ^(NSString *targetID) {
+    if (done) return;
+    done = YES;
+    registration = nullptr;
+    completion(targetID);
+  };
+  CefRefPtr<HMOneShotDevToolsObserver> observer = new HMOneShotDevToolsObserver(^(NSData *data) {
+    NSDictionary *result = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
+    NSDictionary *info = [result isKindOfClass:[NSDictionary class]] ? result[@"targetInfo"] : nil;
+    NSString *targetID = [info isKindOfClass:[NSDictionary class]] ? info[@"targetId"] : nil;
+    finish([targetID isKindOfClass:[NSString class]] && targetID.length ? targetID : nil);
+  });
+  registration = _browser->GetHost()->AddDevToolsMessageObserver(observer);
+  if (!registration) return finish(nil);
+  if (_nextDevToolsMessageID <= 0) _nextDevToolsMessageID = 1;
+  int messageID = _nextDevToolsMessageID++;
+  observer->set_message_id(messageID);
+  if (_browser->GetHost()->ExecuteDevToolsMethod(messageID, "Target.getTargetInfo", nullptr) == 0) {
+    return finish(nil);
+  }
+  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 3 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+    observer->Cancel();
+  });
+}
+
+- (double)zoomFactor {
+  if (!_browser) return 1;
+  return pow(1.2, _browser->GetHost()->GetZoomLevel());
 }
 
 - (void)close {

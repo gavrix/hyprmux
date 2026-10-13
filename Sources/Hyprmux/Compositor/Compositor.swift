@@ -21,6 +21,8 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
     let hud: HUD
 
     var views: [ClientID: ClientView] = [:]
+    /// Agents driving Chromium web tiles over CDP (`hyprmuxctl cdp-url`).
+    lazy var agentBrowser = AgentBrowserControl(host: self)
     /// Serves client apps (docs/CLIENT_PROTOCOL.md).
     let clientServer = ClientServer()
     /// Registers the bundled broker agent with macOS (Compositor+Clients).
@@ -535,6 +537,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
 
     func removeClient(_ id: ClientID) {
         guard let v = views.removeValue(forKey: id) else { return }
+        agentBrowser.tileClosed(id)
         resumeReports[id] = nil
         restoredAgents[id] = nil
         agentClientRemoved(id)
@@ -1252,6 +1255,20 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
             case .sendDrag(let mods, let button, let from, let to):
                 injectDrag(mods, button: button, from: from, to: to)
                 return "ok"
+            case .cdpURL(let reference):
+                guard webEngine == "chromium" else {
+                    return "error: agent browser control needs web:engine = chromium (restart after changing it)"
+                }
+                var scope = AgentBrowserScope.all
+                if let reference {
+                    guard let (id, surface) = automationTarget(reference) else { return "error: surface not found" }
+                    guard surface is ChromiumSurface else { return "error: surface \(id.raw) is not a web surface" }
+                    scope = .tiles([id.raw])
+                }
+                switch agentBrowser.endpointURL(scope: scope) {
+                case .success(let url): return url
+                case .failure(let e): return "error: \(e)"
+                }
             case .snapshot(let reference, let path):
                 guard let (id, surface) = automationTarget(reference) else { return "error: surface not found" }
                 do {
@@ -1568,6 +1585,13 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
 
     func browserSurfaceDidRequestFocus(_ s: BrowserSurface) {
         guard wm.focused != s.clientID, views[s.clientID] != nil else { return }
+        // Chromium focuses pages an agent clicks and the popups it opens. Only the user's
+        // own click moves Hyprmux's focus there.
+        if agentBrowser.isControlled(s.clientID) || s.opensInBackground {
+            let clicks: Set<NSEvent.EventType> = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+            guard let e = NSApp.currentEvent, clicks.contains(e.type) else { return }
+            s.opensInBackground = false
+        }
         log.debug("focus reason=web client=\(s.clientID.raw)")
         wm.focus(s.clientID)
         apply(animated: true)
@@ -1579,6 +1603,11 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
 
     func browserSurfaceTitleDidChange(_ s: BrowserSurface) {
         surfaceTitleDidChange(s)
+        agentBrowser.tileChanged(s)
+    }
+
+    func browserSurfaceURLDidChange(_ s: BrowserSurface) {
+        agentBrowser.tileChanged(s)
     }
 
     /// Refreshes the bar and tab strips after a surface's title changed.
@@ -1594,6 +1623,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
     }
 
     func browserSurfaceDidBecomeReady(_ s: BrowserSurface) {
+        if let c = s as? ChromiumSurface { agentBrowser.tileReady(c) }
         // Chromium's view arrives after the tile; give it focus if its tile has it,
         // unless the user is already typing in the address bar.
         guard wm.focused == s.clientID, !s.ownsFirstResponder(in: window) || window.firstResponder === s.content else { return }
@@ -1601,14 +1631,23 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
     }
 
     func browserSurface(_ s: BrowserSurface, openInNewTile url: String) {
-        spawnWeb(url)
+        guard agentBrowser.isControlled(s.clientID) else {
+            spawnWeb(url)
+            return
+        }
+        _ = agentBrowserOpenTile(url: url)
     }
 
     func browserSurfaceNextClientID(_ s: BrowserSurface) -> ClientID { allocateID() }
 
     func browserSurface(_ s: BrowserSurface, adoptPopup popup: BrowserSurface) {
         popup.host = self
-        manage(popup)
+        // A page an agent drives opens popups in the background; focus stays with the user.
+        guard agentBrowser.isControlled(s.clientID) else { return manage(popup) }
+        popup.opensInBackground = true
+        adopt(popup)
+        wm.addClient(popup.clientID, focus: false)
+        apply(animated: true)
     }
 
     // MARK: NSWindowDelegate

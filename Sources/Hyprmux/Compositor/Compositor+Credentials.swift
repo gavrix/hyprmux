@@ -160,6 +160,11 @@ extension Compositor {
 
     private func beginBrowserCredentialFill(id: ClientID, surface: BrowserSurface,
                                             providers: [CredentialProviderEntry], explicitProvider: Bool) {
+        // The agent's DevTools session could read the filled value from the page.
+        if agentBrowser.isControlled(id) {
+            credentialNotice(.error, "Credential fill is disabled while an agent controls this tile. Press Stop first.")
+            return
+        }
         if surface is ChromiumSurface,
            let unsafeSwitch = ChromiumCredentialPolicy.refusingSwitch(in: config.chromiumFlags)
                 ?? startupChromiumCredentialRefusingSwitch {

@@ -10,6 +10,8 @@ protocol BrowserSurfaceHost: AnyObject {
     func browserSurfaceDidClose(_ s: BrowserSurface)
     /// The engine view became ready (Chromium creates it asynchronously).
     func browserSurfaceDidBecomeReady(_ s: BrowserSurface)
+    /// The page committed another URL.
+    func browserSurfaceURLDidChange(_ s: BrowserSurface)
     /// Open a URL in a new tile (cmd+click).
     func browserSurface(_ s: BrowserSurface, openInNewTile url: String)
     /// Allocate an ID for a popup tile the page is opening.
@@ -235,6 +237,7 @@ class BrowserSurface: FlippedView, FindableSurface, NSTextFieldDelegate {
     }
 
     func engineURLChanged(_ u: String) {
+        host?.browserSurfaceURLDidChange(self)
         guard !isEditingAddress else { return }
         address.stringValue = displayAddress(u)
     }
@@ -288,6 +291,12 @@ class BrowserSurface: FlippedView, FindableSurface, NSTextFieldDelegate {
     var kind: String { "web" }
     var backdropColor: NSColor { NSColor(white: 0.1, alpha: 1) }
     var info: [String: Any] {
+        var info = baseInfo
+        if let agentOverlay { info["agentControl"] = agentOverlay.debugInfo }
+        return info
+    }
+
+    private var baseInfo: [String: Any] {
         ["url": currentURL, "engine": engineName,
          "address": address.currentEditor()?.string ?? address.stringValue, "editingAddress": isEditingAddress,
          "canGoBack": canGoBack, "canGoForward": canGoForward, "loading": loading, "hoveredLink": hoveredLink ?? ""]
@@ -381,6 +390,39 @@ class BrowserSurface: FlippedView, FindableSurface, NSTextFieldDelegate {
         reloadButton.setSymbol(loading ? "xmark" : "arrow.clockwise", label: loading ? "Stop" : "Reload")
     }
 
+    // MARK: Agent control
+
+    /// Banner and cursor over the page while an agent drives it (AgentBrowserControl).
+    private var agentOverlay: AgentControlOverlay?
+    /// The user pressed Stop on the banner.
+    var onAgentStop: (() -> Void)?
+
+    /// An agent opened this tile: Chromium's focus requests don't move Hyprmux's focus
+    /// to it until the user clicks it.
+    var opensInBackground = false
+
+    func setAgentControlled(_ on: Bool) {
+        if on, agentOverlay == nil {
+            let overlay = AgentControlOverlay(frame: content.frame)
+            overlay.onStop = { [weak self] in self?.onAgentStop?() }
+            addSubview(overlay, positioned: .above, relativeTo: content)
+            agentOverlay = overlay
+        }
+        agentOverlay?.bannerShown = on
+    }
+
+    /// Moves the agent's cursor to a point in CSS pixels of the page's viewport.
+    func agentCursorMove(toPage point: CGPoint, zoom: Double, arrived: (() -> Void)? = nil) {
+        guard let agentOverlay, agentOverlay.bannerShown else {
+            arrived?()
+            return
+        }
+        agentOverlay.moveCursor(to: CGPoint(x: point.x * zoom, y: point.y * zoom), arrived: arrived)
+    }
+
+    func agentCursorPress() { agentOverlay?.pressCursor() }
+    func agentCursorTyping() { agentOverlay?.typingCursor() }
+
     // MARK: Layout
 
     override func setFrameSize(_ newSize: NSSize) {
@@ -402,6 +444,7 @@ class BrowserSurface: FlippedView, FindableSurface, NSTextFieldDelegate {
         x += 4
         address.frame = CGRect(x: x, y: 5, width: max(0, bounds.width - x - side), height: h - 10)
         content.frame = CGRect(x: 0, y: h, width: bounds.width, height: max(0, bounds.height - h))
+        agentOverlay?.frame = content.frame
         layoutProgress()
         engineContentDidLayout()
     }

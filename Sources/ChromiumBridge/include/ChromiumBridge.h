@@ -54,6 +54,11 @@ NS_ASSUME_NONNULL_BEGIN
         findResultCount:(int)count
             activeMatch:(int)activeMatch
                   final:(BOOL)final;
+/// A DevTools protocol message while forwarding (-startDevToolsForwarding): a method
+/// result or an event, as UTF-8 JSON.
+- (void)chromiumBrowser:(HMChromiumBrowser *)browser devToolsMessage:(NSData *)message;
+/// Chromium's DevTools agent for the browser detached. Results still pending are lost.
+- (void)chromiumBrowserDevToolsDetached:(HMChromiumBrowser *)browser;
 @end
 
 /// Process-wide CEF lifecycle. Main thread only.
@@ -62,6 +67,8 @@ NS_ASSUME_NONNULL_BEGIN
 /// `switches` are extra Chromium switches ("name" or "name=value").
 + (BOOL)startWithRootCachePath:(NSString *)rootCachePath switches:(NSArray<NSString *> *)switches;
 @property (class, readonly) BOOL isRunning;
+/// The bundled Chromium's version, e.g. "154.0.8037.58".
+@property (class, readonly) NSString *chromiumVersion;
 /// Runs the app's event loop (replaces -[NSApplication run]). Returns after quit.
 + (void)runMessageLoop;
 /// Closes every browser, then ends the event loop.
@@ -109,6 +116,18 @@ NS_ASSUME_NONNULL_BEGIN
                     argument:(NSDictionary<NSString *, id> *)argument
                      timeout:(NSTimeInterval)timeout
                   completion:(void (^)(id _Nullable value, NSString * _Nullable error))completion;
+/// Passes every DevTools message of this browser to the delegate, for agent control.
+/// NO if Chromium refuses the observer.
+- (BOOL)startDevToolsForwarding;
+- (void)stopDevToolsForwarding;
+/// Sends a DevTools method call: UTF-8 JSON with "id", "method", and optional "params"
+/// and "sessionId" (a flattened child session). Main thread.
+- (BOOL)sendDevToolsMessage:(NSData *)message;
+/// The browser's DevTools target id, which is also its main frame's id. CDP clients
+/// (Playwright) find a page's main frame by its target id. Nil if Chromium doesn't answer.
+- (void)fetchDevToolsTargetID:(void (^)(NSString *_Nullable targetID))completion;
+/// Page zoom as a factor: 1 is 100%.
+@property (nonatomic, readonly) double zoomFactor;
 /// Force-closes the browser. The delegate gets chromiumBrowserDidClose:.
 - (void)close;
 @end

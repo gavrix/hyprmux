@@ -16,6 +16,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
     private let barBackdrop = BarBackdrop()
     private let hint = HintView()
     private let specialDim = NSView()
+    private let windowFrame = WindowFrameView()
     private let animator: Animator
     /// Hyprmux's own UI (notifications), above all tiles.
     let hud: HUD
@@ -139,6 +140,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         root.addSubview(hint)
         root.addSubview(bar)
         root.addSubview(hud.layer)
+        root.addSubview(windowFrame)
         bar.onSelectWorkspace = { [weak self] n in self?.dispatch(.workspace(.id(n)), source: .mouse) }
         // The bar sits at the root's origin, so its coordinates are the root's.
         bar.onPillsFrame = { [weak self] f in self?.barBackdrop.wrap(f) }
@@ -267,6 +269,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
             bar.resetBadges()
         }
         barBackdrop.configure(enabled: config.barBackdrop, transparent: transparent)
+        updateWindowFrame()
         barBackdrop.wrap(bar.pillsFrame)
         if let c = config.activeBorder.colors.first {
             bar.accent = NSColor(cgColor: HyprmuxCore.Color(r: c.r, g: c.g, b: c.b, a: 1).cg) ?? bar.accent
@@ -324,6 +327,16 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         return max(0, root.bounds.height - window.contentLayoutRect.height)
     }
 
+    /// Outlines a see-through window that macOS lets the user resize. Filled, full screen,
+    /// or opaque (macOS draws the edge and shadow then), it has none.
+    private func updateWindowFrame() {
+        let show = config.windowFrame && config.backgroundColor.a < 1 && window.isWindowed
+        windowFrame.isHidden = !show
+        guard show else { return }
+        windowFrame.frame = root.bounds
+        windowFrame.configure(color: config.windowFrameColor.cg, cornerRadius: window.systemCornerRadius)
+    }
+
     private func monitorChanged(animated: Bool) {
         let b = root.bounds
         wm.monitor = CGRect(origin: .zero, size: b.size)
@@ -332,6 +345,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         bar.frame = CGRect(x: 0, y: 0, width: b.width, height: top)
         bar.leadingInset = titlebarHeight > 0 ? 70 : 0
         specialDim.frame = b
+        updateWindowFrame()
         hud.layout(monitor: wm.monitor, workArea: wm.workArea, animated: animated)
         apply(animated: animated)
     }
@@ -813,6 +827,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         order[ObjectIdentifier(barBackdrop)] = -2
         order[ObjectIdentifier(bar)] = 30_000
         order[ObjectIdentifier(hud.layer)] = 30_001
+        order[ObjectIdentifier(windowFrame)] = 40_000
         if let d = drag, let v = views[d.id] { order[ObjectIdentifier(v)] = 25_000 }
         let current = root.subviews
         let sorted = current.sorted { (order[ObjectIdentifier($0)] ?? 0) < (order[ObjectIdentifier($1)] ?? 0) }
@@ -1652,6 +1667,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
 
     // MARK: NSWindowDelegate
 
+    func windowWillEnterFullScreen(_ notification: Notification) { updateWindowFrame() }
     func windowDidEnterFullScreen(_ notification: Notification) { monitorChanged(animated: true) }
     func windowDidExitFullScreen(_ notification: Notification) { monitorChanged(animated: true) }
 

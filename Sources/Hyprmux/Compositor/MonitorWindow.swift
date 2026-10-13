@@ -49,6 +49,18 @@ final class MonitorWindow: NSWindow {
 
     func toggleFill() { isFilled ? exitFill() : enterFill() }
 
+    /// Not filled and not in macOS full screen: a window macOS lets the user move and resize.
+    var isWindowed: Bool { !isFilled && styleMask.contains(.resizable) && !styleMask.contains(.fullScreen) }
+
+    /// The corner radius macOS gives this window: 16 on macOS 26, 10 before.
+    /// Read at runtime (private), with those values as the fallback.
+    var systemCornerRadius: CGFloat {
+        if responds(to: NSSelectorFromString("_cornerRadius")),
+           let r = value(forKey: "_cornerRadius") as? CGFloat, r > 0 { return r }
+        if #available(macOS 26.0, *) { return 16 }
+        return 10
+    }
+
     /// Hide the menu bar and Dock while hyprmux is in front (they reappear at the screen edge).
     /// macOS applies these only while the app is active.
     func applyPresentation() {

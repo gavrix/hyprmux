@@ -188,6 +188,10 @@ public struct HyprmuxConfig: Sendable {
     public var confirmQuit = true
     /// A frosted capsule behind the workspace pills in the bar.
     public var barBackdrop = true
+    /// An outline around a see-through window that isn't full screen, so its edges
+    /// (where macOS resizes it) stay visible.
+    public var windowFrame = true
+    public var windowFrameColor = Color(r: 1, g: 1, b: 1, a: 0.35)
 
     /// Web surfaces.
     public var webHome = "https://duckduckgo.com"
@@ -552,6 +556,9 @@ public enum ConfigParser {
                 }
             case "hyprmux:confirm_quit": if let v = bool() { config.confirmQuit = v }
             case "hyprmux:bar_backdrop": if let v = bool() { config.barBackdrop = v }
+            case "hyprmux:window_frame": if let v = bool() { config.windowFrame = v }
+            case "hyprmux:col.window_frame":
+                if let c = Color.parse(value) { config.windowFrameColor = c } else { error(file, line, "\(key): bad color") }
             case "hyprmux:float_size": if let v = num() { config.wm.floatSizeFraction = min(max(v, 0.1), 1) }
             default:
                 // Unknown keys are reported but never fatal, so Hyprland configs mostly load.

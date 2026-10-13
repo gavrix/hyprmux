@@ -47,6 +47,18 @@ final class ConfigTests: XCTestCase {
         XCTAssertFalse(ConfigParser.parse("hyprmux:bar_backdrop = false").barBackdrop)
     }
 
+    func testWindowFrame() {
+        let d = ConfigParser.parse(defaultConfig)
+        XCTAssertTrue(d.windowFrame)
+        XCTAssertEqual(d.windowFrameColor.a, HyprmuxConfig().windowFrameColor.a, accuracy: 0.01)
+        let c = ConfigParser.parse("hyprmux {\n window_frame = false\n col.window_frame = rgba(ff000080)\n}")
+        XCTAssertTrue(c.errors.isEmpty, "\(c.errors)")
+        XCTAssertFalse(c.windowFrame)
+        XCTAssertEqual(c.windowFrameColor.r, 1)
+        XCTAssertEqual(c.windowFrameColor.a, 128.0 / 255, accuracy: 0.001)
+        XCTAssertFalse(ConfigParser.parse("hyprmux:col.window_frame = nope").errors.isEmpty)
+    }
+
     func testEmbeddedDefaultMatchesRepoFile() throws {
         let file = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()

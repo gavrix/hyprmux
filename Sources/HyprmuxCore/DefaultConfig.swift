@@ -228,6 +228,10 @@ hyprmux {
     # A frosted capsule behind the workspace pills, so they read over any wallpaper.
     # Liquid Glass on macOS 26, a vibrancy blur on older systems.
     bar_backdrop = true
+    # An outline around the window when it's see-through and not full screen,
+    # so you can see its edges and where macOS lets you resize it.
+    window_frame = true
+    col.window_frame = rgba(ffffff59)
 }
 
 # Credential providers queried by fillcredential. Unset: every usable provider, by id.

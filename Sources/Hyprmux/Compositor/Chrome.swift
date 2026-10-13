@@ -378,3 +378,46 @@ final class HintView: NSTextField {
         alignment = .center
     }
 }
+
+/// An outline along the edges of a see-through window that isn't full screen.
+/// A clear window has no visible edge or shadow, so without it people can't tell
+/// where the window ends or where macOS lets them resize it. A light line over a
+/// dark one reads on light and dark wallpapers.
+final class WindowFrameView: NSView {
+    private let outer = CALayer()
+    private let inner = CALayer()
+    private var radius: CGFloat = 10
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        for l in [outer, inner] {
+            l.borderWidth = 1
+            l.cornerCurve = .continuous
+            layer?.addSublayer(l)
+        }
+        outer.borderColor = NSColor(white: 0, alpha: 0.35).cgColor
+    }
+
+    required init?(coder: NSCoder) { fatalError("not supported") }
+
+    override var isFlipped: Bool { true }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    func configure(color: CGColor, cornerRadius: CGFloat) {
+        inner.borderColor = color
+        radius = cornerRadius
+        needsLayout = true
+    }
+
+    override func layout() {
+        super.layout()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        outer.frame = bounds
+        outer.cornerRadius = radius
+        inner.frame = bounds.insetBy(dx: 1, dy: 1)
+        inner.cornerRadius = max(0, radius - 1)
+        CATransaction.commit()
+    }
+}

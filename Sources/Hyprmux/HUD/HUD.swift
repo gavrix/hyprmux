@@ -18,7 +18,6 @@ final class HUD {
     let layer = HUDLayerView()
     private(set) var config: HyprmuxConfig
     private(set) var theme: HUDTheme
-    let animator: Animator
     private(set) var monitor: CGRect = .zero
     private(set) var workArea: CGRect = .zero
     /// A tile's current frame, for `.client` anchors.
@@ -31,10 +30,9 @@ final class HUD {
     private(set) var keycast: KeycastPresenter!
     private(set) var caption: CaptionPresenter!
 
-    init(config: HyprmuxConfig, theme: HUDTheme, animator: Animator) {
+    init(config: HyprmuxConfig, theme: HUDTheme) {
         self.config = config
         self.theme = theme
-        self.animator = animator
         layer.wantsLayer = true
         layer.layer?.masksToBounds = false
         notifications = NotificationStack(hud: self)
@@ -123,8 +121,8 @@ final class HUD {
         let fade = config.animation("fadeLayersIn")
         let s = style("layersIn", default: defaultStyle)
         view.move(to: frame, from: duration(move) > 0 ? offscreen(frame, style: s, position: position) : frame,
-                  duration: duration(move), curve: move.curve, animator: animator)
-        view.fade(from: duration(fade) > 0 ? 0 : 1, to: 1, duration: duration(fade), curve: fade.curve, animator: animator)
+                  duration: duration(move), curve: move.curve)
+        view.fade(from: duration(fade) > 0 ? 0 : 1, to: 1, duration: duration(fade), curve: fade.curve)
     }
 
     /// Hides `view` with layersOut and fadeLayersOut, then removes it.
@@ -139,8 +137,8 @@ final class HUD {
         }
         let frame = view.targetFrame
         view.move(to: duration(move) > 0 ? offscreen(frame, style: s, position: position) : frame,
-                  duration: duration(move), curve: move.curve, animator: animator)
-        view.fade(to: 0, duration: duration(fade), curve: fade.curve, animator: animator)
+                  duration: duration(move), curve: move.curve)
+        view.fade(to: 0, duration: duration(fade), curve: fade.curve)
         DispatchQueue.main.asyncAfter(deadline: .now() + longest) { [weak view] in view?.removeFromSuperview() }
     }
 
@@ -148,6 +146,6 @@ final class HUD {
     func animateMove(_ view: DecoratedView, to frame: CGRect, animated: Bool) {
         guard view.targetFrame != frame else { return }
         let a = config.animation("layers")
-        view.move(to: frame, duration: animated ? duration(a) : 0, curve: a.curve, animator: animator)
+        view.move(to: frame, duration: animated ? duration(a) : 0, curve: a.curve)
     }
 }

@@ -76,7 +76,7 @@ final class CaptionPresenter {
             return
         }
         if let v = view {
-            v.move(to: frame(for: v), duration: 0, curve: .linear, animator: hud.animator)
+            v.move(to: frame(for: v), duration: 0, curve: .linear)
         } else {
             let v = CaptionView(theme: hud.theme)
             view = v
@@ -87,7 +87,7 @@ final class CaptionPresenter {
 
     func relayout() {
         guard let v = view else { return }
-        v.move(to: frame(for: v), duration: 0, curve: .linear, animator: hud.animator)
+        v.move(to: frame(for: v), duration: 0, curve: .linear)
     }
 
     private func frame(for v: CaptionView) -> CGRect {

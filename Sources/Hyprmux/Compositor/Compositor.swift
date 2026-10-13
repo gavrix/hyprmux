@@ -17,7 +17,6 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
     private let hint = HintView()
     private let specialDim = NSView()
     private let windowFrame = WindowFrameView()
-    private let animator: Animator
     /// Hyprmux's own UI (notifications), above all tiles.
     let hud: HUD
 
@@ -104,10 +103,8 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
             styleMask: MonitorWindow.windowedStyle,
             backing: .buffered, defer: false)
         root = CompositorView(frame: NSRect(origin: .zero, size: frame.size))
-        animator = Animator(hostView: root)
         wm = WindowManager(monitor: CGRect(origin: .zero, size: frame.size), settings: config.wm)
-        hud = HUD(config: config, theme: HUDTheme(config: config, terminal: runtime.style, background: runtime.backgroundColor),
-                  animator: animator)
+        hud = HUD(config: config, theme: HUDTheme(config: config, terminal: runtime.style, background: runtime.backgroundColor))
         super.init()
 
         window.title = "Hyprmux"
@@ -567,8 +564,8 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         }
         if v.shown, out.enabled {
             let end = Self.popin(v.frame, style: out.style)
-            v.move(to: end, duration: out.duration, curve: out.curve, animator: animator)
-            v.fade(to: 0, duration: fade.enabled ? fade.duration : out.duration, curve: fade.curve, animator: animator, completion: finish)
+            v.move(to: end, duration: out.duration, curve: out.curve)
+            v.fade(to: 0, duration: fade.enabled ? fade.duration : out.duration, curve: fade.curve, completion: finish)
         } else {
             finish()
         }
@@ -671,27 +668,27 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
                     v.isHidden = false
                     v.surface.setOccluded(false)
                     if tabSwitch {
-                        v.move(to: p.frame, duration: 0, curve: .linear, animator: animator)
-                        v.fade(from: 1, to: 1, duration: 0, curve: .linear, animator: animator)
+                        v.move(to: p.frame, duration: 0, curve: .linear)
+                        v.fade(from: 1, to: 1, duration: 0, curve: .linear)
                     } else if before == nil {
                         // New window.
                         let from = Self.popin(p.frame, style: winIn.style)
-                        v.move(to: p.frame, from: from, duration: dur(winIn), curve: winIn.curve, animator: animator)
-                        v.fade(from: 0, to: 1, duration: dur(fadeIn.enabled ? fadeIn : winIn), curve: fadeIn.curve, animator: animator)
+                        v.move(to: p.frame, from: from, duration: dur(winIn), curve: winIn.curve)
+                        v.fade(from: 0, to: 1, duration: dur(fadeIn.enabled ? fadeIn : winIn), curve: fadeIn.curve)
                     } else if case .special = p.workspace, specialOpened {
                         let from = Self.offset(p.frame, style: spAnim.style, delta: -1, width: width, height: height)
-                        v.move(to: p.frame, from: from, duration: dur(spAnim), curve: spAnim.curve, animator: animator)
-                        v.fade(from: Self.fades(spAnim.style) ? 0 : 1, to: 1, duration: dur(spAnim), curve: spAnim.curve, animator: animator)
+                        v.move(to: p.frame, from: from, duration: dur(spAnim), curve: spAnim.curve)
+                        v.fade(from: Self.fades(spAnim.style) ? 0 : 1, to: 1, duration: dur(spAnim), curve: spAnim.curve)
                     } else if wsDelta != 0 {
                         let from = Self.offset(p.frame, style: wsAnim.style, delta: wsDelta > 0 ? 1 : -1, width: width, height: height)
-                        v.move(to: p.frame, from: from, duration: dur(wsAnim), curve: wsAnim.curve, animator: animator)
-                        v.fade(from: Self.fades(wsAnim.style) ? 0 : 1, to: 1, duration: dur(wsAnim), curve: wsAnim.curve, animator: animator)
+                        v.move(to: p.frame, from: from, duration: dur(wsAnim), curve: wsAnim.curve)
+                        v.fade(from: Self.fades(wsAnim.style) ? 0 : 1, to: 1, duration: dur(wsAnim), curve: wsAnim.curve)
                     } else {
-                        v.move(to: p.frame, duration: 0, curve: .linear, animator: animator)
-                        v.fade(from: 0, to: 1, duration: dur(fadeIn), curve: fadeIn.curve, animator: animator)
+                        v.move(to: p.frame, duration: 0, curve: .linear)
+                        v.fade(from: 0, to: 1, duration: dur(fadeIn), curve: fadeIn.curve)
                     }
                 } else if v.targetFrame != p.frame {
-                    v.move(to: p.frame, duration: drag?.id == p.id ? 0 : dur(move), curve: move.curve, animator: animator)
+                    v.move(to: p.frame, duration: drag?.id == p.id ? 0 : dur(move), curve: move.curve)
                 }
             } else if v.shown {
                 v.shown = false
@@ -704,7 +701,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
                 let to: CGRect
                 if tabSwitch {
                     // Hidden in the same frame the new tab appears.
-                    v.move(to: p.frame, duration: 0, curve: .linear, animator: animator)
+                    v.move(to: p.frame, duration: 0, curve: .linear)
                     hide()
                     continue
                 } else if case .special = p.workspace, specialClosed {
@@ -718,17 +715,17 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
                     to = p.frame
                 }
                 if dur(anim) > 0 {
-                    v.move(to: to, duration: dur(anim), curve: anim.curve, animator: animator, completion: hide)
+                    v.move(to: to, duration: dur(anim), curve: anim.curve, completion: hide)
                     if Self.fades(anim.style) || to == p.frame {
-                        v.fade(to: 0, duration: dur(anim), curve: anim.curve, animator: animator)
+                        v.fade(to: 0, duration: dur(anim), curve: anim.curve)
                     }
                 } else {
-                    v.move(to: p.frame, duration: 0, curve: .linear, animator: animator)
+                    v.move(to: p.frame, duration: 0, curve: .linear)
                     hide()
                 }
             } else if !v.isAnimating {
                 // Hidden: keep geometry current so the next slide-in starts right.
-                v.move(to: p.frame, duration: 0, curve: .linear, animator: animator)
+                v.move(to: p.frame, duration: 0, curve: .linear)
             }
         }
 
@@ -1065,7 +1062,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
                 apply(animated: false)
             } else {
                 // Tiled drag: the window follows the pointer; it lands on mouse-up.
-                v.move(to: d.startFrame.offsetBy(dx: dx, dy: dy), duration: 0, curve: .linear, animator: animator)
+                v.move(to: d.startFrame.offsetBy(dx: dx, dy: dy), duration: 0, curve: .linear)
             }
             d.lastMouse = p
             drag = d

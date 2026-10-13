@@ -477,9 +477,11 @@ Each one cost a debugging session.
   (group tabs).
 - **Config watching.** Watch the file as well as its directory: in-place
   saves don't touch the directory.
-- **Hidden windows don't animate.** The `Animator`'s display link stops while
-  the app is hidden, so tiles and HUD panels freeze at their start frame, often
-  offscreen or at alpha 0. Hide the test app only when no test depends on it.
+- **Layout can't wait for a clock.** Tiles and HUD panels used to reach their
+  frames only through display-link ticks. A link stops while the app is hidden,
+  and after a display sleeps and wakes it can stay stopped. Tiles then froze at
+  their start frame, offscreen or at alpha 0, until a restart. Set state first
+  and let Core Animation play the change (`DecoratedView.move`).
 - **Ghostty filters desktop notifications.** A repeated OSC 9 with the same
   text, or several in quick succession, may never reach Hyprmux. Put
   `$RANDOM` in test messages and space them out.

@@ -121,6 +121,11 @@ final class ClientView: DecoratedView, FindBarHost {
 
     override func targetFrameDidChange() { layoutContent() }
 
+    /// Laid out for the target frame, so they don't move while the chrome animates.
+    override var layersOutsideChromeAnimation: [CALayer] {
+        [surface.view.layer, groupBar?.layer, findBar?.layer].compactMap { $0 }
+    }
+
     /// Sizes the content (and tab strip) for the current target frame.
     private func layoutContent() {
         let b = decoration.borderSize

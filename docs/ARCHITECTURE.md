@@ -121,8 +121,13 @@ input or IPC ─► wm.dispatch(...) ─► compositor.apply(animated:)
 - **Group tab switch:** swaps instantly, like Hyprland. Everything else
   fades.
 
-`Animator` runs every animation from one display link, with the bezier curves
-from the config.
+Animations never hold layout state. `DecoratedView.move` and `fade` set the
+final frame and alpha at once, then Core Animation plays the change with the
+config's bezier curve: each chrome layer animates from its geometry at the
+start frame to its geometry at the target. The window server runs the
+animations, so a tile is in its final place even when nothing draws (the app
+hidden, a display asleep). Completions, like hiding a tile after it slides out,
+run after the animation's duration.
 
 ### `ClientView`
 

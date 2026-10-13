@@ -60,11 +60,11 @@ extension HyprmuxCore.Color {
 }
 
 /// A frame with Hyprmux's window decoration: gradient border, outside-only shadow,
-/// rounded or squircle clip, optional blur, and frame/alpha animation.
+/// rounded or squircle clip, optional blur, and frame/alpha animation (see Animation).
 /// Tiles (`ClientView`) and HUD panels share it, so they look alike.
 ///
 /// Content goes in `clip`. Subclasses hook in through the `…DidChange` methods.
-class DecoratedView: NSView, Animatable {
+class DecoratedView: NSView {
     /// Holds the content, clipped to the inner shape.
     let clip = FlippedView()
     private let borderLayer = CAGradientLayer()
@@ -84,10 +84,6 @@ class DecoratedView: NSView, Animatable {
     private let clipMask = CAShapeLayer()
 
     private(set) var targetFrame: CGRect = .zero
-    private var frameTween: Tween<CGRect>?
-    private var alphaTween: Tween<CGFloat>?
-    private var frameDone: (() -> Void)?
-    private var alphaDone: (() -> Void)?
     private(set) var decoration: Decoration
     private(set) var isActive = false
     /// What the content is doing (TileStatus). While unfocused, the border shows it.
@@ -182,8 +178,7 @@ class DecoratedView: NSView, Animatable {
         }
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = duration
-            ctx.timingFunction = CAMediaTimingFunction(
-                controlPoints: Float(curve.x1), Float(curve.y1), Float(curve.x2), Float(curve.y2))
+            ctx.timingFunction = curve.timingFunction
             clip.animator().alphaValue = target
         }
     }
@@ -297,74 +292,184 @@ class DecoratedView: NSView, Animatable {
 
     // MARK: Animation
 
-    /// Moves to `target`, animating from `from` (or the current frame) when a duration is given.
-    func move(to target: CGRect, from: CGRect? = nil, duration: Double, curve: Bezier, animator: Animator, completion: (() -> Void)? = nil) {
+    // Frame and alpha are state: `move` and `fade` set the final values at once, so the
+    // view is always where the layout put it. Core Animation then plays the change on
+    // screen: record every chrome layer's geometry at the start frame, lay out at the
+    // target, and animate each layer from its first value to its last (FLIP). The
+    // window server runs those animations. No clock in the app drives a view, so
+    // nothing strands a tile half-way when the app is hidden or a display link stops.
+
+    private static let animationKeyPrefix = "hyprmux."
+    /// Layers carrying this view's geometry animations, so the next move can replace them.
+    private var animatedLayers: [CALayer] = []
+    /// Bumped by every move or fade, so a newer one supersedes a pending completion.
+    private var frameGeneration = 0
+    private var alphaGeneration = 0
+    private var frameAnimationEnd: CFTimeInterval = 0
+    private var alphaAnimationEnd: CFTimeInterval = 0
+
+    /// Layers that are laid out for the final frame and never animated with the chrome,
+    /// with everything under them. Tiles return their content (the surface).
+    var layersOutsideChromeAnimation: [CALayer] { [] }
+
+    /// Moves to `target`. With a duration, the screen shows a move from `from` (or from
+    /// what's on screen now); `completion` runs when that ends.
+    func move(to target: CGRect, from: CGRect? = nil, duration: Double, curve: Bezier, completion: (() -> Void)? = nil) {
         targetFrame = target
         // Resize the content once, to its final size.
         targetFrameDidChange()
-        let start = from ?? frame
-        if duration <= 0 || start == target {
-            // A newer move supersedes any pending completion (e.g. hide after slide-out).
-            frameTween = nil
-            frameDone = nil
-            frame = target
+        frameGeneration += 1
+        guard duration > 0 else {
+            removeGeometryAnimations()
+            frameAnimationEnd = 0
+            setFrameNow(target)
             completion?()
             return
         }
-        if from != nil { frame = start }
-        frameDone = completion
-        frameTween = Tween(from: start, to: target, start: Animator.now, duration: duration, curve: curve)
-        animator.add(self)
+        let first: [GeometryValue]
+        if let from {
+            setFrameNow(from)
+            first = recordGeometry(presented: false)
+        } else {
+            first = recordGeometry(presented: true)
+        }
+        removeGeometryAnimations()
+        setFrameNow(target)
+        let last = Dictionary(recordGeometry(presented: false).map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        let timing = curve.timingFunction
+        var moved = false
+        for a in first {
+            guard let b = last[a.id], !a.equals(b) else { continue }
+            moved = true
+            let animation = CABasicAnimation(keyPath: a.key)
+            animation.fromValue = a.value
+            animation.toValue = b.value
+            animation.duration = duration
+            animation.timingFunction = timing
+            a.layer.add(animation, forKey: Self.animationKeyPrefix + a.key)
+            if !animatedLayers.contains(where: { $0 === a.layer }) { animatedLayers.append(a.layer) }
+        }
+        // Already on screen at the target: nothing to play, so it's done now.
+        guard moved else {
+            frameAnimationEnd = 0
+            completion?()
+            return
+        }
+        frameAnimationEnd = CACurrentMediaTime() + duration
+        after(duration, generation: frameGeneration, current: { $0.frameGeneration }, completion)
     }
 
-    func fade(from: CGFloat? = nil, to: CGFloat, duration: Double, curve: Bezier, animator: Animator, completion: (() -> Void)? = nil) {
+    /// Sets the whole view's alpha to `to`. With a duration, the screen shows a fade from
+    /// `from` (or from what's on screen now); `completion` runs when that ends.
+    func fade(from: CGFloat? = nil, to: CGFloat, duration: Double, curve: Bezier, completion: (() -> Void)? = nil) {
         // Whole-view alpha: only open/close/workspace fades. Active/inactive opacity lives on `clip`.
-        let target = to
-        let start = from ?? alphaValue
-        if duration <= 0 {
-            alphaTween = nil
-            alphaDone = nil
-            alphaValue = target
+        let key = Self.animationKeyPrefix + "opacity"
+        let shown = layer?.animation(forKey: key) != nil ? layer?.presentation().map { CGFloat($0.opacity) } : nil
+        let start = from ?? shown ?? alphaValue
+        alphaGeneration += 1
+        layer?.removeAnimation(forKey: key)
+        alphaValue = to
+        guard duration > 0 else {
+            alphaAnimationEnd = 0
             completion?()
             return
         }
-        alphaValue = start
-        alphaDone = completion
-        alphaTween = Tween(from: start, to: target, start: Animator.now, duration: duration, curve: curve)
-        animator.add(self)
+        if start != to {
+            let animation = CABasicAnimation(keyPath: "opacity")
+            animation.fromValue = Float(start)
+            animation.toValue = Float(to)
+            animation.duration = duration
+            animation.timingFunction = curve.timingFunction
+            layer?.add(animation, forKey: key)
+        }
+        alphaAnimationEnd = CACurrentMediaTime() + duration
+        after(duration, generation: alphaGeneration, current: { $0.alphaGeneration }, completion)
     }
 
-    var isAnimating: Bool { frameTween != nil || alphaTween != nil }
+    /// True while the screen still shows a move or fade.
+    var isAnimating: Bool { CACurrentMediaTime() < max(frameAnimationEnd, alphaAnimationEnd) }
 
-    func step(_ now: CFTimeInterval) -> Bool {
-        if let t = frameTween {
-            frame = t.from.lerp(to: t.to, t.progress(now)).integralish
-            if t.finished(now) {
-                frame = t.to
-                frameTween = nil
-                let done = frameDone
-                frameDone = nil
-                done?()
+    /// Runs `completion` after `delay`, unless a newer move or fade came first.
+    private func after(_ delay: Double, generation: Int, current: @escaping (DecoratedView) -> Int,
+                       _ completion: (() -> Void)?) {
+        guard let completion else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self, current(self) == generation else { return }
+            completion()
+        }
+    }
+
+    private func setFrameNow(_ rect: CGRect) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        frame = rect
+        CATransaction.commit()
+    }
+
+    private func removeGeometryAnimations() {
+        for layer in animatedLayers {
+            for key in GeometryValue.keys { layer.removeAnimation(forKey: Self.animationKeyPrefix + key) }
+        }
+        animatedLayers.removeAll()
+    }
+
+    /// One animatable geometry property of one layer.
+    private struct GeometryValue {
+        static let keys = ["position", "bounds", "cornerRadius", "path", "shadowPath"]
+        let layer: CALayer
+        let key: String
+        let value: Any?
+
+        func equals(_ other: GeometryValue) -> Bool {
+            switch (value, other.value) {
+            case (nil, nil): true
+            // NSValue, NSNumber, and CGPath all compare by value.
+            case let (a?, b?): CFEqual(a as CFTypeRef, b as CFTypeRef)
+            default: false
             }
         }
-        if let t = alphaTween {
-            alphaValue = t.from + (t.to - t.from) * t.progress(now)
-            if t.finished(now) {
-                alphaValue = t.to
-                alphaTween = nil
-                let done = alphaDone
-                alphaDone = nil
-                done?()
+
+        var id: String { "\(ObjectIdentifier(layer).hashValue).\(key)" }
+    }
+
+    /// The geometry of this view's layer and its chrome, in a fixed order. `presented`
+    /// reads what's on screen for properties that are animating now.
+    private func recordGeometry(presented: Bool) -> [GeometryValue] {
+        guard let root = layer else { return [] }
+        let skip = layersOutsideChromeAnimation
+        var out: [GeometryValue] = []
+        func visit(_ l: CALayer) {
+            guard !skip.contains(where: { $0 === l }) else { return }
+            let shown = presented ? l.presentation() : nil
+            func value(_ key: String) -> Any? {
+                if let shown, l.animation(forKey: Self.animationKeyPrefix + key) != nil { return shown.value(forKey: key) }
+                return l.value(forKey: key)
             }
+            out.append(GeometryValue(layer: l, key: "position", value: value("position")))
+            out.append(GeometryValue(layer: l, key: "bounds", value: value("bounds")))
+            out.append(GeometryValue(layer: l, key: "cornerRadius", value: value("cornerRadius")))
+            if l is CAShapeLayer { out.append(GeometryValue(layer: l, key: "path", value: value("path"))) }
+            if l.shadowPath != nil { out.append(GeometryValue(layer: l, key: "shadowPath", value: value("shadowPath"))) }
+            // A blur view's insides belong to AppKit: it moves as one layer.
+            if l === blurView?.layer { return }
+            if let mask = l.mask { visit(mask) }
+            for s in l.sublayers ?? [] { visit(s) }
         }
-        return isAnimating
+        visit(root)
+        return out
     }
 }
 
-private extension CGRect {
-    /// Rounds to half points so borders stay crisp mid-animation.
-    var integralish: CGRect {
-        CGRect(x: (minX * 2).rounded() / 2, y: (minY * 2).rounded() / 2,
-               width: (width * 2).rounded() / 2, height: (height * 2).rounded() / 2)
+extension CGRect {
+    /// Scales the rect around its center.
+    func scaled(_ f: Double) -> CGRect {
+        let w = width * f, h = height * f
+        return CGRect(x: midX - w / 2, y: midY - h / 2, width: w, height: h)
+    }
+}
+
+extension Bezier {
+    var timingFunction: CAMediaTimingFunction {
+        CAMediaTimingFunction(controlPoints: Float(x1), Float(y1), Float(x2), Float(y2))
     }
 }

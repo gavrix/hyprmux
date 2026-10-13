@@ -99,7 +99,7 @@ final class NotificationStack {
                     hud.animateIn(v, to: frame, position: position, defaultStyle: defaultStyle)
                 } else {
                     hud.layer.addSubview(v)
-                    v.move(to: frame, duration: 0, curve: .linear, animator: hud.animator)
+                    v.move(to: frame, duration: 0, curve: .linear)
                     v.alphaValue = 1
                 }
             } else {

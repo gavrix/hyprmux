@@ -88,7 +88,7 @@ final class KeycastPresenter {
         guard hud.config.hud.keycast else { return }
         state.press(chord: chord, label: label, now: CACurrentMediaTime())
         if let v = view {
-            v.move(to: frame(for: v), duration: 0, curve: .linear, animator: hud.animator)
+            v.move(to: frame(for: v), duration: 0, curve: .linear)
         } else {
             let v = KeycastView(theme: hud.theme)
             view = v
@@ -109,7 +109,7 @@ final class KeycastPresenter {
 
     func relayout() {
         guard let v = view else { return }
-        v.move(to: frame(for: v), duration: 0, curve: .linear, animator: hud.animator)
+        v.move(to: frame(for: v), duration: 0, curve: .linear)
     }
 
     /// Config reloaded: restyle, or go away if the keycast was turned off.

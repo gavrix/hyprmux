@@ -141,9 +141,90 @@ final class AgentBrowserRouterTests: XCTestCase {
         guard case .cursor(3, .move(1, 2))? = move.first else { return XCTFail("expected a move") }
         XCTAssertEqual(toTile(move).first?.2, false)
 
-        let typing = router.receive(1, ["id": 4, "sessionId": session, "method": "Input.insertText",
-                                        "params": ["text": "hi"]])
-        guard case .cursor(3, .typing)? = typing.first else { return XCTFail("expected typing") }
+        let typing = toTile(router.receive(1, ["id": 4, "sessionId": session, "method": "Input.insertText",
+                                               "params": ["text": "hi"]]))
+        XCTAssertEqual(typing.map { $0.1["method"] as? String }, ["Runtime.evaluate", "Input.insertText"])
+        XCTAssertEqual(typing.map(\.2), [false, false], "typing doesn't wait for the cursor")
+    }
+
+    /// Sends typing and returns the focus lookup the router asks the tile for first.
+    private func type(_ session: String, id: Int) -> (lookup: CDPMessage?, actions: [AgentBrowserAction]) {
+        let actions = router.receive(1, ["id": id, "sessionId": session, "method": "Input.insertText",
+                                         "params": ["text": "a"]])
+        let lookup = toTile(actions).first { $0.1["method"] as? String == "Runtime.evaluate" }?.1
+        return (lookup, actions)
+    }
+
+    private func cursorEffects(_ actions: [AgentBrowserAction]) -> [AgentCursorEffect] {
+        actions.compactMap { if case .cursor(_, let e) = $0 { return e } else { return nil } }
+    }
+
+    func testTypingMovesTheCursorToTheFocusedElement() {
+        router.connect(1, scope: .all)
+        _ = router.tileOpened(target(3))
+        let session = attach(1, 3)
+        let (lookup, actions) = type(session, id: 2)
+        XCTAssertNotNil(lookup, "the router asks where the focused element is")
+        XCTAssertTrue(cursorEffects(actions).isEmpty, "the cursor waits for the answer")
+        XCTAssertEqual((lookup?["params"] as? [String: Any])?["returnByValue"] as? Bool, true)
+
+        // A second keystroke while the lookup is out only pulses.
+        let (second, more) = type(session, id: 3)
+        XCTAssertNil(second)
+        XCTAssertEqual(cursorEffects(more), [.typing])
+
+        // The reply is the router's own: the agent never sees it.
+        let found = router.tileMessage(3, ["id": lookup!["id"]!, "result": ["result": ["type": "object",
+                                                                                     "value": ["x": 40, "y": 60.5]]]])
+        XCTAssertTrue(sent(found, to: 1).isEmpty)
+        XCTAssertEqual(cursorEffects(found), [.move(x: 40, y: 60.5), .typing])
+
+        // The next lookup tells the page where the cursor is, so it can stay on the element.
+        let (next, _) = type(session, id: 4)
+        XCTAssertTrue(((next?["params"] as? [String: Any])?["expression"] as? String)?.contains("[40.0, 60.5]") == true)
+        let stay = router.tileMessage(3, ["id": next!["id"]!, "result": ["result": ["type": "object", "subtype": "null",
+                                                                                  "value": NSNull()]]])
+        XCTAssertEqual(cursorEffects(stay), [.typing])
+    }
+
+    func testAFocusReplyAfterAClickLeavesTheCursorAtTheClick() {
+        router.connect(1, scope: .all)
+        _ = router.tileOpened(target(3))
+        let session = attach(1, 3)
+        let (lookup, _) = type(session, id: 2)
+        _ = router.receive(1, ["id": 3, "sessionId": session, "method": "Input.dispatchMouseEvent",
+                               "params": ["type": "mousePressed", "x": 5, "y": 5, "button": "left"]])
+        let late = router.tileMessage(3, ["id": lookup!["id"]!, "result": ["result": ["value": ["x": 40, "y": 60]]]])
+        XCTAssertTrue(late.isEmpty)
+    }
+
+    func testAFailedFocusLookupStillPulses() {
+        router.connect(1, scope: .all)
+        _ = router.tileOpened(target(3))
+        let session = attach(1, 3)
+        let (lookup, _) = type(session, id: 2)
+        let failed = router.tileMessage(3, ["id": lookup!["id"]!, "error": ["code": -32000, "message": "nope"]])
+        XCTAssertEqual(cursorEffects(failed), [.typing])
+        XCTAssertTrue(sent(failed, to: 1).isEmpty)
+    }
+
+    func testFocusLookupsEndWithTheAgent() {
+        router.connect(1, scope: .all)
+        _ = router.tileOpened(target(3))
+        let session = attach(1, 3)
+        let (lookup, _) = type(session, id: 2)
+        _ = router.disconnect(1)
+        XCTAssertTrue(router.tileMessage(3, ["id": lookup!["id"]!, "result": ["result": ["value": ["x": 1, "y": 1]]]])
+            .isEmpty)
+
+        // A new agent starts with a fresh lookup.
+        router.connect(2, scope: .all)
+        let again = router.receive(2, ["id": 1, "method": "Target.attachToTarget",
+                                       "params": ["targetId": "T3", "flatten": true]])
+        let sid = result(sent(again, to: 2).last!)!["sessionId"] as! String
+        let typed = toTile(router.receive(2, ["id": 2, "sessionId": sid, "method": "Input.insertText",
+                                              "params": ["text": "a"]]))
+        XCTAssertEqual(typed.first?.1["method"] as? String, "Runtime.evaluate")
     }
 
     func testBringToFrontLeavesFocusAlone() {

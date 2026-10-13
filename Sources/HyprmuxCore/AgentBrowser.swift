@@ -116,6 +116,12 @@ public final class AgentBrowserRouter {
     private var childSessions: [String: UInt64] = [:]
     private var pending: [Int: Pending] = [:]
     private var leftovers: [UInt64: Leftovers] = [:]
+    /// Where each tile's cursor was last sent, in CSS pixels of the page's viewport, and how
+    /// many times it was sent somewhere.
+    private var cursors: [UInt64: (x: Double, y: Double, moves: Int)] = [:]
+    /// The router's own lookups of a tile's focused element, by upstream id. One per tile at a
+    /// time. `moves`: the cursor's count when it was asked, so a reply after a newer click is dropped.
+    private var focusLookups: [Int: (tile: UInt64, moves: Int)] = [:]
     private var creates: [Int: (connection: Int, id: Any)] = [:]
     private var nextUpstreamID: Int
     private var nextCreate = 1
@@ -218,6 +224,7 @@ public final class AgentBrowserRouter {
     public func tileClosed(_ tile: UInt64) -> [AgentBrowserAction] {
         guard let closed = targets[tile] else { return [] }
         leftovers[tile] = nil
+        forgetCursor(tile)
         var actions = detachSessions(on: tile, reason: "target_closed")
         targets[tile] = nil
         for (cid, c) in connections.sorted(by: { $0.key < $1.key }) where c.discover && inScope(c, tile) {
@@ -246,6 +253,10 @@ public final class AgentBrowserRouter {
     /// A message from a tile's DevTools session: a reply to a routed request, or an event.
     public func tileMessage(_ tile: UInt64, _ message: CDPMessage) -> [AgentBrowserAction] {
         if let id = message["id"] as? Int {
+            if let lookup = focusLookups[id], lookup.tile == tile {
+                focusLookups[id] = nil
+                return focusFound(tile, moves: lookup.moves, message)
+            }
             // Not ours: another DevTools user of the tile (credential fill).
             guard let p = pending[id], p.tile == tile else { return [] }
             pending[id] = nil
@@ -402,9 +413,96 @@ public final class AgentBrowserRouter {
         }
         let (effect, wait) = Self.cursorEffect(method, params)
         var actions: [AgentBrowserAction] = []
-        if let effect { actions.append(.cursor(session.tile, effect)) }
+        switch effect {
+        case .typing?:
+            // Typing goes to the focused element, which agents often focus without a click
+            // (agent-browser's fill, Playwright's fill). Find it, so the cursor shows where the text goes.
+            actions.append(focusLookup(session.tile) ?? .cursor(session.tile, .typing))
+        case .move(let x, let y)?, .press(let x, let y)?:
+            cursorMoved(session.tile, x, y)
+            actions.append(.cursor(session.tile, effect!))
+        case .release?:
+            actions.append(.cursor(session.tile, effect!))
+        case nil:
+            break
+        }
         actions.append(.tile(session.tile, upstream, waitForCursor: wait))
         return actions
+    }
+
+    // MARK: Focused element
+
+    /// A Runtime.evaluate that finds the tile's focused element, unless one is on its way.
+    private func focusLookup(_ tile: UInt64) -> AgentBrowserAction? {
+        guard !focusLookups.values.contains(where: { $0.tile == tile }) else { return nil }
+        let id = nextID()
+        let cursor = cursors[tile]
+        focusLookups[id] = (tile, cursor?.moves ?? 0)
+        return .tile(tile, ["id": id, "method": "Runtime.evaluate", "params": [
+            "expression": Self.focusExpression(cursorX: cursor?.x, cursorY: cursor?.y),
+            "returnByValue": true, "silent": true,
+        ]], waitForCursor: false)
+    }
+
+    /// The lookup's reply: the cursor glides to the focused element, then pulses there.
+    /// No point (nothing focused, off screen, or the cursor is already on it): it pulses where it is.
+    private func focusFound(_ tile: UInt64, moves: Int, _ reply: CDPMessage) -> [AgentBrowserAction] {
+        guard isAttached(tile) else { return [] }
+        // The agent moved or clicked since: that's where it works now.
+        guard (cursors[tile]?.moves ?? 0) == moves else { return [] }
+        let value = ((reply["result"] as? [String: Any])?["result"] as? [String: Any])?["value"] as? [String: Any]
+        if let x = (value?["x"] as? NSNumber)?.doubleValue, let y = (value?["y"] as? NSNumber)?.doubleValue,
+           x.isFinite, y.isFinite {
+            cursorMoved(tile, x, y)
+            return [.cursor(tile, .move(x: x, y: y)), .cursor(tile, .typing)]
+        }
+        return [.cursor(tile, .typing)]
+    }
+
+    private func cursorMoved(_ tile: UInt64, _ x: Double, _ y: Double) {
+        cursors[tile] = (x, y, (cursors[tile]?.moves ?? 0) + 1)
+    }
+
+    private func forgetCursor(_ tile: UInt64) {
+        cursors[tile] = nil
+        focusLookups = focusLookups.filter { $0.value.tile != tile }
+    }
+
+    /// JavaScript that returns where the cursor should point while the page takes typing:
+    /// `{x, y}` in CSS pixels of the top viewport, or null to leave the cursor where it is.
+    /// It follows focus into shadow roots and same-origin frames. A cross-origin frame
+    /// counts as the element. The cursor stays put when it's already over the element, so a
+    /// click into a text field doesn't jump to the field's middle.
+    static func focusExpression(cursorX: Double?, cursorY: Double?) -> String {
+        var cursor = "null"
+        if let cursorX, let cursorY, cursorX.isFinite, cursorY.isFinite { cursor = "[\(cursorX), \(cursorY)]" }
+        return """
+        (() => {
+          const cursor = \(cursor);
+          let doc = document, el = doc.activeElement, dx = 0, dy = 0;
+          for (let depth = 0; depth < 20; depth++) {
+            while (el && el.shadowRoot && el.shadowRoot.activeElement) el = el.shadowRoot.activeElement;
+            if (!el || el === doc.body || el === doc.documentElement) return null;
+            const r = el.getBoundingClientRect();
+            let inner = null;
+            if (el.tagName === 'IFRAME' || el.tagName === 'FRAME') { try { inner = el.contentDocument; } catch (e) {} }
+            if (inner) {
+              const s = getComputedStyle(el);
+              dx += r.left + el.clientLeft + parseFloat(s.paddingLeft || 0);
+              dy += r.top + el.clientTop + parseFloat(s.paddingTop || 0);
+              doc = inner; el = inner.activeElement;
+              continue;
+            }
+            if (r.width === 0 && r.height === 0) return null;
+            const left = dx + r.left, top = dy + r.top, right = left + r.width, bottom = top + r.height;
+            if (cursor && cursor[0] >= left && cursor[0] <= right && cursor[1] >= top && cursor[1] <= bottom) return null;
+            const x = left + r.width / 2, y = top + Math.min(r.height / 2, 16);
+            if (x < 0 || y < 0 || x > innerWidth || y > innerHeight) return null;
+            return { x, y };
+          }
+          return null;
+        })()
+        """
     }
 
     /// What an input command looks like on screen, and whether it waits for the cursor.
@@ -469,6 +567,7 @@ public final class AgentBrowserRouter {
                                                                 : "Target closed")))
         }
         childSessions = childSessions.filter { $0.value != tile }
+        forgetCursor(tile)
         return actions
     }
 
@@ -483,6 +582,7 @@ public final class AgentBrowserRouter {
     /// user would keep browsing with a paused request queue or a fake viewport.
     private func releases(_ before: Set<UInt64>) -> [AgentBrowserAction] {
         before.subtracting(attachedTiles).sorted().flatMap { tile -> [AgentBrowserAction] in
+            forgetCursor(tile)
             guard targets[tile] != nil else { return [.release(tile)] }
             let left = leftovers.removeValue(forKey: tile) ?? Leftovers()
             var calls: [(String, [String: Any])] = left.scripts.sorted().map {
@@ -492,9 +592,7 @@ public final class AgentBrowserRouter {
             calls += Self.resets
             childSessions = childSessions.filter { $0.value != tile }
             return calls.map { method, params in
-                let id = nextUpstreamID
-                nextUpstreamID = nextUpstreamID >= Int(Int32.max) ? Self.firstUpstreamID : nextUpstreamID + 1
-                return .tile(tile, ["id": id, "method": method, "params": params], waitForCursor: false)
+                .tile(tile, ["id": nextID(), "method": method, "params": params], waitForCursor: false)
             } + [.release(tile)]
         }
     }
@@ -540,9 +638,14 @@ public final class AgentBrowserRouter {
     }
 
     private func allocate(_ p: Pending) -> Int {
+        let id = nextID()
+        pending[id] = p
+        return id
+    }
+
+    private func nextID() -> Int {
         let id = nextUpstreamID
         nextUpstreamID = nextUpstreamID >= Int(Int32.max) ? Self.firstUpstreamID : nextUpstreamID + 1
-        pending[id] = p
         return id
     }
 

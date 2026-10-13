@@ -265,7 +265,9 @@ The URL stays the same until Hyprmux quits.
 While an agent is attached, the tile shows a banner, "Agent is controlling this
 tile", with a Stop button. The agent's mouse commands also move a cursor over
 the page. A click waits until the cursor reaches its point, so what the user
-sees matches what happens. Hyprmux draws the banner and the cursor in its own
+sees matches what happens. Typing moves the cursor to the focused field, so a
+`fill` without a click still shows where the text goes. The cursor stays put
+when it's already over that field. Hyprmux draws the banner and the cursor in its own
 views, so the page can't see them.
 
 **Stop** detaches every agent from the tile. Their pending calls fail, and

@@ -4,6 +4,7 @@
 import { Dwindle, neighbor, applyGaps } from "./layout.js";
 import { factories } from "./tiles.js";
 import { durations, reducedMotion } from "./motion.js";
+import { isMod } from "./keys.js";
 
 // The app's default config, at the width the app's window usually has.
 const REFERENCE_WIDTH = 1180;
@@ -12,10 +13,6 @@ const GAPS_OUT = 14;
 const MAX_TILES = 8;
 // The demo keeps tiles big enough to read. The app only clamps split ratios.
 const MIN_TILE = 64;
-
-const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
-// $mod is ⌘. Off a Mac the OS often keeps the Windows key, so ⌥ works too.
-const isMod = (e) => e.metaKey || (!isMac && e.altKey);
 
 export class Compositor {
   /** @param {HTMLElement} root the .hm window */

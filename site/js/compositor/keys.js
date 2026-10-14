@@ -75,33 +75,47 @@ export class Keycast {
 }
 
 const LEGEND = [
-  [["H", "J", "K", "L"], "focus"],
-  [["⇧", "HJKL"], "move"],
-  [["⌥", "HJKL"], "swap"],
-  [["⌃", "HJKL"], "resize"],
-  [["↩"], "terminal"],
-  [["B"], "web"],
-  [["I"], "iPhone"],
-  [["E"], "flip split"],
-  [["W"], "close"],
-  [["⌘", "drag"], "move"],
-  [["⌘", "right-drag"], "resize"],
+  [["H", "J", "K", "L"], "Focus"],
+  [["⇧", "HJKL"], "Move"],
+  [["⌥", "HJKL"], "Swap"],
+  [["⌃", "HJKL"], "Resize"],
+  [["↩"], "New terminal"],
+  [["B"], "New web tile"],
+  [["I"], "New iPhone"],
+  [["E"], "Flip split"],
+  [["W"], "Close"],
 ];
 
-/** The line under the window: how to take the keys, and what they do. */
+export const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+// $mod is ⌘. Off a Mac the OS often keeps the Windows key, so ⌥ works too.
+export const isMod = (e) => e.metaKey || (!isMac && e.altKey);
+
+const MOUSE_ICON = `<svg viewBox="0 0 16 22" width="13" height="18" aria-hidden="true"><rect x="1" y="1" width="14" height="20" rx="7" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 1v7" stroke="currentColor" stroke-width="1.5"/><rect x="6.6" y="4" width="2.8" height="4.5" rx="1.4" fill="currentColor"/></svg>`;
+
+/**
+ * The line under the window. The mouse binds are the one obvious thing to try;
+ * the keyboard binds wait behind a toggle so the page stays calm.
+ */
 export function createHint(id) {
+  const mod = isMac ? "⌘" : "⌥";
   const hint = document.createElement("div");
   hint.className = "hm-hint";
   hint.id = id;
-  const legend = LEGEND.map(
-    ([keys, what]) => `<li>${keys.map((k) => `<kbd>${k}</kbd>`).join("")}<span>${what}</span></li>`,
+  const rows = LEGEND.map(
+    ([keys, what]) => `<div><dt>${keys.map((k) => `<kbd>${k}</kbd>`).join("")}</dt><dd>${what}</dd></div>`,
   ).join("");
   hint.innerHTML = `
-    <p class="hm-hint__status">
-      <span class="hm-hint__idle">Click the window to take the keys.</span>
-      <span class="hm-hint__live">Keys are live. <kbd>Esc</kbd> lets go.</span>
-      <span class="hm-hint__app">In Hyprmux, add <kbd>⌘</kbd> to the keys.</span>
+    <p class="hm-hint__mouse">
+      <span class="hm-hint__icon">${MOUSE_ICON}</span>
+      <span class="hm-hint__pointer">Hold <kbd>${mod}</kbd> and drag a tile to move it. Right-drag to resize.</span>
+      <span class="hm-hint__touch">Tap a tile to focus it. Try it with a mouse to move tiles around.</span>
     </p>
-    <ul class="hm-hint__legend">${legend}</ul>`;
+    <details class="hm-keys">
+      <summary><span class="hm-keys__dot" aria-hidden="true"></span>Keyboard controls</summary>
+      <div class="hm-keys__panel">
+        <p class="hm-keys__intro">Click the window, then use the app's binds without <kbd>⌘</kbd>. <kbd>Esc</kbd> lets go.</p>
+        <dl class="hm-keys__grid">${rows}</dl>
+      </div>
+    </details>`;
   return hint;
 }

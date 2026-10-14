@@ -120,6 +120,13 @@ export class Dwindle {
     if (p) p.ratio = clampRatio(exact ? value : p.ratio + value);
   }
 
+  /** Puts `replacement` in `old`'s leaf, same box and splits. Groups switch tabs with it. */
+  replaceClient(old, replacement) {
+    if (this.contains(replacement)) throw new Error(`${replacement} is already in the layout`);
+    const n = this.#leaf(old);
+    if (n) n.client = replacement;
+  }
+
   swap(a, b) {
     const na = this.#leaf(a);
     const nb = this.#leaf(b);

@@ -1,8 +1,9 @@
-// What new tiles show. Content is fixed HTML, with a little typing in terminals.
+// What tiles show. Content is fixed HTML, with a little typing in terminals.
 
 import { reducedMotion } from "./motion.js";
 
 const prompt = (dir = "project") => `<span class="p">${dir}</span> <span class="g">❯</span> `;
+const cursor = '<span class="cursor"></span>';
 
 // Commands a new terminal types, and what they print. `ctx` gives live numbers.
 const terminalScripts = [
@@ -17,7 +18,6 @@ const terminalScripts = [
   }),
   (ctx) => ({ cmd: "hyprmuxctl surfaces | jq length", out: [String(ctx.count())] }),
   () => ({ cmd: "swift test", out: ['<span class="gr">✔</span> Test run with 412 tests passed after 3.1 seconds.'] }),
-  () => ({ cmd: "npm run dev", out: ['<span class="gr">VITE</span> v6.3.1  ready in 412 ms', '  ➜  Local:   <span class="p">http://localhost:5173/</span>'] }),
 ];
 let nextScript = 0;
 
@@ -27,44 +27,70 @@ function el(html) {
   return t.content.firstElementChild;
 }
 
-function terminal(ctx) {
+/** A terminal that types `script.cmd`, then prints `script.out`. */
+function typedTerminal(script, dir = "project") {
   const frame = el(`<div class="frame"><div class="term"></div></div>`);
   const term = frame.firstElementChild;
-  const script = terminalScripts[nextScript++ % terminalScripts.length](ctx);
   const line = (html) => term.insertAdjacentHTML("beforeend", `<p>${html}</p>`);
-  const cursor = '<span class="cursor"></span>';
 
-  const mount = () => {
-    if (reducedMotion()) {
-      line(prompt() + script.cmd);
+  const mount = ({ instant = false } = {}) => {
+    if (instant || reducedMotion()) {
+      line(prompt(dir) + script.cmd);
       script.out.forEach(line);
-      line(prompt() + cursor);
+      line(prompt(dir) + cursor);
       return;
     }
-    line(prompt() + cursor);
+    line(prompt(dir) + cursor);
     const current = term.lastElementChild;
     let i = 0;
     const type = () => {
       if (!current.isConnected) return;
       if (i < script.cmd.length) {
         i += 1;
-        current.innerHTML = prompt() + script.cmd.slice(0, i) + cursor;
+        current.innerHTML = prompt(dir) + script.cmd.slice(0, i) + cursor;
         setTimeout(type, 28 + Math.random() * 40);
         return;
       }
-      current.innerHTML = prompt() + script.cmd;
+      current.innerHTML = prompt(dir) + script.cmd;
       setTimeout(() => {
         if (!current.isConnected) return;
         script.out.forEach(line);
-        line(prompt() + cursor);
+        line(prompt(dir) + cursor);
       }, 220);
     };
     setTimeout(type, 380);
   };
-  return { kind: "terminal", label: "Terminal", frame, mount };
+  return { frame, mount };
 }
 
-function web() {
+function terminal(ctx) {
+  const script = ctx.script ?? terminalScripts[nextScript++ % terminalScripts.length](ctx);
+  const { frame, mount } = typedTerminal(script, ctx.dir);
+  return { kind: "terminal", label: ctx.label ?? "Terminal", frame, mount };
+}
+
+/** A coding agent in a terminal. Its tile shows what it's doing. */
+function agent({ name, task, state, lines }) {
+  const frame = el(`<div class="frame"><div class="term"></div></div>`);
+  frame.firstElementChild.innerHTML = [prompt("~/app") + `pi "${task}"`, ...lines].map((l) => `<p>${l}</p>`).join("");
+  return { kind: "terminal", label: name, frame, activity: state };
+}
+
+function web(ctx) {
+  if (ctx.page === "docs") {
+    const frame = el(`
+      <div class="frame"><div class="web">
+        <div class="web__bar"><span class="web__nav" aria-hidden="true">‹ › ↻</span><span class="web__url">github.com/gavrix/hyprmux</span></div>
+        <div class="web__page web__page--docs">
+          <div class="web__docs-h">Hyprmux</div>
+          <div class="web__docs-p"></div><div class="web__docs-p web__docs-p--short"></div>
+          <div class="web__docs-h2">Install</div>
+          <div class="web__docs-code"></div>
+          <div class="web__docs-p"></div><div class="web__docs-p web__docs-p--short"></div>
+        </div>
+      </div></div>`);
+    return { kind: "web", label: "README", frame };
+  }
   const frame = el(`
     <div class="frame"><div class="web">
       <div class="web__bar"><span class="web__nav" aria-hidden="true">‹ › ↻</span><span class="web__url">hyprmux.app</span></div>
@@ -74,7 +100,7 @@ function web() {
         <div class="web__site-tiles"><i></i><i></i><i></i></div>
       </div>
     </div></div>`);
-  return { kind: "web", label: "Web page", frame };
+  return { kind: "web", label: "hyprmux.app", frame };
 }
 
 const apps = [
@@ -96,7 +122,7 @@ function mobile() {
       </div></div>
       <div class="device__buttons" aria-hidden="true"><span>Home</span><span>Lock</span></div>
     </div></div>`);
-  return { kind: "mobile", label: "iPhone simulator", frame };
+  return { kind: "mobile", label: "iPhone 17", frame };
 }
 
-export const factories = { terminal, web, mobile };
+export const factories = { terminal, agent, web, mobile };

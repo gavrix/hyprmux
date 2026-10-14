@@ -833,8 +833,9 @@ h2 { font-size: clamp(34px, 4.6vw, 56px); letter-spacing: -0.035em; text-wrap: b
 .hm-hint__mouse kbd { height: 22px; min-width: 22px; font-size: 12px; margin: 0 2px; }
 .hm-hint__touch { display: none; }
 @media (hover: none) {
-  .hm-hint__pointer, .hm-keys { display: none; }
+  .hm-hint__pointer, .hm-hint__icon, .hm-keys { display: none; }
   .hm-hint__touch { display: inline; }
+  .hm-hint__mouse { padding: 0; border: 0; background: none; color: var(--muted); font-size: 14px; }
 }
 
 .hm-keys { display: flex; flex-direction: column; align-items: center; }
@@ -896,3 +897,133 @@ h2 { font-size: clamp(34px, 4.6vw, 56px); letter-spacing: -0.035em; text-wrap: b
 }
 .hm--live .tile.is-dragging .frame { box-shadow: 0 1.5em 4em rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(51, 204, 255, 0.25); }
 .hm--live .tile.is-resizing { transition: none; }
+
+/* ---------- Workspaces, the scratchpad, groups, fullscreen, activity ---------- */
+
+.hm--live .hm__area { overflow: hidden; }
+.hm__ws { position: absolute; inset: 0; z-index: 1; visibility: hidden; will-change: transform; }
+.hm__ws.is-shown { visibility: visible; }
+.hm__ws[data-ws="special"] { z-index: 3; }
+.hm__dim { position: absolute; inset: 0; z-index: 2; background: #000; opacity: 0; pointer-events: none; transition: opacity 303ms cubic-bezier(0.15, 0, 0.1, 1); }
+.hm--special .hm__ws:not([data-ws="special"]) { pointer-events: none; }
+.hm--live .keycast { z-index: 10; }
+
+.hm--live .tile.is-tab-hidden { display: none; }
+.hm--live .tile.tile--maximized, .hm--live .tile.tile--fullscreen { z-index: 4; }
+.tile--fullscreen .frame { border-radius: 0; }
+.tile--fullscreen .frame::before, .tile--fullscreen .frame::after { display: none; }
+
+/* group { col.border_active = rgba(ffaa33ee) rgba(ff5f5fee) 45deg; col.border_inactive = rgba(775533aa) } */
+.tile--grouped .frame { padding-top: var(--groupbar, 20px); }
+.tile--grouped .frame::before { background: rgba(119, 85, 51, 0.67); }
+.tile--grouped .frame::after { background: linear-gradient(135deg, rgba(255, 170, 51, 0.93), rgba(255, 95, 95, 0.93)); }
+.groupbar {
+  position: absolute;
+  z-index: 4;
+  top: 2px;
+  left: 2px;
+  right: 2px;
+  height: var(--groupbar, 20px);
+  display: flex;
+  gap: 2px;
+  padding: 2px max(2px, calc(var(--rounding) - 4px));
+  border-radius: calc(var(--rounding) - 2px) calc(var(--rounding) - 2px) 0 0;
+  background: rgba(58, 58, 74, 0.35);
+}
+.groupbar__tab {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  place-items: center;
+  padding: 0 0.6em;
+  border-radius: 4px;
+  background: rgba(58, 58, 74, 0.93);       /* groupbar:col.inactive */
+  color: rgba(255, 255, 255, 0.7);
+  font: 500 0.85em/1 var(--sans);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.groupbar__tab.is-active { background: rgba(51, 204, 255, 0.93); color: #fff; }   /* groupbar:col.active */
+
+/* activity: unfocused tiles' borders take the state's color and pulse; a pill names it. */
+.tile--working:not(.tile--focused) .frame::before { background: var(--working); animation: activity 2.4s ease-in-out infinite; }
+.tile--blocked:not(.tile--focused) .frame::before { background: var(--blocked); animation: activity 0.9s ease-in-out infinite; }
+.tile--done:not(.tile--focused) .frame::before { background: var(--done); animation: activity 3.6s ease-in-out infinite; }
+@keyframes activity { 50% { opacity: 0.45; } }
+.tile__pill {
+  position: absolute;
+  z-index: 5;
+  top: -0.55em;
+  left: 1.1em;
+  padding: 0.2em 0.7em;
+  border-radius: 999px;
+  font: 650 0.8em/1.2 var(--sans);
+  color: #0b0c11;
+  pointer-events: none;
+}
+.tile--working .tile__pill { background: var(--working); }
+.tile--blocked .tile__pill { background: var(--blocked); }
+.tile--done .tile__pill { background: var(--done); }
+.hm--live .tile { overflow: visible; }
+
+/* The bar: pills with activity bubbles, and the scratchpad while it's shown. */
+.hm__workspaces .ws { cursor: pointer; }
+.hm__workspaces .bub { min-width: 1.35em; height: 1.35em; padding: 0 0.3em; font-size: 0.72em; margin-left: 0.1em; }
+.hm__workspaces .bub--blocked { animation: pulse 0.9s ease-in-out infinite; }
+.ws--special { color: #071219; background: #c3a6ff; padding: 0 0.8em; cursor: default; }
+
+/* The page's own demo pointer. */
+.hm-cursor {
+  position: absolute;
+  z-index: 11;
+  left: 0;
+  top: 0;
+  margin: -2px 0 0 -2px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 250ms linear;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.5));
+}
+.hm-cursor.is-shown { opacity: 1; }
+.hm-cursor svg { transition: transform 150ms var(--ease); }
+.hm-cursor.is-holding svg { transform: scale(0.88); }
+.hm-cursor__mod {
+  position: absolute;
+  left: 18px;
+  top: 18px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: rgba(18, 20, 28, 0.92);
+  border: 1px solid rgba(127, 212, 255, 0.45);
+  color: #7fd4ff;
+  font: 700 12px/1.2 var(--sans);
+  opacity: 0;
+  transform: scale(0.8);
+  transition: opacity 150ms linear, transform 200ms var(--ease);
+}
+.hm-cursor.is-holding .hm-cursor__mod { opacity: 1; transform: none; }
+
+/* Touch screens get buttons for the binds. */
+.hm-touch { display: none; flex-wrap: wrap; justify-content: center; gap: 8px; max-width: 520px; }
+.hm-touch button {
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 10px;
+  border: 1px solid var(--line-2);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  font: 500 14px/1 var(--sans);
+  -webkit-tap-highlight-color: transparent;
+}
+.hm-touch button:active { background: rgba(51, 204, 255, 0.15); border-color: rgba(51, 204, 255, 0.5); }
+@media (hover: none) { .hm-touch { display: flex; } }
+
+/* A README in a web tile. */
+.web__page--docs { background: #fff; gap: 0.55em; padding: 1.1em 1.3em; }
+.web__docs-h { font: 700 1.5em/1 var(--sans); letter-spacing: -0.02em; padding-bottom: 0.35em; border-bottom: 1px solid #e5e7eb; color: #1f2328; }
+.web__docs-h2 { margin-top: 0.4em; font: 650 1.05em/1 var(--sans); color: #1f2328; }
+.web__docs-p { height: 0.6em; border-radius: 0.3em; background: #e6e8ec; }
+.web__docs-p--short { width: 70%; }
+.web__docs-code { height: 2.6em; border-radius: 0.5em; background: #f3f4f6; border: 1px solid #e5e7eb; }

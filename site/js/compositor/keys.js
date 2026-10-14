@@ -20,25 +20,56 @@ export function appChord(e, code = e.code) {
 // resizeactive steps from config/hyprmux.conf (binde = $mod CTRL, H, resizeactive, -40 0).
 const RESIZE = { l: [-40, 0], r: [40, 0], u: [0, -40], d: [0, 40] };
 
-/** Maps a key event to [label, action] or null. Labels match the app's keycast. */
+/**
+ * Maps a key event to [label, action, chord?] or null. Labels match the app's keycast.
+ * `chord` overrides the shown chord for binds that aren't ⌘ + key in the app.
+ */
 export function bindFor(e, wm) {
   if (e.metaKey) return null;
   const dir = DIRS[e.code];
+  const plain = !e.ctrlKey && !e.altKey && !e.shiftKey;
+  const shiftOnly = e.shiftKey && !e.ctrlKey && !e.altKey;
   if (dir) {
     const name = DIR_NAMES[dir];
     if (e.ctrlKey && !e.altKey && !e.shiftKey) return ["Resize", () => wm.resizeActive(...RESIZE[dir])];
     if (e.altKey && !e.ctrlKey && !e.shiftKey) return [`Swap ${name}`, () => wm.swapWindow(dir)];
-    if (e.shiftKey && !e.ctrlKey && !e.altKey) return [`Move window ${name}`, () => wm.moveWindow(dir)];
-    if (!e.ctrlKey && !e.altKey && !e.shiftKey) return [`Focus ${name}`, () => wm.moveFocus(dir)];
+    if (shiftOnly) return [`Move window ${name}`, () => wm.moveWindow(dir)];
+    if (plain) return [`Focus ${name}`, () => wm.moveFocus(dir)];
     return null;
   }
-  if (e.ctrlKey || e.altKey || e.shiftKey) return null;
+  const digit = /^Digit([1-9])$/.exec(e.code);
+  if (digit) {
+    const n = Number(digit[1]);
+    if (plain) return [`Workspace ${n}`, () => wm.workspace(n)];
+    if (shiftOnly) return [`Move to workspace ${n}`, () => wm.moveToWorkspace(n)];
+    return null;
+  }
+  // changegroupactive is ⌃Tab in the app. Browsers keep ⌃Tab, so the page takes Tab,
+  // and only while a group with tabs has focus, so Tab still leaves the window otherwise.
+  if (e.code === "Tab" && !e.ctrlKey && !e.altKey) {
+    const g = wm.groupOf(wm.focused);
+    if (!g || g.members.length < 2) return null;
+    return e.shiftKey
+      ? ["Previous tab", () => wm.changeGroupActive(-1), "⌃⇧Tab"]
+      : ["Next tab", () => wm.changeGroupActive(1), "⌃Tab"];
+  }
+  if (shiftOnly) {
+    switch (e.code) {
+      case "KeyS": return ["Move to the scratchpad", () => wm.moveToWorkspace("special")];
+      case "KeyF": return ["Fullscreen", () => wm.fullscreen("fullscreen")];
+      default: return null;
+    }
+  }
+  if (!plain) return null;
   switch (e.code) {
     case "Enter": case "NumpadEnter": return ["New terminal", () => wm.open("terminal")];
     case "KeyB": return ["New web tile", () => wm.open("web")];
     case "KeyI": return ["Open Mobile", () => wm.open("mobile")];
     case "KeyW": return ["Close window", () => wm.close()];
     case "KeyE": return ["Flip split", () => wm.toggleSplit()];
+    case "KeyS": return ["Scratchpad", () => wm.toggleScratchpad()];
+    case "KeyG": return ["Group", () => wm.toggleGroup()];
+    case "KeyF": return ["Maximize", () => wm.fullscreen("maximize")];
     default: return null;
   }
 }
@@ -82,8 +113,14 @@ const LEGEND = [
   [["↩"], "New terminal"],
   [["B"], "New web tile"],
   [["I"], "New iPhone"],
-  [["E"], "Flip split"],
   [["W"], "Close"],
+  [["E"], "Flip split"],
+  [["1", "2", "3"], "Workspace"],
+  [["⇧", "1…9"], "Move there"],
+  [["S"], "Scratchpad"],
+  [["G"], "Group"],
+  [["Tab"], "Next tab"],
+  [["F"], "Maximize"],
 ];
 
 export const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
@@ -111,7 +148,7 @@ export function createHint(id) {
     <p class="hm-hint__mouse">
       <span class="hm-hint__icon">${MOUSE_ICON}</span>
       <span class="hm-hint__pointer">Hold <kbd>${mod}</kbd> and drag a tile to move it. Right-drag to resize.</span>
-      <span class="hm-hint__touch">Tap a tile to focus it. Try it with a mouse to move tiles around.</span>
+      <span class="hm-hint__touch">Tap a tile to focus it.</span>
     </p>
     <details class="hm-keys">
       <summary>

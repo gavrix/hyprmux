@@ -95,7 +95,7 @@ function web(ctx) {
     <div class="frame"><div class="web">
       <div class="web__bar"><span class="web__nav" aria-hidden="true">‹ › ↻</span><span class="web__url">hyprmux.app</span></div>
       <div class="web__page web__page--site">
-        <div class="web__site-h">Tiles that move like <span class="grad">Hyprland</span>.</div>
+        <div class="web__site-h">The <span class="grad">Hyprland-style</span> multiplexer for macOS.</div>
         <div class="web__site-btn"></div>
         <div class="web__site-tiles"><i></i><i></i><i></i></div>
       </div>

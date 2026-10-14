@@ -46,6 +46,14 @@ function copyButtons() {
   }
 }
 
+async function heroCompositor() {
+  const root = document.getElementById("hero-window");
+  if (!root || !("ResizeObserver" in window)) return;
+  const { start } = await import("./compositor/index.js");
+  start(root);
+}
+
 revealOnScroll();
 navState();
 copyButtons();
+heroCompositor();

@@ -1,0 +1,552 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hyprmux: the Hyprland-style multiplexer for macOS</title>
+  <meta name="description" content="Hyprmux is a terminal multiplexer for macOS with Hyprland's look and feel. Tile Ghostty terminals, web pages, iOS Simulators, and editors in one native window, driven by Hyprland keybinds and a hyprland.conf-style config.">
+  <link rel="canonical" href="https://hyprmux.app/">
+  <meta name="theme-color" content="#0b0c11">
+  <meta name="color-scheme" content="dark">
+
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Hyprmux">
+  <meta property="og:url" content="https://hyprmux.app/">
+  <meta property="og:title" content="Hyprmux: tiles that move like Hyprland">
+  <meta property="og:description" content="A terminal multiplexer for macOS with Hyprland's look and feel. Terminals, browsers, and simulators in one window.">
+  <meta property="og:image" content="https://hyprmux.app/media/og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Hyprmux: tiles that move like Hyprland">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Hyprmux: tiles that move like Hyprland">
+  <meta name="twitter:description" content="A terminal multiplexer for macOS with Hyprland's look and feel. Terminals, browsers, and simulators in one window.">
+  <meta name="twitter:image" content="https://hyprmux.app/media/og.png">
+
+  <link rel="icon" href="favicon.ico" sizes="any">
+  <link rel="icon" href="media/favicon-32.png" type="image/png" sizes="32x32">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="preload" href="fonts/inter-latin-wght.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="fonts/jetbrains-mono-latin-wght.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="css/site.css">
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Hyprmux",
+    "url": "https://hyprmux.app/",
+    "description": "A terminal multiplexer for macOS with Hyprland's look and feel. Tile Ghostty terminals, web pages, iOS Simulators, and editors in one window.",
+    "applicationCategory": "DeveloperApplication",
+    "operatingSystem": "macOS 14 or later (Apple silicon)",
+    "downloadUrl": "https://github.com/gavrix/hyprmux/releases/latest",
+    "codeRepository": "https://github.com/gavrix/hyprmux",
+    "license": "https://opensource.org/licenses/MIT",
+    "image": "https://hyprmux.app/media/icon-256.png",
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+  }
+  </script>
+  <script>document.documentElement.classList.add("js")</script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="nav">
+    <div class="nav__inner">
+      <a class="brand" href="./" aria-label="Hyprmux home">
+        <img src="media/icon-512.webp" width="28" height="28" alt="">
+        <span>Hyprmux</span>
+      </a>
+      <nav class="nav__links" aria-label="Sections">
+        <a href="#tiles">Tiles</a>
+        <a href="#config">Config</a>
+        <a href="#agents">Agents</a>
+        <a href="#keys">Keys</a>
+        <a href="#faq">FAQ</a>
+      </nav>
+      <div class="nav__actions">
+        <a class="icon-link" href="https://github.com/gavrix/hyprmux" aria-label="Hyprmux on GitHub">
+          <svg viewBox="0 0 16 16" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        </a>
+        <a class="btn btn--small btn--primary" href="https://github.com/gavrix/hyprmux/releases/latest">Download</a>
+      </div>
+    </div>
+  </header>
+
+  <main id="main">
+    <!-- Hero -->
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="hero__glow" aria-hidden="true"></div>
+      <div class="wrap hero__copy">
+        <p class="eyebrow reveal"><span class="eyebrow__dot" aria-hidden="true"></span>Terminal multiplexer for macOS</p>
+        <h1 id="hero-title" class="reveal">Tiles that move like <span class="grad">Hyprland</span>.</h1>
+        <p class="lede reveal">The Hyprland aesthetic and keybinds, for your terminals, browsers, and simulators. All in one native window.</p>
+        <div class="cta reveal">
+          <a class="btn btn--primary btn--large" href="https://github.com/gavrix/hyprmux/releases/latest">
+            <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M10 3v10m0 0l-4-4m4 4l4-4M4 16h12"/></svg>
+            Download for Mac
+          </a>
+          <a class="btn btn--ghost btn--large" href="https://github.com/gavrix/hyprmux">View on GitHub</a>
+        </div>
+        <p class="meta reveal">Free and open source · macOS 14+ · Apple silicon · Signed and notarized</p>
+      </div>
+
+      <div class="wrap wrap--wide reveal">
+        <!-- The hero window. Step 2 turns it into a live compositor; without JS it stays this layout. -->
+        <div class="hm" id="hero-window" role="img" aria-label="A Hyprmux window with four tiles: a terminal, an editor showing hyprmux.conf, a web page, and an iPhone simulator.">
+          <div class="hm__bar">
+            <div class="hm__lights" aria-hidden="true"><i></i><i></i><i></i></div>
+            <div class="hm__workspaces" aria-hidden="true">
+              <span class="ws ws--active">1</span><span class="ws">2</span><span class="ws">3</span>
+            </div>
+            <div class="hm__title">Hyprmux</div>
+          </div>
+          <div class="hm__area">
+            <!-- Terminal -->
+            <div class="tile tile--focused" data-slot="a">
+              <div class="frame">
+                <div class="term">
+                  <p><span class="p">project</span> <span class="g">❯</span> hello</p>
+                  <p class="term__banner" aria-hidden="true">HYPRMUX</p>
+                  <p class="term__line">Hyprland-style tiling for macOS, in one window.</p>
+                  <p class="term__line d">terminals · web · iOS Simulator · pickers · sessions</p>
+                  <p>&nbsp;</p>
+                  <p><span class="p">project</span> <span class="g">❯</span> git status --short</p>
+                  <p><span class="y">&nbsp;M</span> Sources/Layout/Dwindle.swift</p>
+                  <p><span class="gr">??</span> site/</p>
+                  <p><span class="p">project</span> <span class="g">❯</span> <span class="cursor"></span></p>
+                </div>
+              </div>
+            </div>
+            <!-- Editor -->
+            <div class="tile" data-slot="b">
+              <div class="frame">
+                <div class="editor">
+                  <div class="editor__tabs"><span class="editor__tab">hyprmux.conf</span><span class="editor__tab editor__tab--dim">binds.conf</span></div>
+                  <ol class="editor__code">
+                    <li><span class="k">general</span> {</li>
+                    <li>    <span class="n">gaps_in</span> = <span class="v">5</span></li>
+                    <li>    <span class="n">gaps_out</span> = <span class="v">14</span></li>
+                    <li>    <span class="n">col.active_border</span> = <span class="c1">rgba(33ccffee)</span> <span class="c2">rgba(00ff99ee)</span> <span class="v">45deg</span></li>
+                    <li>}</li>
+                    <li><span class="k">animations</span> {</li>
+                    <li>    <span class="n">bezier</span> = easeOutQuint, <span class="v">0.23, 1, 0.32, 1</span></li>
+                    <li>    <span class="n">animation</span> = windows, <span class="v">1, 4.79</span>, easeOutQuint</li>
+                    <li>    <span class="n">animation</span> = workspaces, <span class="v">1, 3.5</span>, easeOutQuint, slide</li>
+                    <li>}</li>
+                    <li><span class="n">bind</span> = <span class="k">$mod</span>, Return, exec,</li>
+                  </ol>
+                </div>
+              </div>
+            </div>
+            <!-- Web -->
+            <div class="tile" data-slot="c">
+              <div class="frame">
+                <div class="web">
+                  <div class="web__bar"><span class="web__nav" aria-hidden="true">‹ › ↻</span><span class="web__url">localhost:5173</span></div>
+                  <div class="web__page">
+                    <div class="web__h">Dashboard</div>
+                    <div class="web__chart" aria-hidden="true"><i style="--h:40%"></i><i style="--h:65%"></i><i style="--h:50%"></i><i style="--h:80%"></i><i style="--h:62%"></i><i style="--h:92%"></i></div>
+                    <div class="web__rows" aria-hidden="true"><i></i><i></i><i></i></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <!-- iPhone -->
+            <div class="tile" data-slot="d">
+              <div class="frame">
+                <div class="device">
+                  <div class="phone">
+                    <div class="phone__screen">
+                      <div class="phone__status"><span>9:41</span><span class="phone__island"></span><span>●●●</span></div>
+                      <div class="phone__title">Orders</div>
+                      <div class="phone__card phone__card--hi"></div>
+                      <div class="phone__card"></div>
+                      <div class="phone__card"></div>
+                    </div>
+                  </div>
+                  <div class="device__buttons" aria-hidden="true"><span>Home</span><span>Lock</span></div>
+                </div>
+              </div>
+            </div>
+            <div class="keycast" aria-hidden="true"><kbd>⌘</kbd><kbd>↩</kbd><span>New terminal</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- What goes in a tile -->
+    <section class="section" id="tiles" aria-labelledby="tiles-title">
+      <div class="wrap">
+        <header class="section__head reveal">
+          <p class="kicker">What goes in a tile</p>
+          <h2 id="tiles-title">More than terminals.</h2>
+          <p class="section__lede">A tile holds a terminal, a web page, a document, or a device. Put them side by side on one workspace, and move between them with the same keys.</p>
+        </header>
+
+        <div class="bento">
+          <article class="card card--terminal reveal">
+            <div class="card__media" aria-hidden="true">
+              <div class="mini mini--term">
+                <p><span class="p">~/app</span> <span class="g">❯</span> nvim src/main.rs</p>
+                <p><span class="p">~/app</span> <span class="g">❯</span> cargo test</p>
+                <p class="gr">test result: ok. 42 passed</p>
+                <p><span class="p">~/app</span> <span class="g">❯</span> <span class="cursor"></span></p>
+              </div>
+            </div>
+            <div class="card__body">
+              <h3>Ghostty, in every tile.</h3>
+              <p>A full Ghostty terminal with your Ghostty config, fonts, and theme. IME, mouse, clipboard, and shell integration all work.</p>
+              <ul class="chips"><li>libghostty</li><li>GPU rendered</li><li>OSC 9 / 777 notifications</li></ul>
+            </div>
+          </article>
+
+          <article class="card card--web reveal">
+            <div class="card__media" aria-hidden="true">
+              <div class="mini mini--web">
+                <div class="web__bar"><span class="web__nav">‹ › ↻</span><span class="web__url">github.com/gavrix/hyprmux</span></div>
+                <div class="mini__passkey"><span class="mini__key">🔑</span><span>Sign in with a passkey</span></div>
+              </div>
+            </div>
+            <div class="card__body">
+              <h3>A browser next to your code.</h3>
+              <p>Back, forward, reload, and an address bar for URLs or searches. Popups open as new tiles. ⌘-click a link in a terminal to open it next to it.</p>
+              <ul class="chips"><li>WebKit, light</li><li>Chromium, with passkeys</li><li>Find in page</li></ul>
+            </div>
+          </article>
+
+          <article class="card card--md reveal">
+            <div class="card__media" aria-hidden="true">
+              <div class="mini mini--md">
+                <p class="mini__h1">Release plan</p>
+                <p class="mini__p">Ship the DMG, then the docs.</p>
+                <p class="mini__li">☑ Notarize the build</p>
+                <p class="mini__li">☐ Write the changelog</p>
+              </div>
+            </div>
+            <div class="card__body">
+              <h3>Markdown, rendered.</h3>
+              <p>⌘-click a local <code>.md</code> file in a terminal to read it rendered. The view follows your edits, and <code>FILE.md:42</code> jumps to line 42.</p>
+            </div>
+          </article>
+
+          <article class="card card--devices reveal">
+            <div class="card__media" aria-hidden="true">
+              <div class="mini mini--devices">
+                <div class="mini__phone"><div class="mini__phone-screen"><i></i><i></i><i></i></div></div>
+                <div class="mini__android"><div class="mini__phone-screen"><i></i><i></i></div></div>
+                <div class="mini__editor">
+                  <div class="mini__editor-tabs"><span>App.tsx</span></div>
+                  <p><span class="k">export</span> <span class="k">function</span> <span class="n">App</span>() {</p>
+                  <p>  <span class="k">return</span> &lt;<span class="n">Orders</span> /&gt;</p>
+                  <p>}</p>
+                </div>
+              </div>
+            </div>
+            <div class="card__body card__body--split">
+              <div>
+                <h3>Simulators in a tile.</h3>
+                <p>Live iOS Simulator and Android Emulator screens. Click and drag to touch, type to use the keyboard, and use the buttons for Home, Lock, Back, and Recents. Simulator.app isn't needed.</p>
+              </div>
+              <div>
+                <h3>Editors too. <span class="badge">Experimental</span></h3>
+                <p>VS Code, Cursor, and other Electron apps open in tiles through an adapter. Zed comes from a fork that draws straight into tiles. Build your own with the client protocol, in Swift or Rust.</p>
+              </div>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- Config -->
+    <section class="section" id="config" aria-labelledby="config-title">
+      <div class="wrap split">
+        <div class="split__text reveal">
+          <p class="kicker">Configuration</p>
+          <h2 id="config-title">It's your hyprland.conf.</h2>
+          <p class="section__lede">The same syntax, binds, dispatchers, and bezier curves. Save the file and Hyprmux reloads it. A mistake shows in a red bar, and the rest of the file still applies.</p>
+          <ul class="points">
+            <li><strong>Dwindle tiling.</strong> Directional focus, move and swap, resizing with keys or the mouse, floating, and fullscreen.</li>
+            <li><strong>The looks.</strong> Gradient borders, shadows, rounded or squircle corners, blur, and dimmed inactive tiles.</li>
+            <li><strong>The motion.</strong> Tiles pop in, workspaces slide, and borders fade, on the curves you set.</li>
+            <li><strong>Ghostty stays.</strong> Your Ghostty config still applies to terminals. A <code>ghostty { }</code> block can override it.</li>
+          </ul>
+        </div>
+        <div class="split__media reveal">
+          <figure class="codecard">
+            <figcaption class="codecard__bar"><span class="hm__lights" aria-hidden="true"><i></i><i></i><i></i></span><span>~/.config/hyprmux/hyprmux.conf</span></figcaption>
+<pre class="code"><code><span class="cm"># Syntax follows hyprland.conf (hyprlang).</span>
+<span class="k">$mod</span> = SUPER
+
+<span class="k">general</span> {
+    <span class="n">gaps_in</span> = <span class="v">5</span>
+    <span class="n">gaps_out</span> = <span class="v">14</span>
+    <span class="n">border_size</span> = <span class="v">2</span>
+    <span class="n">col.active_border</span> = <span class="c1">rgba(33ccffee)</span> <span class="c2">rgba(00ff99ee)</span> <span class="v">45deg</span>
+    <span class="n">layout</span> = dwindle
+}
+
+<span class="k">decoration</span> {
+    <span class="n">rounding</span> = <span class="v">10</span>
+    <span class="n">rounding_power</span> = <span class="v">4.0</span>   <span class="cm"># squircle</span>
+    <span class="n">inactive_opacity</span> = <span class="v">0.85</span>
+}
+
+<span class="k">animations</span> {
+    <span class="n">bezier</span> = easeOutQuint, <span class="v">0.23, 1, 0.32, 1</span>
+    <span class="n">animation</span> = windowsIn, <span class="v">1, 4.1</span>, easeOutQuint, popin <span class="v">87%</span>
+    <span class="n">animation</span> = workspaces, <span class="v">1, 3.5</span>, easeOutQuint, slide
+}
+
+<span class="n">bind</span> = <span class="k">$mod</span>, Return, exec,            <span class="cm"># a terminal</span>
+<span class="n">bind</span> = <span class="k">$mod</span>, B, web,
+<span class="n">bind</span> = <span class="k">$mod</span>, H, movefocus, l</code></pre>
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <!-- Agents -->
+    <section class="section" id="agents" aria-labelledby="agents-title">
+      <div class="wrap">
+        <header class="section__head reveal">
+          <p class="kicker">Built for agents</p>
+          <h2 id="agents-title">See every agent at a glance.</h2>
+          <p class="section__lede">Each tile shows what its agent is doing: working, needs you, or done. Scripts and agents drive Hyprmux through <code>hyprmuxctl</code>, and your focus stays where it is.</p>
+        </header>
+
+        <div class="agents reveal">
+          <div class="agents__board" aria-hidden="true">
+            <div class="agents__bar">
+              <span class="ws ws--active">1 <b class="bub bub--blocked">1</b><b class="bub bub--working">1</b></span>
+              <span class="ws">2 <b class="bub bub--done">2</b></span>
+              <span class="ws">3 <b class="bub bub--working">1</b></span>
+            </div>
+            <div class="agents__tiles">
+              <div class="atile atile--working">
+                <span class="pill pill--working">tests · working</span>
+                <p><span class="g">●</span> Fixing the flaky login test…</p>
+                <p class="d">  Read  tests/login.spec.ts</p>
+                <p class="d">  Edit  src/auth/session.ts</p>
+                <p class="d">  Run   npm test -- login</p>
+                <p>  <span class="gr">12</span> of 18 passed</p>
+              </div>
+              <div class="atile atile--blocked">
+                <span class="pill pill--blocked">darkmode · needs you</span>
+                <p>Allow <span class="y">rm -rf build</span>?</p>
+                <p class="d">  1. Yes   2. No</p>
+              </div>
+              <div class="atile atile--done">
+                <span class="pill pill--done">docs · done</span>
+                <p><span class="gr">✓</span> Documented the orders API.</p>
+                <p class="d">  4 files changed</p>
+              </div>
+            </div>
+          </div>
+
+          <figure class="codecard codecard--term">
+            <figcaption class="codecard__bar"><span class="hm__lights" aria-hidden="true"><i></i><i></i><i></i></span><span>zsh — surface:3</span></figcaption>
+<pre class="code"><code><span class="g">❯</span> ref=$(hyprmuxctl new-surface --input <span class="y">'npm test\n'</span> | jq -r .ref)
+<span class="g">❯</span> hyprmuxctl read-screen --surface $ref --lines 3
+<span class="d"> Test Files  12 passed (12)
+      Tests  148 passed (148)
+   Duration  3.41s</span>
+<span class="g">❯</span> hyprmuxctl agent-state blocked --kind pi --message <span class="y">"Allow rm?"</span>
+<span class="g">❯</span> agent-browser connect <span class="y">"$(hyprmuxctl cdp-url)"</span>
+<span class="g">❯</span> hyprmuxctl events
+<span class="d">workspace>>2
+agent>>7,claude,done</span></code></pre>
+          </figure>
+        </div>
+
+        <ul class="features features--3">
+          <li class="feature reveal">
+            <h3>Activity on every tile</h3>
+            <p>Orange for working, red for needs you, green for done. Workspace pills count them, and a notice tells you when an agent waits for an answer.</p>
+          </li>
+          <li class="feature reveal">
+            <h3><code>hyprmuxctl</code></h3>
+            <p>A <code>hyprctl</code>-like CLI. Read screens, send text and keys, open tiles in the background, and stream events. Hooks run commands when events happen.</p>
+          </li>
+          <li class="feature reveal">
+            <h3>Web tiles over CDP</h3>
+            <p>agent-browser, Playwright, and Puppeteer drive Chromium tiles. A banner and a cursor show what the agent does, and Stop takes control back.</p>
+          </li>
+          <li class="feature reveal">
+            <h3>Sessions that come back</h3>
+            <p>Relaunch and get back your workspaces, layouts, directories, programs like nvim, and agent sessions for pi and Codex.</p>
+          </li>
+          <li class="feature reveal">
+            <h3>Any terminal agent</h3>
+            <p>Claude Code, Codex, pi, opencode, and the rest run as they are. A one-line hook reports their state, and pi ships with an extension.</p>
+          </li>
+          <li class="feature reveal">
+            <h3>A bundled skill</h3>
+            <p><code>hyprmuxctl skill install</code> gives your agent a skill that teaches it to find, read, and drive other tiles.</p>
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- The rest of Hyprland -->
+    <section class="section" id="more" aria-labelledby="more-title">
+      <div class="wrap">
+        <header class="section__head reveal">
+          <p class="kicker">The rest of Hyprland</p>
+          <h2 id="more-title">Workspaces, groups, scratchpad.</h2>
+          <p class="section__lede">The parts of Hyprland you miss on a Mac, plus a few it never had.</p>
+        </header>
+        <ul class="features features--3">
+          <li class="feature reveal"><h3>Workspaces <kbd>⌘1…9</kbd></h3><p>Numbered workspaces that slide like Hyprland's, with optional names.</p></li>
+          <li class="feature reveal"><h3>Groups <kbd>⌘G</kbd></h3><p>Several windows as tabs in one tile. <kbd>⌃Tab</kbd> switches them.</p></li>
+          <li class="feature reveal"><h3>Scratchpad <kbd>⌘S</kbd></h3><p>A hidden workspace that slides in over the current one, and away again.</p></li>
+          <li class="feature reveal"><h3>Layouts <kbd>⌘U</kbd></h3><p>Save a workspace as a template, then summon it again with its programs and agents.</p></li>
+          <li class="feature reveal"><h3>Pickers <kbd>⌘/</kbd></h3><p>fzf-style lists for workspaces, apps, and an app's windows, plus a menu of all of them.</p></li>
+          <li class="feature reveal"><h3>Floating and fullscreen <kbd>⌘F</kbd></h3><p>Float any tile, maximize it, or make it fill the screen. Then tile it again.</p></li>
+          <li class="feature reveal"><h3>Passwords</h3><p>Fill web fields and terminal password prompts from 1Password, after Hyprmux checks the origin.</p></li>
+          <li class="feature reveal"><h3>Notifications</h3><p>Config errors and terminal notifications, styled like your terminal.</p></li>
+          <li class="feature reveal"><h3>Keycast</h3><p>Shows each shortcut as you press it, for recordings and screen sharing.</p></li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- Keys -->
+    <section class="section" id="keys" aria-labelledby="keys-title">
+      <div class="wrap">
+        <header class="section__head reveal">
+          <p class="kicker">Default binds</p>
+          <h2 id="keys-title">Keys you already know.</h2>
+          <p class="section__lede">SUPER is ⌘. Keys are physical positions, so they work with any keyboard layout. Keys no bind claims go to the focused tile, so ⌘C and ⌘V still work.</p>
+        </header>
+        <dl class="keys reveal">
+          <div><dt><kbd>⌘</kbd><kbd>/</kbd></dt><dd>The menu: every picker and action</dd></div>
+          <div><dt><kbd>⌘</kbd><kbd>↩</kbd></dt><dd>New terminal</dd></div>
+          <div><dt><kbd>⌘</kbd><kbd>B</kbd></dt><dd>New web tile</dd></div>
+          <div><dt><kbd>⌘</kbd><kbd>I</kbd></dt><dd>Show a simulator or emulator</dd></div>
+          <div><dt><kbd>⌘</kbd><kbd>D</kbd></dt><dd>Open an app in a tile</dd></div>
+          <div><dt><kbd>⌘</kbd><kbd>H</kbd><kbd>J</kbd><kbd>K</kbd><kbd>L</kbd></dt><dd>Move focus</dd></div>
+          <div><dt><kbd>⇧</kbd><kbd>⌘</kbd><kbd>H</kbd><kbd>J</kbd><kbd>K</kbd><kbd>L</kbd></dt><dd>Move the window</dd></div>
+          <div><dt><kbd>⌃</kbd><kbd>⌘</kbd><kbd>H</kbd><kbd>J</kbd><kbd>K</kbd><kbd>L</kbd></dt><dd>Resize</dd></div>
+          <div><dt><kbd>⌘</kbd><kbd>1…9</kbd></dt><dd>Switch workspace</dd></div>
+          <div><dt><kbd>⌘</kbd><kbd>P</kbd></dt><dd>Pick a workspace</dd></div>
+          <div><dt><kbd>⌘</kbd><kbd>S</kbd></dt><dd>Scratchpad</dd></div>
+          <div><dt><kbd>⌘</kbd><kbd>G</kbd></dt><dd>Make a group</dd></div>
+          <div><dt><kbd>⇧</kbd><kbd>⌘</kbd><kbd>Space</kbd></dt><dd>Float or re-tile</dd></div>
+          <div><dt><kbd>⌘</kbd><kbd>F</kbd></dt><dd>Maximize the window</dd></div>
+          <div><dt><kbd>⌘</kbd><kbd>U</kbd></dt><dd>Summon a layout</dd></div>
+          <div><dt><kbd>⇧</kbd><kbd>⌘</kbd><kbd>R</kbd></dt><dd>Reload the config</dd></div>
+        </dl>
+        <p class="note reveal">The full default set is in <a href="https://github.com/gavrix/hyprmux/blob/main/config/hyprmux.conf">config/hyprmux.conf</a>. New to it? Run <code>hyprmux-tour</code> in any Hyprmux terminal.</p>
+      </div>
+    </section>
+
+    <!-- Install -->
+    <section class="section" id="install" aria-labelledby="install-title">
+      <div class="wrap">
+        <div class="install reveal">
+          <img class="install__icon" src="media/icon-512.webp" width="112" height="112" alt="Hyprmux app icon" loading="lazy">
+          <h2 id="install-title">Get Hyprmux.</h2>
+          <p class="section__lede">Free and open source under the MIT license. Signed with a Developer ID and notarized by Apple.</p>
+          <div class="cta">
+            <a class="btn btn--primary btn--large" href="https://github.com/gavrix/hyprmux/releases/latest">
+              <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M10 3v10m0 0l-4-4m4 4l4-4M4 16h12"/></svg>
+              Download for Mac
+            </a>
+          </div>
+          <p class="meta">macOS 14 or later · Apple silicon</p>
+          <ol class="steps">
+            <li><span>1</span>Download the DMG from the latest release.</li>
+            <li><span>2</span>Open it and drag Hyprmux to Applications.</li>
+            <li><span>3</span>Launch it. The tour starts in the first terminal.</li>
+          </ol>
+          <details class="source">
+            <summary>Build from source</summary>
+            <div class="copyblock">
+<pre class="code"><code>git clone https://github.com/gavrix/hyprmux.git && cd hyprmux
+scripts/bundle.sh
+open build/Hyprmux.app</code></pre>
+              <button class="copy" type="button" data-copy="git clone https://github.com/gavrix/hyprmux.git &amp;&amp; cd hyprmux&#10;scripts/bundle.sh&#10;open build/Hyprmux.app">Copy</button>
+            </div>
+            <p class="note">Needs Xcode 16 or later and about 1.5 GB of disk. The first run downloads libghostty and the Chromium SDK, about 260 MB.</p>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <!-- FAQ -->
+    <section class="section" id="faq" aria-labelledby="faq-title">
+      <div class="wrap wrap--narrow">
+        <header class="section__head reveal">
+          <p class="kicker">FAQ</p>
+          <h2 id="faq-title">Questions.</h2>
+        </header>
+        <div class="faq reveal">
+          <details>
+            <summary>How is it different from cmux?</summary>
+            <p>Both are native macOS apps built on libghostty, with a scriptable browser and a CLI. cmux is a terminal first: vertical tabs with git branches and ports, split panes, notification rings, remote SSH workspaces, and an iOS companion app. Hyprmux is a tiling environment: Hyprland's dwindle layout, workspaces, groups, and animations, a <code>hyprland.conf</code>-style config, and tiles that hold simulators and editors as well as terminals and web pages. Pick cmux for a polished terminal with tabs. Pick Hyprmux if you want Hyprland's way of working.</p>
+          </details>
+          <details>
+            <summary>How does it compare to herdr?</summary>
+            <p>herdr runs inside your terminal, like tmux. It keeps agents running in a background server, lets you detach and reattach, works over SSH, and runs on macOS, Linux, and Windows. Hyprmux is a native Mac app with a graphical compositor. It tiles more than terminals, and it shows agent state on tiles and workspaces. It doesn't run headless, and when Hyprmux quits its programs stop. On relaunch it brings back the layout and resumes agent sessions.</p>
+          </details>
+          <details>
+            <summary>Why not tmux or Zellij?</summary>
+            <p>They run in any terminal, on any machine, over SSH, and sessions survive when you disconnect. Hyprmux can't do that. In exchange, it draws real tiles: smooth animation, gradient borders, blur, mouse resizing, and tiles that aren't terminals at all. You can still run tmux inside a Hyprmux terminal.</p>
+          </details>
+          <details>
+            <summary>Why not AeroSpace, yabai, or Amethyst?</summary>
+            <p>Those tile the real windows of every app on your Mac. That's their strength, and they work around macOS limits to do it. Hyprmux tiles only inside its own window, so it controls every pixel: animations, borders, blur, and the same keys everywhere. It holds terminals, web pages, simulators, and supported apps, not arbitrary Mac windows. They work fine together, because to a tiling window manager Hyprmux is one window.</p>
+          </details>
+          <details>
+            <summary>Is it Hyprland for macOS? Can I use my hyprland.conf?</summary>
+            <p>It borrows Hyprland's ideas, not its code. The config syntax is hyprlang, with the same sections, <code>bind</code> lines, dispatchers, gradients, and bezier animations, so much of a <code>general</code>, <code>decoration</code>, <code>animations</code>, and <code>bind</code> setup carries over. Parts that only make sense on Linux, like monitors and Wayland window rules, don't apply. Hyprmux isn't affiliated with Hyprland.</p>
+          </details>
+          <details>
+            <summary>How does it relate to Ghostty?</summary>
+            <p>Hyprmux uses libghostty to draw terminals, the way apps use WebKit to draw web pages. It isn't a fork of Ghostty. Your Ghostty config, themes, and fonts apply to Hyprmux terminals. Ghostty has its own splits and tabs. Hyprmux adds a tiling layout, workspaces, tiles that aren't terminals, and scripting.</p>
+          </details>
+          <details>
+            <summary>Which coding agents work with it?</summary>
+            <p>Every agent that runs in a terminal: Claude Code, Codex, pi, opencode, Gemini CLI, Aider, and the rest. To show an agent's state on its tile, a hook calls <code>hyprmuxctl agent-state</code>. pi has a bundled extension that does it. Session restore resumes pi and Codex sessions.</p>
+          </details>
+          <details>
+            <summary>Why one window?</summary>
+            <p>macOS gives apps no way to move other apps' windows between Spaces, and little control over how those windows animate. Inside its own window, Hyprmux owns the whole layout, so tiling, workspaces, and animation behave the same every time. Press <kbd>⌃⌘F</kbd> to make that window your whole screen.</p>
+          </details>
+          <details>
+            <summary>What's experimental?</summary>
+            <p>Apps in tiles (VS Code, Cursor, other Electron apps, and Zed), and the client protocol for building your own. Electron apps work through an adapter. Drag and drop doesn't work in them, and their menu bar isn't reachable, so use the command palette instead.</p>
+          </details>
+          <details>
+            <summary>What are the limitations?</summary>
+            <p>One monitor: there's no multi-display support yet. Only terminal tiles support reads and input from <code>hyprmuxctl</code>. The WebKit engine has no passkeys, and Chromium supports phone and security-key passkeys, not Touch ID. Simulator tiles and the libghostty build depend on private or fast-moving APIs, so an Xcode or libghostty update can break them.</p>
+          </details>
+          <details>
+            <summary>Is it free? What do I need?</summary>
+            <p>Yes. Hyprmux is free and open source under the MIT license. It needs macOS 14 or later on Apple silicon. iOS Simulator tiles need Xcode, and Android Emulator tiles need the Android SDK emulator.</p>
+          </details>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="wrap footer__inner">
+      <div class="footer__brand">
+        <img src="media/icon-512.webp" width="24" height="24" alt="" loading="lazy">
+        <span>Hyprmux</span>
+      </div>
+      <nav class="footer__links" aria-label="Project">
+        <a href="https://github.com/gavrix/hyprmux">GitHub</a>
+        <a href="https://github.com/gavrix/hyprmux/releases">Releases</a>
+        <a href="https://github.com/gavrix/hyprmux#documentation">Docs</a>
+        <a href="https://github.com/gavrix/hyprmux/blob/main/LICENSE">License</a>
+        <a href="https://github.com/gavrix/hyprmux/blob/main/THIRD_PARTY_NOTICES.md">Third-party notices</a>
+      </nav>
+      <p class="footer__fine">Built on Ghostty, the Chromium Embedded Framework, grpc-swift, SwiftProtobuf, and pieces of idb. Inspired by Hyprland and cmux. Hyprmux isn't affiliated with any of them.</p>
+    </div>
+  </footer>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

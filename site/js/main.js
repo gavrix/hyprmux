@@ -1,0 +1,51 @@
+// Page behavior: reveal on scroll, the nav's scrolled state, and copy buttons.
+
+const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+function revealOnScroll() {
+  const items = document.querySelectorAll(".reveal");
+  if (reduceMotion || !("IntersectionObserver" in window)) {
+    items.forEach((el) => el.classList.add("is-in"));
+    return;
+  }
+  const observer = new IntersectionObserver(
+    (entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        entry.target.classList.add("is-in");
+        observer.unobserve(entry.target);
+      }
+    },
+    { rootMargin: "0px 0px -8% 0px", threshold: 0.08 },
+  );
+  items.forEach((el) => observer.observe(el));
+}
+
+function navState() {
+  const nav = document.querySelector(".nav");
+  if (!nav) return;
+  const update = () => nav.classList.toggle("is-scrolled", window.scrollY > 8);
+  update();
+  window.addEventListener("scroll", update, { passive: true });
+}
+
+function copyButtons() {
+  for (const button of document.querySelectorAll("[data-copy]")) {
+    button.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(button.dataset.copy);
+        button.textContent = "Copied";
+      } catch {
+        // No clipboard access: select the code so the user can copy it.
+        const code = button.parentElement.querySelector("code");
+        if (code) getSelection().selectAllChildren(code);
+        button.textContent = "Selected";
+      }
+      setTimeout(() => (button.textContent = "Copy"), 1600);
+    });
+  }
+}
+
+revealOnScroll();
+navState();
+copyButtons();

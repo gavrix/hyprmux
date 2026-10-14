@@ -1,0 +1,59 @@
+<!doctype html>
+<!-- The share image, site/media/og.png. Render it with scripts/site/og.sh. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="../../site/css/site.css">
+  <style>
+    html, body { width: 1200px; height: 630px; margin: 0; overflow: hidden; }
+    body {
+      position: relative;
+      background:
+        radial-gradient(520px 360px at 78% 70%, rgba(51, 204, 255, 0.22), transparent 70%),
+        radial-gradient(460px 320px at 92% 95%, rgba(0, 255, 153, 0.14), transparent 70%),
+        var(--bg);
+    }
+    .grid {
+      position: absolute; inset: 0;
+      background-image: linear-gradient(rgba(255,255,255,.04) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.04) 1px, transparent 1px);
+      background-size: 48px 48px;
+      -webkit-mask-image: radial-gradient(ellipse 80% 80% at 30% 40%, #000 10%, transparent 75%);
+    }
+    .og-copy { position: absolute; left: 80px; top: 92px; width: 560px; }
+    .og-brand { display: flex; align-items: center; gap: 14px; font: 650 30px/1 var(--sans); letter-spacing: -0.02em; color: var(--text); }
+    .og-brand img { width: 52px; height: 52px; border-radius: 12px; }
+    .og-copy h1 { margin-top: 44px; font: 690 76px/1 var(--sans); letter-spacing: -0.045em; color: var(--text); }
+    .og-copy p { margin-top: 26px; font: 450 25px/1.4 var(--sans); color: var(--muted); }
+    .hm { position: absolute; left: 660px; top: 110px; width: 700px; aspect-ratio: 16 / 10; --fs: 12px; }
+  </style>
+</head>
+<body>
+  <div class="grid"></div>
+  <div class="og-copy">
+    <div class="og-brand"><img src="../../site/media/icon-512.webp" alt="">Hyprmux</div>
+    <h1>Tiles that move like <span class="grad">Hyprland</span>.</h1>
+    <p>A terminal multiplexer for macOS. Terminals, browsers, and simulators in one window.</p>
+  </div>
+  <div class="hm">
+    <div class="hm__bar"><div class="hm__lights"><i></i><i></i><i></i></div><div class="hm__workspaces"><span class="ws ws--active">1</span><span class="ws">2</span><span class="ws">3</span></div></div>
+    <div class="hm__area">
+      <div class="tile tile--focused" style="--x:0;--y:0;--w:50;--h:100"><div class="frame"><div class="term">
+        <p><span class="p">project</span> <span class="g">❯</span> hello</p>
+        <p class="term__banner">HYPRMUX</p>
+        <p class="term__line">Hyprland-style tiling for macOS.</p>
+        <p>&nbsp;</p>
+        <p><span class="p">project</span> <span class="g">❯</span> cargo test</p>
+        <p class="gr">test result: ok. 42 passed</p>
+        <p><span class="p">project</span> <span class="g">❯</span> <span class="cursor"></span></p>
+      </div></div></div>
+      <div class="tile" style="--x:50;--y:0;--w:50;--h:50"><div class="frame"><div class="web">
+        <div class="web__bar"><span class="web__nav">‹ › ↻</span><span class="web__url">localhost:5173</span></div>
+        <div class="web__page"><div class="web__chart"><i style="--h:40%"></i><i style="--h:65%"></i><i style="--h:50%"></i><i style="--h:80%"></i><i style="--h:92%"></i></div></div>
+      </div></div></div>
+      <div class="tile" style="--x:50;--y:50;--w:50;--h:50"><div class="frame"><div class="device">
+        <div class="phone"><div class="phone__screen"><div class="phone__card phone__card--hi"></div><div class="phone__card"></div></div></div>
+      </div></div></div>
+    </div>
+  </div>
+</body>
+</html>

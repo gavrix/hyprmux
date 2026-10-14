@@ -1,0 +1,5 @@
+# Cloudflare Pages redirects. GitHub Pages ignores this file.
+https://www.hyprmux.app/* https://hyprmux.app/:splat 301
+/download  https://github.com/gavrix/hyprmux/releases/latest  302
+/github    https://github.com/gavrix/hyprmux  302
+/docs      https://github.com/gavrix/hyprmux#documentation  302

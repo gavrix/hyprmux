@@ -11,6 +11,8 @@ VS Code, Cursor, and Zed. You drive them with Hyprland's keybinds, dispatchers,
 workspaces, groups, and bezier animations, configured in `hyprland.conf` syntax
 that reloads when you save it.
 
+[Visit hyprmux.app](https://hyprmux.app/)
+
 https://github.com/user-attachments/assets/e8d17d9a-0c64-484d-a049-5247830f8e8d
 
 <sub>No video player? Here's [a GIF](docs/media/demo.gif).</sub>

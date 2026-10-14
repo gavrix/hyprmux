@@ -13,6 +13,10 @@ const MAX_TILES = 8;
 // The demo keeps tiles big enough to read. The app only clamps split ratios.
 const MIN_TILE = 64;
 
+const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+// $mod is ⌘. Off a Mac the OS often keeps the Windows key, so ⌥ works too.
+const isMod = (e) => e.metaKey || (!isMac && e.altKey);
+
 export class Compositor {
   /** @param {HTMLElement} root the .hm window */
   constructor(root) {
@@ -26,16 +30,21 @@ export class Compositor {
     this.tick = 0;
     this.nextId = 1;
     this.listeners = new Set();
+    this.drag = null;
 
     this.#adoptStaticTiles();
     root.classList.add("hm--live");
     this.render({ instant: true });
 
     new ResizeObserver(() => this.render({ instant: true })).observe(this.area);
-    this.area.addEventListener("pointermove", (e) => this.#followMouse(e));
-    this.area.addEventListener("pointerdown", (e) => {
-      const id = this.#tileAt(e);
-      if (id !== null) this.focus(id);
+    this.area.addEventListener("pointerdown", (e) => this.#pointerDown(e));
+    this.area.addEventListener("pointermove", (e) => this.#pointerMove(e));
+    this.area.addEventListener("pointerup", (e) => this.#pointerUp(e));
+    this.area.addEventListener("pointercancel", (e) => this.#pointerUp(e, true));
+    this.area.addEventListener("lostpointercapture", (e) => this.#pointerUp(e, true));
+    // ⌘-right-drag must not open the page's context menu.
+    this.area.addEventListener("contextmenu", (e) => {
+      if (this.drag || isMod(e)) e.preventDefault();
     });
   }
 
@@ -155,10 +164,10 @@ export class Compositor {
     if (this.focused === null || this.tiles.size < 2) return false;
     const m = this.#metrics();
     this.layout.layout(m.area);
+    const snap = this.layout.snapshot();
     this.layout.resize(this.focused, dx * m.scale, dy * m.scale);
     if (this.#tooSmall()) {
-      this.layout.layout(m.area);
-      this.layout.resize(this.focused, -dx * m.scale, -dy * m.scale);
+      this.layout.restore(snap);
       return false;
     }
     this.render();
@@ -167,10 +176,11 @@ export class Compositor {
 
   toggleSplit() {
     if (this.focused === null || this.tiles.size < 2) return false;
+    const snap = this.layout.snapshot();
     this.layout.toggleSplit(this.focused);
     if (this.#tooSmall()) this.layout.splitRatio(this.focused, 1, true);
     if (this.#tooSmall()) {
-      this.layout.toggleSplit(this.focused);
+      this.layout.restore(snap);
       return false;
     }
     this.render();
@@ -269,9 +279,108 @@ export class Compositor {
     return Number(el.dataset.id);
   }
 
+  // ---------- Mouse ----------
+  // bindm = $mod, mouse:272, movewindow and bindm = $mod, mouse:273, resizewindow,
+  // as Compositor.handleMouseBind does them for tiled windows.
+
+  #point(e) {
+    const r = this.area.getBoundingClientRect();
+    return { x: e.clientX - r.left, y: e.clientY - r.top };
+  }
+
+  #pointerDown(e) {
+    const id = this.#tileAt(e);
+    if (id === null) return;
+    const button = e.button === 0 ? "click" : e.button === 2 ? "right-click" : null;
+    if (!isMod(e) || !button || e.pointerType === "touch") {
+      this.focus(id);
+      return;
+    }
+    e.preventDefault();
+    this.focus(id);
+    const frame = this.frames().get(id);
+    const p = this.#point(e);
+    const resize = button === "right-click";
+    this.drag = {
+      id, resize, frame, start: p, last: p,
+      // Resizes move the edges nearest the grab point, like Hyprland.
+      hEdge: p.x < frame.x + frame.w / 2 ? "l" : "r",
+      vEdge: p.y < frame.y + frame.h / 2 ? "u" : "d",
+    };
+    this.area.setPointerCapture(e.pointerId);
+    const el = this.tiles.get(id).el;
+    el.classList.add(resize ? "is-resizing" : "is-dragging");
+    this.root.style.cursor = resize
+      ? (this.drag.hEdge === "l") === (this.drag.vEdge === "u") ? "nwse-resize" : "nesw-resize"
+      : "grabbing";
+    this.#emit("mousebind", { chord: `${e.metaKey ? "⌘" : "⌥"}${button}`, label: resize ? "Resize" : "Move window" });
+  }
+
+  #pointerMove(e) {
+    const d = this.drag;
+    if (!d) {
+      this.#followMouse(e);
+      return;
+    }
+    const p = this.#point(e);
+    const tile = this.tiles.get(d.id);
+    if (!tile) return;
+    if (!d.resize) {
+      // Tiled drag: the window follows the pointer and lands on release.
+      tile.el.style.transform = `translate(${p.x - d.start.x}px, ${p.y - d.start.y}px)`;
+      return;
+    }
+    const { area } = this.#metrics();
+    this.layout.layout(area);
+    const snap = this.layout.snapshot();
+    this.layout.moveEdge(d.id, d.hEdge, p.x - d.last.x);
+    this.layout.moveEdge(d.id, d.vEdge, p.y - d.last.y);
+    if (this.#tooSmall()) {
+      this.layout.restore(snap);
+      return;
+    }
+    d.last = p;
+    this.render({ instant: true });
+  }
+
+  #pointerUp(e, cancelled = false) {
+    const d = this.drag;
+    if (!d) return;
+    this.drag = null;
+    if (this.area.hasPointerCapture?.(e.pointerId)) this.area.releasePointerCapture(e.pointerId);
+    this.root.style.cursor = "";
+    const tile = this.tiles.get(d.id);
+    if (!tile) return;
+    tile.el.classList.remove("is-dragging", "is-resizing");
+    if (d.resize) return;
+
+    // Bake the drag offset into the tile's position, so it lands from where it was let go.
+    const p = this.#point(e);
+    const s = tile.el.style;
+    s.transition = "none";
+    s.transform = "";
+    s.left = `${Math.round(d.frame.x + p.x - d.start.x)}px`;
+    s.top = `${Math.round(d.frame.y + p.y - d.start.y)}px`;
+    void tile.el.offsetWidth;
+    s.transition = "";
+
+    // dropTiled: outside its old frame, it goes next to the tile under the pointer, on that side.
+    const outside = p.x < d.frame.x || p.y < d.frame.y || p.x >= d.frame.x + d.frame.w || p.y >= d.frame.y + d.frame.h;
+    const { area } = this.#metrics();
+    const inside = p.x >= 0 && p.y >= 0 && p.x < area.w && p.y < area.h;
+    if (!cancelled && outside && inside && this.tiles.size > 1) {
+      const before = this.layout.clone();
+      this.layout.remove(d.id);
+      this.layout.insert(d.id, { focal: p, area, focalDecidesSide: true });
+      if (this.#tooSmall()) this.layout = before;
+    }
+    this.render();
+  }
+
   // input:follow_mouse = 1: the pointer focuses the tile it moves over.
   #followMouse(e) {
     if (e.pointerType !== "mouse") return;
+    this.root.style.cursor = isMod(e) ? "grab" : "";
     const id = this.#tileAt(e);
     if (id !== null && id !== this.focused) this.focus(id);
   }

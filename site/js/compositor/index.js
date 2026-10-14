@@ -47,7 +47,10 @@ export function start(root) {
   });
 
   wm.onChange((event, d) => {
-    if (event === "focus") say(`${d.label} focused.`);
+    if (event === "mousebind") {
+      if (document.activeElement !== root) root.focus({ preventScroll: true });
+      keycast.press(d.chord, d.label);
+    } else if (event === "focus") say(`${d.label} focused.`);
     else if (event === "open") say(`Opened ${d.label}.`);
     else if (event === "close") say(`Closed ${d.label}. ${wm.count} tiles left.`);
   });

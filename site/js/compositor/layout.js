@@ -139,6 +139,69 @@ export class Dwindle {
     if (dy) this.#resizeAxis(node, dy, true);
   }
 
+  /**
+   * Moves one edge of `id` by `delta` pixels (positive = right/down), whatever
+   * that does to its size. Mouse resizes use it, so the grabbed edge follows the
+   * pointer. Edges on the area's border don't move. Call layout() first.
+   * `edge` is "l", "r", "u", or "d".
+   */
+  moveEdge(id, edge, delta) {
+    const node = this.#leaf(id);
+    if (!delta || !node) return;
+    const splitTop = edge === "u" || edge === "d";
+    // Right/bottom edge: the divider of the nearest ancestor where we're the first half.
+    // Left/top edge: the divider of the nearest ancestor where we're the second half.
+    const wantFirst = edge === "r" || edge === "d";
+    let child = node;
+    for (let p = node.parent; p; child = p, p = p.parent) {
+      if (p.splitTop === splitTop && (p.children[0] === child) === wantFirst) {
+        const size = splitTop ? p.box.h : p.box.w;
+        if (size <= 0) return;
+        p.ratio = clampRatio(p.ratio + (delta * 2) / size); // moving the divider d px changes ratio by 2d/size
+        return;
+      }
+    }
+  }
+
+  /** A deep copy, to try a change and throw it away. */
+  clone() {
+    const copy = new Dwindle(this.settings);
+    const dup = (n, parent) => {
+      if (!n) return null;
+      const m = new Node(n.client);
+      m.parent = parent;
+      m.splitTop = n.splitTop;
+      m.ratio = n.ratio;
+      m.box = { ...n.box };
+      m.children = n.children.map((c) => dup(c, m));
+      return m;
+    };
+    copy.root = dup(this.root, null);
+    return copy;
+  }
+
+  /** Every split's ratio and direction, to undo a change the tree's shape survived. */
+  snapshot() {
+    const out = [];
+    const walk = (n) => {
+      if (!n || n.isLeaf) return;
+      out.push([n.ratio, n.splitTop]);
+      n.children.forEach(walk);
+    };
+    walk(this.root);
+    return out;
+  }
+
+  restore(snap) {
+    let i = 0;
+    const walk = (n) => {
+      if (!n || n.isLeaf) return;
+      [n.ratio, n.splitTop] = snap[i++];
+      n.children.forEach(walk);
+    };
+    walk(this.root);
+  }
+
   /** Each client's box inside `area`, gaps not applied. */
   layout(area) {
     this.#recalc(area);

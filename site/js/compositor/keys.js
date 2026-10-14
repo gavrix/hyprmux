@@ -84,6 +84,8 @@ const LEGEND = [
   [["I"], "iPhone"],
   [["E"], "flip split"],
   [["W"], "close"],
+  [["⌘", "drag"], "move"],
+  [["⌘", "right-drag"], "resize"],
 ];
 
 /** The line under the window: how to take the keys, and what they do. */
@@ -98,7 +100,7 @@ export function createHint(id) {
     <p class="hm-hint__status">
       <span class="hm-hint__idle">Click the window to take the keys.</span>
       <span class="hm-hint__live">Keys are live. <kbd>Esc</kbd> lets go.</span>
-      <span class="hm-hint__app">In Hyprmux, add <kbd>⌘</kbd>.</span>
+      <span class="hm-hint__app">In Hyprmux, add <kbd>⌘</kbd> to the keys.</span>
     </p>
     <ul class="hm-hint__legend">${legend}</ul>`;
   return hint;

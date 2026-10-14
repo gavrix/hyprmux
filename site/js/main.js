@@ -79,7 +79,23 @@ function agentsDemo() {
   io.observe(section);
 }
 
+/** Card clips load and play while they're on screen. Reduced motion keeps the posters. */
+function cardClips() {
+  const videos = document.querySelectorAll("video[data-src]");
+  if (reduceMotion || !("IntersectionObserver" in window)) return;
+  const io = new IntersectionObserver((entries) => {
+    for (const { target: v, isIntersecting } of entries) {
+      if (isIntersecting) {
+        if (!v.src) v.src = v.dataset.src;
+        v.play().catch(() => {});
+      } else if (!v.paused) v.pause();
+    }
+  }, { threshold: 0.35 });
+  videos.forEach((v) => io.observe(v));
+}
+
 revealOnScroll();
+cardClips();
 navState();
 copyButtons();
 heroCompositor();

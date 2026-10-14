@@ -197,12 +197,14 @@ code { font-size: 0.88em; color: #cfe9ff; background: rgba(51, 204, 255, 0.08); 
   margin-top: 22px;
   font-size: clamp(42px, 6.8vw, 84px);
   font-weight: 680;
-  letter-spacing: -0.045em;
-  line-height: 1;
+  letter-spacing: -0.04em;
+  line-height: 1.06;
   max-width: 13ch;
   text-wrap: balance;
 }
-.lede { margin-top: 24px; max-width: 34em; color: var(--muted); font-size: clamp(17px, 1.6vw, 20px); line-height: 1.55; text-wrap: balance; }
+.lede { margin-top: 30px; max-width: 36em; color: var(--muted); font-size: clamp(17px, 1.6vw, 20px); line-height: 1.55; text-wrap: balance; }
+/* Wide screens break the subline after "keybinds"; narrow ones let it wrap. */
+@media (min-width: 720px) { .lede__line { display: block; } }
 .cta { margin-top: 34px; display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; }
 .meta { margin-top: 18px; color: var(--dim); font-size: 13.5px; }
 /* The hero comes in on its own, without waiting for JS. The headline only slides, so it

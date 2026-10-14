@@ -29,7 +29,7 @@
   --line-2: rgba(255, 255, 255, 0.12);
   --text: #e7eaf2;
   --muted: #9aa2b6;
-  --dim: #636b80;
+  --dim: #7f879c;
 
   /* general:col.active_border and col.inactive_border */
   --cyan: #33ccff;
@@ -205,6 +205,13 @@ code { font-size: 0.88em; color: #cfe9ff; background: rgba(51, 204, 255, 0.08); 
 .lede { margin-top: 24px; max-width: 34em; color: var(--muted); font-size: clamp(17px, 1.6vw, 20px); line-height: 1.55; text-wrap: balance; }
 .cta { margin-top: 34px; display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; }
 .meta { margin-top: 18px; color: var(--dim); font-size: 13.5px; }
+/* The hero comes in on its own, without waiting for JS. The headline only slides, so it
+   counts as painted at once (it's the page's largest contentful paint). */
+.js .hero .reveal { opacity: 1; transform: none; }
+.hero__copy > *, .hero > .wrap--wide { animation: heroIn 900ms var(--ease) both; animation-delay: var(--delay, 0ms); }
+.hero h1 { animation-name: heroSlide; }
+@keyframes heroIn { from { opacity: 0; transform: translateY(16px); } }
+@keyframes heroSlide { from { transform: translateY(16px); } }
 .hero__copy .reveal:nth-child(2) { --delay: 60ms; }
 .hero__copy .reveal:nth-child(3) { --delay: 120ms; }
 .hero__copy .reveal:nth-child(4) { --delay: 180ms; }

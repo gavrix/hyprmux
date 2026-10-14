@@ -11,3 +11,12 @@ is the deployable site.
   License (`fonts/*-OFL.txt`).
 - **Motion:** the curves and durations in `css/site.css` come from the default
   `config/hyprmux.conf` (Hyprland speed × 100 ms).
+- **Scripts:** `js/main.js` loads the rest on demand: `js/compositor/` (the hero's
+  live tiling window, a small port of HyprmuxCore's dwindle layout and window
+  manager), `js/playground.js` with `js/hyprlang.js` (the config playground), and
+  `js/agents.js` (the hyprmuxctl demo). Without JavaScript every section still shows
+  a static version.
+- **Clips:** `media/clips/` holds the tile cards' clips and posters. They're
+  recorded with `scripts/demo/record.sh --clip site-NAME` (local clip scripts),
+  then trimmed and re-encoded; see `plans/landing-page.md` for sizes and trim points.
+

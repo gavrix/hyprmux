@@ -368,46 +368,63 @@ animations {
         </header>
 
         <div class="agents reveal">
-          <div class="agents__board" aria-hidden="true">
-            <div class="agents__bar">
-              <span class="ws ws--active">1 <b class="bub bub--blocked">1</b><b class="bub bub--working">1</b></span>
-              <span class="ws">2 <b class="bub bub--done">2</b></span>
-              <span class="ws">3 <b class="bub bub--working">1</b></span>
+          <div class="agents__board">
+            <div class="hm hm--mini hm--board" id="agents-window" role="img" aria-label="A Hyprmux workspace with two coding agents and a web page. Each tile's pill shows its surface number and title, in the color of what its agent is doing.">
+              <div class="hm__bar">
+                <div class="hm__lights" aria-hidden="true"><i></i><i></i><i></i></div>
+                <div class="hm__workspaces" aria-hidden="true"><span class="ws ws--active">1<b class="bub bub--working">2</b></span></div>
+                <div class="hm__title">agents</div>
+              </div>
+              <div class="hm__area">
+                <div class="tile tile--working" data-slot="a" data-kind="terminal" data-label="tests" data-activity="working">
+                  <div class="frame"><div class="term">
+                    <p><span class="p">~/app</span> <span class="g">❯</span> pi "fix the flaky login test"</p>
+                    <p><span class="g">●</span> Reading tests/login.spec.ts</p>
+                    <p class="d">  Edit src/auth/session.ts</p>
+                    <p class="d">  Run  npm test -- login</p>
+                  </div></div>
+                  <span class="tile__pill">1 tests</span>
+                </div>
+                <div class="tile tile--working" data-slot="b" data-kind="terminal" data-label="darkmode" data-activity="working">
+                  <div class="frame"><div class="term">
+                    <p><span class="p">~/app</span> <span class="g">❯</span> pi "add a dark mode switch"</p>
+                    <p><span class="g">●</span> Writing src/theme.ts</p>
+                  </div></div>
+                  <span class="tile__pill">2 darkmode</span>
+                </div>
+                <div class="tile tile--focused" data-slot="c" data-kind="web" data-label="localhost:5173">
+                  <div class="frame"><div class="web">
+                    <div class="web__bar"><span class="web__nav" aria-hidden="true">‹ › ↻</span><span class="web__url">localhost:5173</span></div>
+                    <div class="web__page web__page--app">
+                      <div class="web__h">Settings</div>
+                      <div class="web__toggle"><span>Dark mode</span><i class="web__switch"></i></div>
+                      <div class="web__rows" aria-hidden="true"><i></i><i></i></div>
+                    </div>
+                  </div></div>
+                  <span class="tile__pill">3 localhost:5173</span>
+                </div>
+              </div>
             </div>
-            <div class="agents__tiles">
-              <div class="atile atile--working">
-                <span class="pill pill--working">tests · working</span>
-                <p><span class="g">●</span> Fixing the flaky login test…</p>
-                <p class="d">  Read  tests/login.spec.ts</p>
-                <p class="d">  Edit  src/auth/session.ts</p>
-                <p class="d">  Run   npm test -- login</p>
-                <p>  <span class="gr">12</span> of 18 passed</p>
-              </div>
-              <div class="atile atile--blocked">
-                <span class="pill pill--blocked">darkmode · needs you</span>
-                <p>Allow <span class="y">rm -rf build</span>?</p>
-                <p class="d">  1. Yes   2. No</p>
-              </div>
-              <div class="atile atile--done">
-                <span class="pill pill--done">docs · done</span>
-                <p><span class="gr">✓</span> Documented the orders API.</p>
-                <p class="d">  4 files changed</p>
-              </div>
-            </div>
+            <ul class="agents__legend" aria-label="Activity colors">
+              <li><i class="dot dot--working"></i>working</li>
+              <li><i class="dot dot--blocked"></i>needs you</li>
+              <li><i class="dot dot--done"></i>done while you looked away</li>
+            </ul>
           </div>
 
           <figure class="codecard codecard--term">
-            <figcaption class="codecard__bar"><span class="hm__lights" aria-hidden="true"><i></i><i></i><i></i></span><span>zsh — surface:3</span></figcaption>
-<pre class="code"><code><span class="g">❯</span> ref=$(hyprmuxctl new-surface --input <span class="y">'npm test\n'</span> | jq -r .ref)
-<span class="g">❯</span> hyprmuxctl read-screen --surface $ref --lines 3
-<span class="d"> Test Files  12 passed (12)
-      Tests  148 passed (148)
-   Duration  3.41s</span>
-<span class="g">❯</span> hyprmuxctl agent-state blocked --kind pi --message <span class="y">"Allow rm?"</span>
-<span class="g">❯</span> agent-browser connect <span class="y">"$(hyprmuxctl cdp-url)"</span>
+            <figcaption class="codecard__bar"><span class="hm__lights" aria-hidden="true"><i></i><i></i><i></i></span><span>zsh — a script in another tile</span></figcaption>
+<pre class="code"><code><span class="g">❯</span> hyprmuxctl new-surface --input <span class="y">'pi "document the orders API"\n'</span> | jq -r .ref
+surface:4
+<span class="g">❯</span> hyprmuxctl read-screen --surface 2 --lines 2
+Allow rm -rf build?
+  1. Yes   2. No
+<span class="g">❯</span> hyprmuxctl send --surface 2 <span class="y">'y\n'</span>
+<span class="g">❯</span> agent-browser connect <span class="y">"$(hyprmuxctl cdp-url)"</span> &amp;&amp; agent-browser click @e2
+<span class="gr">✓</span> clicked @e2
 <span class="g">❯</span> hyprmuxctl events
-<span class="d">workspace>>2
-agent>>7,claude,done</span></code></pre>
+<span class="d">agent>>4,pi,done
+agent>>1,pi,done</span></code></pre>
           </figure>
         </div>
 

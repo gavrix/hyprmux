@@ -3,76 +3,16 @@
 // interaction, and pauses while the window is off screen.
 
 import { durations } from "./motion.js";
-
-const STOP = Symbol("stop");
-
-const CURSOR_SVG = `<svg viewBox="0 0 20 24" width="20" height="24" aria-hidden="true"><path d="M2 1.5v18.2l4.6-4.3 3 6.9 3.2-1.4-3-6.8h6.4z" fill="#fff" stroke="#0b0c11" stroke-width="1.4" stroke-linejoin="round"/></svg>`;
-
-/** The pretend pointer, with a ⌘ badge while the "key" is down. */
-class Cursor {
-  constructor(area) {
-    this.el = document.createElement("div");
-    this.el.className = "hm-cursor";
-    this.el.innerHTML = `${CURSOR_SVG}<span class="hm-cursor__mod">⌘</span>`;
-    area.append(this.el);
-    this.p = { x: 0, y: 0 };
-  }
-  set(p) {
-    this.p = p;
-    this.el.style.transform = `translate(${p.x}px, ${p.y}px)`;
-  }
-  show(on) { this.el.classList.toggle("is-shown", on); }
-  hold(on) { this.el.classList.toggle("is-holding", on); }
-  remove() { this.el.remove(); }
-}
-
-const ease = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2); // easeInOutCubic
+import { makeClock } from "./clock.js";
+import { Cursor } from "./cursor.js";
 
 export function attract(wm, keycast, root) {
-  let stopped = false;
-  let visible = false;
-  const timers = new Set();
+  const clock = makeClock(root);
+  const { sleep, tween } = clock;
   const cursor = new Cursor(wm.area);
 
-  const io = new IntersectionObserver(([e]) => { visible = e.isIntersecting && e.intersectionRatio > 0.35; }, {
-    threshold: [0, 0.35, 0.6],
-  });
-  io.observe(root);
-
-  /** Waits `ms` of on-screen time. Throws STOP once the demo is over. */
-  const sleep = (ms) =>
-    new Promise((resolve, reject) => {
-      let left = ms;
-      const step = () => {
-        if (stopped) return reject(STOP);
-        if (left <= 0) return resolve();
-        const dt = 100;
-        const t = setTimeout(() => {
-          timers.delete(t);
-          if (visible && !document.hidden) left -= dt;
-          step();
-        }, dt);
-        timers.add(t);
-      };
-      step();
-    });
-
-  /** Runs `fn(t)` for t in 0…1 over `ms`, eased. */
-  const tween = (ms, fn) =>
-    new Promise((resolve, reject) => {
-      const start = performance.now();
-      const frame = (now) => {
-        if (stopped) return reject(STOP);
-        const t = Math.min(1, (now - start) / ms);
-        fn(ease(t));
-        if (t < 1) requestAnimationFrame(frame);
-        else resolve();
-      };
-      requestAnimationFrame(frame);
-    });
-
   const press = (chord, label, action) => {
-    if (stopped) throw STOP;
+    clock.check();
     action();
     keycast.press(chord, label);
   };
@@ -145,22 +85,13 @@ export function attract(wm, keycast, root) {
     await sleep(durations.windows + 2600);
   }
 
-  const run = async () => {
-    try {
-      for (;;) await script();
-    } catch (e) {
-      if (e !== STOP) throw e;
-    }
-  };
-  run();
+  clock.loop(script);
 
   return {
-    get running() { return !stopped; },
+    get running() { return !clock.stopped; },
     stop() {
-      if (stopped) return;
-      stopped = true;
-      for (const t of timers) clearTimeout(t);
-      io.disconnect();
+      if (clock.stopped) return;
+      clock.stop();
       if (wm.drag) wm.endDrag(cursor.p, true);
       cursor.show(false);
       setTimeout(() => cursor.remove(), 400);

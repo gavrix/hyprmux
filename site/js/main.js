@@ -66,8 +66,22 @@ function configPlayground() {
   io.observe(section);
 }
 
+/** The agents section's script runs when the section comes near (not with reduced motion). */
+function agentsDemo() {
+  const section = document.getElementById("agents");
+  if (!section || reduceMotion || !("ResizeObserver" in window) || !("IntersectionObserver" in window)) return;
+  const io = new IntersectionObserver(async ([e]) => {
+    if (!e.isIntersecting) return;
+    io.disconnect();
+    const { startAgents } = await import("./agents.js");
+    startAgents(section);
+  }, { rootMargin: "400px 0px" });
+  io.observe(section);
+}
+
 revealOnScroll();
 navState();
 copyButtons();
 heroCompositor();
 configPlayground();
+agentsDemo();

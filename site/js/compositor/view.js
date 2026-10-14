@@ -33,12 +33,13 @@ class Workspace {
 export class Compositor {
   /**
    * @param {HTMLElement} root the .hm window
-   * @param {object} [options] gapsIn, gapsOut, and referenceWidth (the width at which
-   *   one config point is one pixel)
+   * @param {object} [options] gapsIn, gapsOut, minGapsOut, referenceWidth (the width at
+   *   which one config point is one pixel), and titles (decoration:title with show_id:
+   *   every tile wears a pill with its surface number and title)
    */
   constructor(root, options = {}) {
     this.root = root;
-    this.options = { gapsIn: GAPS_IN, gapsOut: GAPS_OUT, minGapsOut: 6, referenceWidth: REFERENCE_WIDTH, ...options };
+    this.options = { gapsIn: GAPS_IN, gapsOut: GAPS_OUT, minGapsOut: 6, referenceWidth: REFERENCE_WIDTH, titles: false, ...options };
     this.area = root.querySelector(".hm__area");
     this.bar = root.querySelector(".hm__workspaces");
     this.keycastEl = root.querySelector(".keycast");
@@ -604,8 +605,11 @@ export class Compositor {
     return true;
   }
 
-  /** Builds a tile on a workspace without focusing it: the page's starting content. */
-  seed(key, kind, options = {}) {
+  /**
+   * Opens a tile on a workspace without focusing it, as `new-surface` does without
+   * --focus. `animate` pops it in; without, it's the page's starting content.
+   */
+  seed(key, kind, options = {}, { animate = false } = {}) {
     const ws = this.#ws(key);
     const made = factories[kind]({ count: () => ws.layout.clients.length + 1, ...options });
     const el = this.#makeTileEl(made);
@@ -613,10 +617,17 @@ export class Compositor {
     ws.el.append(el);
     const { area } = this.#metrics();
     ws.layout.insert(id, { target: ws.lastFocused, area });
-    ws.lastFocused = id;
-    this.recency.set(id, ++this.tick);
-    made.mount?.({ instant: true });
-    this.render({ instant: true });
+    if (!animate) ws.lastFocused = id;
+    this.recency.set(id, animate ? -1 : ++this.tick);
+    if (animate) {
+      this.#placeAtSlot(el, id, ws);
+      this.#enter(el);
+      this.render();
+      made.mount?.();
+    } else {
+      made.mount?.({ instant: true });
+      this.render({ instant: true });
+    }
     return id;
   }
 
@@ -664,10 +675,23 @@ export class Compositor {
   #setActivity(id, state) {
     const t = this.tiles.get(id);
     if (!t) return;
+    const was = t.activity;
     t.activity = state;
     for (const s of ["working", "blocked", "done"]) t.el.classList.toggle(`tile--${s}`, s === state);
+    this.#renderPill(t);
+    if (was !== state) this.#emit("agent", { id, label: t.label, state });
+  }
+
+  /**
+   * The pill on a tile's top border. With titles it shows the surface number and title,
+   * in the state's color; without, it names the state, as the app does.
+   */
+  #renderPill(t) {
+    const text = this.options.titles
+      ? `${t.id} ${t.label}`
+      : t.activity ? { working: "working", blocked: "needs you", done: "done" }[t.activity] : "";
     let pill = t.el.querySelector(":scope > .tile__pill");
-    if (!state) {
+    if (!text) {
       pill?.remove();
       return;
     }
@@ -676,7 +700,7 @@ export class Compositor {
       pill.className = "tile__pill";
       t.el.append(pill);
     }
-    pill.textContent = { working: "working", blocked: "needs you", done: "done" }[state];
+    if (pill.textContent !== text) pill.textContent = text;
   }
 
   /** A terminal's agent reports its state (hyprmuxctl agent-state). */
@@ -698,8 +722,10 @@ export class Compositor {
     const id = this.nextId++;
     el.dataset.id = String(id);
     el.setAttribute("aria-label", label);
-    this.tiles.set(id, { id, el, kind, label, ws, group: null, activity: null });
+    const t = { id, el, kind, label, ws, group: null, activity: null };
+    this.tiles.set(id, t);
     if (activity) this.#setActivity(id, activity);
+    else this.#renderPill(t);
     return id;
   }
 
@@ -726,19 +752,21 @@ export class Compositor {
     const ws = this.#ws(1);
     ws.el.classList.add("is-shown");
     const { area } = this.#metrics();
+    let focused = null;
     for (const el of [...this.area.querySelectorAll(":scope > .tile")]) {
       // The narrow layout has no room for the editor.
       if (narrow && el.dataset.kind === "editor") {
         el.remove();
         continue;
       }
-      const id = this.#add(el, { kind: el.dataset.kind, label: el.dataset.label }, 1);
+      const id = this.#add(el, { kind: el.dataset.kind, label: el.dataset.label, activity: el.dataset.activity || null }, 1);
       ws.el.append(el);
       ws.layout.insert(id, { target: ws.lastFocused, area });
       ws.lastFocused = id;
+      if (el.classList.contains("tile--focused")) focused ??= id;
       el.classList.remove("tile--focused");
     }
-    const first = ws.layout.clients[0];
+    const first = focused ?? ws.layout.clients[0];
     if (first !== undefined) this.focus(first);
   }
 

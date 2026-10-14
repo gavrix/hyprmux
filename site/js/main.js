@@ -53,7 +53,21 @@ async function heroCompositor() {
   start(root);
 }
 
+/** The config playground loads when its section comes near. */
+function configPlayground() {
+  const section = document.getElementById("config");
+  if (!section || !("ResizeObserver" in window) || !("IntersectionObserver" in window)) return;
+  const io = new IntersectionObserver(async ([e]) => {
+    if (!e.isIntersecting) return;
+    io.disconnect();
+    const { startPlayground } = await import("./playground.js");
+    startPlayground(section);
+  }, { rootMargin: "600px 0px" });
+  io.observe(section);
+}
+
 revealOnScroll();
 navState();
 copyButtons();
 heroCompositor();
+configPlayground();

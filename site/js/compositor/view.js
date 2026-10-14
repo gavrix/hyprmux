@@ -31,9 +31,14 @@ class Workspace {
 }
 
 export class Compositor {
-  /** @param {HTMLElement} root the .hm window */
-  constructor(root) {
+  /**
+   * @param {HTMLElement} root the .hm window
+   * @param {object} [options] gapsIn, gapsOut, and referenceWidth (the width at which
+   *   one config point is one pixel)
+   */
+  constructor(root, options = {}) {
     this.root = root;
+    this.options = { gapsIn: GAPS_IN, gapsOut: GAPS_OUT, minGapsOut: 6, referenceWidth: REFERENCE_WIDTH, ...options };
     this.area = root.querySelector(".hm__area");
     this.bar = root.querySelector(".hm__workspaces");
     this.keycastEl = root.querySelector(".keycast");
@@ -129,12 +134,13 @@ export class Compositor {
   #metrics() {
     const w = this.area.clientWidth;
     const h = this.area.clientHeight;
-    const s = Math.max(0.45, w / REFERENCE_WIDTH);
+    const o = this.options;
+    const s = Math.max(0.45, w / o.referenceWidth);
     return {
       area: { x: 0, y: 0, w, h },
       scale: s,
-      gapsIn: GAPS_IN * s,
-      gapsOut: Math.max(6, GAPS_OUT * s),
+      gapsIn: o.gapsIn * s,
+      gapsOut: Math.max(Math.min(o.minGapsOut, o.gapsOut), o.gapsOut * s),
       groupbar: Math.max(14, GROUPBAR_HEIGHT * s),
     };
   }
@@ -282,6 +288,27 @@ export class Compositor {
     this.focus(next);
     return true;
   }
+
+  /** New gaps (the playground's config), applied with the windows animation. */
+  setGaps(gapsIn, gapsOut) {
+    this.options.gapsIn = gapsIn;
+    this.options.gapsOut = gapsOut;
+    this.render();
+  }
+
+  /** Moves every tile one slot along the layout, and focus with it: shows off the motion. */
+  rotate() {
+    const ws = this.#visibleWs();
+    const ids = ws.layout.clients;
+    if (ids.length < 2) return false;
+    for (let i = 1; i < ids.length; i++) ws.layout.swap(ids[0], ids[i]);
+    this.render();
+    this.cycleNext();
+    return true;
+  }
+
+  /** The scale from config points to pixels right now. */
+  get scale() { return this.#metrics().scale; }
 
   /** cyclenext: the next tile on the workspace, in layout order. */
   cycleNext() {

@@ -260,49 +260,101 @@
 
     <!-- Config -->
     <section class="section" id="config" aria-labelledby="config-title">
-      <div class="wrap split">
-        <div class="split__text reveal">
+      <div class="wrap">
+        <header class="section__head reveal">
           <p class="kicker">Configuration</p>
           <h2 id="config-title">It's your hyprland.conf.</h2>
-          <p class="section__lede">The same syntax, binds, dispatchers, and bezier curves. Save the file and Hyprmux reloads it. A mistake shows in a red bar, and the rest of the file still applies.</p>
-          <ul class="points">
-            <li><strong>Dwindle tiling.</strong> Directional focus, move and swap, resizing with keys or the mouse, floating, and fullscreen.</li>
-            <li><strong>The looks.</strong> Gradient borders, shadows, rounded or squircle corners, blur, and dimmed inactive tiles.</li>
-            <li><strong>The motion.</strong> Tiles pop in, workspaces slide, and borders fade, on the curves you set.</li>
-            <li><strong>Ghostty stays.</strong> Your Ghostty config still applies to terminals. A <code>ghostty { }</code> block can override it.</li>
-          </ul>
+          <p class="section__lede">The same syntax, binds, dispatchers, and bezier curves. Save the file and Hyprmux reloads it. A mistake shows in a red bar, and the rest of the file still applies. Try it here: edit a value, or pick a preset.</p>
+        </header>
+
+        <div class="playground reveal">
+          <div class="presets" role="group" aria-label="Config presets" hidden></div>
+          <div class="playground__grid">
+            <figure class="codecard playground__editor">
+              <figcaption class="codecard__bar"><span class="hm__lights" aria-hidden="true"><i></i><i></i><i></i></span><span>~/.config/hyprmux/hyprmux.conf</span></figcaption>
+              <div class="cfg">
+                <pre class="cfg__gutter" aria-hidden="true"></pre>
+                <div class="cfg__body">
+                  <pre class="cfg__hl" aria-hidden="true"></pre>
+                  <textarea class="cfg__input" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" aria-label="Config file. Edits restyle the preview window." rows="22">
+# Edit a value. The preview reloads as you type.
+general {
+    gaps_in = 5
+    gaps_out = 14
+    border_size = 2
+    col.active_border = rgba(33ccffee) rgba(00ff99ee) 45deg
+    col.inactive_border = rgba(595959aa)
+}
+
+decoration {
+    rounding = 10
+    rounding_power = 2.0
+    inactive_opacity = 1.0
+    dim_inactive = false
+    dim_strength = 0.25
+}
+
+animations {
+    bezier = easeOutQuint, 0.23, 1, 0.32, 1
+    animation = windows, 1, 4.79, easeOutQuint
+    animation = border, 1, 5.39, easeOutQuint
+}</textarea>
+                </div>
+              </div>
+            </figure>
+
+            <div class="playground__preview">
+              <div class="hm hm--mini" id="config-window" role="img" aria-label="A preview window with three tiles, styled by the config.">
+                <div class="hm__bar">
+                  <div class="hm__lights" aria-hidden="true"><i></i><i></i><i></i></div>
+                  <div class="hm__workspaces" aria-hidden="true"><span class="ws ws--active">1</span></div>
+                  <div class="hm__title">Preview</div>
+                </div>
+                <div class="hm__area">
+                  <div class="tile tile--focused" data-slot="a" data-kind="terminal" data-label="Terminal">
+                    <div class="frame"><div class="term">
+                      <p><span class="p">~</span> <span class="g">❯</span> hyprmuxctl reload</p>
+                      <p class="d">ok</p>
+                      <p><span class="p">~</span> <span class="g">❯</span> <span class="cursor"></span></p>
+                    </div></div>
+                  </div>
+                  <div class="tile" data-slot="b" data-kind="web" data-label="Web page">
+                    <div class="frame"><div class="web">
+                      <div class="web__bar"><span class="web__nav" aria-hidden="true">‹ › ↻</span><span class="web__url">localhost:5173</span></div>
+                      <div class="web__page">
+                        <div class="web__chart" aria-hidden="true"><i style="--h:45%"></i><i style="--h:70%"></i><i style="--h:55%"></i><i style="--h:90%"></i></div>
+                      </div>
+                    </div></div>
+                  </div>
+                  <div class="tile" data-slot="c" data-kind="mobile" data-label="iPhone simulator">
+                    <div class="frame"><div class="device">
+                      <div class="phone"><div class="phone__screen">
+                        <div class="phone__status"><span>9:41</span><span class="phone__island"></span><span>●●●</span></div>
+                        <div class="phone__card phone__card--hi"></div>
+                        <div class="phone__card"></div>
+                      </div></div>
+                    </div></div>
+                  </div>
+                  <div class="hm__errors" role="status" aria-live="polite"></div>
+                </div>
+              </div>
+              <div class="playground__actions" hidden>
+                <button class="btn btn--ghost btn--small playground__replay" type="button">
+                  <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 2.5v3h-3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  Replay the motion
+                </button>
+                <span class="playground__tip">Hover a tile to focus it. <kbd>⌘</kbd>-drag to move one.</span>
+              </div>
+            </div>
+          </div>
         </div>
-        <div class="split__media reveal">
-          <figure class="codecard">
-            <figcaption class="codecard__bar"><span class="hm__lights" aria-hidden="true"><i></i><i></i><i></i></span><span>~/.config/hyprmux/hyprmux.conf</span></figcaption>
-<pre class="code"><code><span class="cm"># Syntax follows hyprland.conf (hyprlang).</span>
-<span class="k">$mod</span> = SUPER
 
-<span class="k">general</span> {
-    <span class="n">gaps_in</span> = <span class="v">5</span>
-    <span class="n">gaps_out</span> = <span class="v">14</span>
-    <span class="n">border_size</span> = <span class="v">2</span>
-    <span class="n">col.active_border</span> = <span class="c1">rgba(33ccffee)</span> <span class="c2">rgba(00ff99ee)</span> <span class="v">45deg</span>
-    <span class="n">layout</span> = dwindle
-}
-
-<span class="k">decoration</span> {
-    <span class="n">rounding</span> = <span class="v">10</span>
-    <span class="n">rounding_power</span> = <span class="v">4.0</span>   <span class="cm"># squircle</span>
-    <span class="n">inactive_opacity</span> = <span class="v">0.85</span>
-}
-
-<span class="k">animations</span> {
-    <span class="n">bezier</span> = easeOutQuint, <span class="v">0.23, 1, 0.32, 1</span>
-    <span class="n">animation</span> = windowsIn, <span class="v">1, 4.1</span>, easeOutQuint, popin <span class="v">87%</span>
-    <span class="n">animation</span> = workspaces, <span class="v">1, 3.5</span>, easeOutQuint, slide
-}
-
-<span class="n">bind</span> = <span class="k">$mod</span>, Return, exec,            <span class="cm"># a terminal</span>
-<span class="n">bind</span> = <span class="k">$mod</span>, B, web,
-<span class="n">bind</span> = <span class="k">$mod</span>, H, movefocus, l</code></pre>
-          </figure>
-        </div>
+        <ul class="features features--4">
+          <li class="feature reveal"><h3>Dwindle tiling</h3><p>Directional focus, move and swap, resizing with keys or the mouse, floating, and fullscreen.</p></li>
+          <li class="feature reveal"><h3>The looks</h3><p>Gradient borders, shadows, rounded or squircle corners, blur, and dimmed inactive tiles.</p></li>
+          <li class="feature reveal"><h3>The motion</h3><p>Tiles pop in, workspaces slide, and borders fade, on the curves you set.</p></li>
+          <li class="feature reveal"><h3>Ghostty stays</h3><p>Your Ghostty config still applies to terminals. A <code>ghostty { }</code> block can override it.</p></li>
+        </ul>
       </div>
     </section>
 

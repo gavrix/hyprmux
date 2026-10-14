@@ -547,6 +547,8 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
     private weak var lastTerminal: TerminalView?
     /// Focused client as of the last updateFocus, to tell focus changes from re-applies.
     private var lastFocusApplied: ClientID?
+    /// Bumped by each move of the filled window; only the last move's check runs.
+    private var followScreenGeneration = 0
 
     func removeClient(_ id: ClientID) {
         guard let v = views.removeValue(forKey: id) else { return }
@@ -1674,6 +1676,24 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
     func windowWillEnterFullScreen(_ notification: Notification) { updateWindowFrame() }
     func windowDidEnterFullScreen(_ notification: Notification) { monitorChanged(animated: true) }
     func windowDidExitFullScreen(_ notification: Notification) { monitorChanged(animated: true) }
+
+    /// A filled window that moved (dragged, or Window > Move to) fills the display it's
+    /// on once it stops moving. A drag moves it while the button is down, macOS keeps
+    /// moving it briefly after the drop, and Move to animates: a frame set before the
+    /// window settles is overridden, or fills the display it's passing over.
+    func windowDidChangeScreen(_ notification: Notification) { scheduleFollowScreen() }
+    func windowDidMove(_ notification: Notification) { scheduleFollowScreen() }
+
+    /// Every move restarts the wait, so this runs 0.2 s after the last one.
+    private func scheduleFollowScreen() {
+        guard window.isFilled else { return }
+        followScreenGeneration += 1
+        let generation = followScreenGeneration
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+            guard let self, self.followScreenGeneration == generation else { return }
+            if NSEvent.pressedMouseButtons & 1 != 0 { self.scheduleFollowScreen() } else { self.window.followScreen() }
+        }
+    }
 
     func windowDidBecomeKey(_ notification: Notification) {
         if let last { updateFocus(last) }

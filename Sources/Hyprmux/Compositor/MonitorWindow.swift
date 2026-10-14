@@ -1,4 +1,5 @@
 import AppKit
+import HyprmuxCore
 
 /// The window that acts as hyprmux's monitor.
 ///
@@ -10,6 +11,9 @@ final class MonitorWindow: NSWindow {
 
     private(set) var isFilled = false
     private var windowedFrame: NSRect?
+    /// The visible frame of the display `windowedFrame` belongs to, so moving to
+    /// another display can carry the frame along.
+    private var windowedArea: NSRect?
 
     // Borderless windows can't become key by default.
     override var canBecomeKey: Bool { true }
@@ -29,12 +33,28 @@ final class MonitorWindow: NSWindow {
     func enterFill() {
         guard !isFilled, !styleMask.contains(.fullScreen), let screen = screen ?? NSScreen.main else { return }
         windowedFrame = frame
+        windowedArea = screen.visibleFrame
         isFilled = true
         styleMask = [.borderless]
         setFrame(screen.frame, display: true)
         applyPresentation()
         UserDefaults.standard.set(true, forKey: "HyprmuxFill")
-        UserDefaults.standard.set(NSStringFromRect(windowedFrame!), forKey: "HyprmuxWindowedFrame")
+        UserDefaults.standard.set(NSStringFromRect(frame), forKey: "HyprmuxWindowedFrame")
+    }
+
+    /// A filled window moved to another display (dragged, or Window > Move to): fill
+    /// that display, and carry the windowed frame there too. Without this, leaving fill
+    /// went back to the old display, and filling again filled the old display.
+    func followScreen() {
+        guard isFilled, let screen = movedToScreen, frame != screen.frame else { return }
+        let area = screen.visibleFrame
+        if let w = windowedFrame {
+            let moved = WindowPlacement.fit(w, from: windowedArea, into: area)
+            windowedFrame = moved
+            UserDefaults.standard.set(NSStringFromRect(moved), forKey: "HyprmuxWindowedFrame")
+        }
+        windowedArea = area
+        setFrame(screen.frame, display: true)
     }
 
     func exitFill() {
@@ -43,11 +63,23 @@ final class MonitorWindow: NSWindow {
         NSApp.presentationOptions = []
         applyWindowedChrome()
         let saved = windowedFrame ?? UserDefaults.standard.string(forKey: "HyprmuxWindowedFrame").map(NSRectFromString)
-        if let saved, saved.width > 100 { setFrame(saved, display: true) }
+        // Fitted to the display it leaves fill on: a frame saved on a larger display
+        // would hang off this one.
+        if let saved, saved.width > 100 {
+            setFrame(screen.map { WindowPlacement.fit(saved, into: $0.visibleFrame) } ?? saved, display: true)
+        }
         UserDefaults.standard.set(false, forKey: "HyprmuxFill")
     }
 
     func toggleFill() { isFilled ? exitFill() : enterFill() }
+
+    /// The display a moved filled window belongs to (WindowPlacement.display). Not
+    /// `screen`: that's the largest overlap, still the old display when the window is
+    /// bigger than the new one.
+    private var movedToScreen: NSScreen? {
+        let screens = NSScreen.screens
+        return WindowPlacement.display(for: frame, among: screens.map(\.frame)).map { screens[$0] } ?? screen
+    }
 
     /// Not filled and not in macOS full screen: a window macOS lets the user move and resize.
     var isWindowed: Bool { !isFilled && styleMask.contains(.resizable) && !styleMask.contains(.fullScreen) }

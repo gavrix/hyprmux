@@ -841,19 +841,25 @@ h2 { font-size: clamp(34px, 4.6vw, 56px); letter-spacing: -0.035em; text-wrap: b
 .hm-keys summary {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
+  height: 32px;
+  padding: 0 12px 0 12px;
   cursor: pointer;
   list-style: none;
-  padding: 4px 10px;
-  border-radius: 8px;
-  color: var(--dim);
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--muted);
   font-size: 13.5px;
-  transition: color 200ms, background 200ms;
+  font-weight: 500;
+  user-select: none;
+  transition: color 200ms, background 200ms, border-color 200ms;
 }
 .hm-keys summary::-webkit-details-marker { display: none; }
-.hm-keys summary::after { content: "▾"; font-size: 11px; transition: transform 300ms var(--ease); }
-.hm-keys[open] summary::after { transform: rotate(180deg); }
-.hm-keys summary:hover { color: var(--text); background: rgba(255, 255, 255, 0.04); }
+.hm-keys summary:hover { color: var(--text); background: rgba(255, 255, 255, 0.05); border-color: var(--line-2); }
+.hm-keys[open] summary { color: var(--text); border-color: var(--line-2); }
+.hm-keys__icon { opacity: 0.8; }
+.hm-keys__chevron { margin-left: 2px; opacity: 0.7; transition: transform 350ms var(--ease); }
+.hm-keys[open] .hm-keys__chevron { transform: rotate(180deg); }
 .hm-keys__dot { display: none; width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); }
 .hm-hint.is-live .hm-keys__dot { display: inline-block; }
 .hm-keys__panel {

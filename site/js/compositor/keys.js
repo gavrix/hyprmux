@@ -92,6 +92,9 @@ export const isMod = (e) => e.metaKey || (!isMac && e.altKey);
 
 const MOUSE_ICON = `<svg viewBox="0 0 16 22" width="13" height="18" aria-hidden="true"><rect x="1" y="1" width="14" height="20" rx="7" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 1v7" stroke="currentColor" stroke-width="1.5"/><rect x="6.6" y="4" width="2.8" height="4.5" rx="1.4" fill="currentColor"/></svg>`;
 
+const KEYBOARD_ICON = `<svg class="hm-keys__icon" viewBox="0 0 20 14" width="18" height="13" aria-hidden="true"><rect x="0.75" y="0.75" width="18.5" height="12.5" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M4 4.5h1.5M8 4.5h1.5M12 4.5h1.5M15.5 4.5h.5M4 7.5h1M7 7.5h1M10 7.5h1M13 7.5h1M16 7.5h.5M6 10h8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`;
+const CHEVRON = `<svg class="hm-keys__chevron" viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"><path d="M3 4.5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+
 /**
  * The line under the window. The mouse binds are the one obvious thing to try;
  * the keyboard binds wait behind a toggle so the page stays calm.
@@ -111,7 +114,9 @@ export function createHint(id) {
       <span class="hm-hint__touch">Tap a tile to focus it. Try it with a mouse to move tiles around.</span>
     </p>
     <details class="hm-keys">
-      <summary><span class="hm-keys__dot" aria-hidden="true"></span>Keyboard controls</summary>
+      <summary>
+        <span class="hm-keys__dot" aria-hidden="true"></span>${KEYBOARD_ICON}<span>Keyboard controls</span>${CHEVRON}
+      </summary>
       <div class="hm-keys__panel">
         <p class="hm-keys__intro">Click the window, then use the app's binds without <kbd>⌘</kbd>. <kbd>Esc</kbd> lets go.</p>
         <dl class="hm-keys__grid">${rows}</dl>

@@ -273,6 +273,12 @@ public enum WorkspacePicker {
         }
     }
 
+    /// The workspace a listed row stands for, for the live preview beside the picker.
+    public static func workspace(forItem id: String) -> WorkspaceID? {
+        if id.hasPrefix("special:") { return .special(String(id.dropFirst("special:".count))) }
+        return Int(id).map { .regular($0) }
+    }
+
     /// Where a picker result points: a listed workspace, a typed number, or a typed name
     /// (an existing one, or a new workspace that takes the name).
     public static func target(for r: PickerResult) -> WorkspaceTarget? {

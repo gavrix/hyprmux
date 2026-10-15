@@ -539,6 +539,8 @@ public enum ConfigParser {
             case "hud:notifications:width": if let v = num() { config.hud.notificationWidth = min(max(v, 160), 1200) }
             case "hud:picker:width": if let v = num() { config.hud.pickerWidth = min(max(v, 240), 1600) }
             case "hud:picker:max_rows": if let v = num() { config.hud.pickerMaxRows = min(max(1, Int(v)), 40) }
+            case "hud:picker:preview": if let v = bool() { config.hud.pickerPreview = v }
+            case "hud:picker:preview_delay": if let v = num() { config.hud.pickerPreviewDelay = min(max(v, 0), 10_000) / 1000 }
             case "hud:keycast": if let v = bool() { config.hud.keycast = v }
             case "session:restore": if let v = bool() { config.session.enabled = v }
             case "session:programs": config.session.programs = list()

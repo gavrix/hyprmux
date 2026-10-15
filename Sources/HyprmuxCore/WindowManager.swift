@@ -69,6 +69,12 @@ public struct Snapshot: Equatable, Sendable {
     public let focused: ClientID?
 
     public func placement(_ id: ClientID) -> Placement? { placements.first { $0.id == id } }
+
+    /// What a workspace shows when it's active, bottom to top: its placements without
+    /// the hidden tabs of its groups. For the workspace picker's preview.
+    public func preview(of ws: WorkspaceID) -> [Placement] {
+        placements.filter { p in p.workspace == ws && (p.group.map { $0.active == p.id } ?? true) }
+    }
 }
 
 /// The window manager model: workspaces, layouts, focus, dispatchers.

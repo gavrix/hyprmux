@@ -199,6 +199,12 @@ final class PickerView: DecoratedView, NSTextFieldDelegate {
     var onChange: (() -> Void)?
     /// A row was clicked.
     var onPick: ((Int) -> Void)?
+    /// The selected item changed (arrows, hover, filtering). Nil: nothing matches.
+    /// Setting it reports the current selection at once.
+    var onSelectionChange: ((PickerItem?) -> Void)? {
+        didSet { lastSelectedID = nil; refresh() }
+    }
+    private var lastSelectedID: String??
 
     init(picker: Picker, theme: HUDTheme, icons: [String: NSImage] = [:]) {
         self.picker = picker
@@ -331,6 +337,11 @@ final class PickerView: DecoratedView, NSTextFieldDelegate {
         counter.stringValue = headerCounterText
         list.picker = picker
         list.needsDisplay = true
+        let selected = picker.selectedItem
+        if lastSelectedID != .some(selected?.id), let onSelectionChange {
+            lastSelectedID = .some(selected?.id)
+            onSelectionChange(selected)
+        }
     }
 
     func controlTextDidChange(_ obj: Notification) {

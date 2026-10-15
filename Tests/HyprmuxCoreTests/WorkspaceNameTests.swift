@@ -76,6 +76,32 @@ final class WorkspaceNameTests: XCTestCase {
         XCTAssertNil(WorkspacePicker.target(for: .text("  ")))
     }
 
+    func testPreviewItems() {
+        XCTAssertEqual(WorkspacePicker.workspace(forItem: "3"), .regular(3))
+        XCTAssertEqual(WorkspacePicker.workspace(forItem: "special:magic"), .special("magic"))
+        XCTAssertNil(WorkspacePicker.workspace(forItem: "mail"))
+    }
+
+    func testPreviewPlacements() {
+        let wm = makeWM()
+        wm.addClient(ClientID(1))
+        wm.addClient(ClientID(2))
+        wm.addClient(ClientID(3))
+        wm.focus(ClientID(1))
+        wm.dispatch(.toggleGroup)                   // 1 becomes a one-tab group
+        wm.focus(ClientID(2))
+        wm.dispatch(.moveIntoGroup(.left))          // 2 joins it as the active tab
+        wm.dispatch(.workspace(.id(2)))
+        wm.addClient(ClientID(4))
+        let snap = wm.snapshot()
+        let one = snap.preview(of: .regular(1))
+        // The hidden tab (1) is left out; the group shows its active tab.
+        XCTAssertEqual(Set(one.map(\.id)), [ClientID(2), ClientID(3)])
+        XCTAssertTrue(one.allSatisfy { !$0.visible })
+        XCTAssertEqual(snap.preview(of: .regular(2)).map(\.id), [ClientID(4)])
+        XCTAssertTrue(snap.preview(of: .regular(7)).isEmpty)
+    }
+
     func testDetailNotSearchedForWorkspaces() {
         let items = [PickerItem(id: "1", title: "1", detail: "2 windows")]
         var p = Picker(title: "ws", items: items, allowsCustom: true, searchesDetail: false)

@@ -63,6 +63,10 @@ public struct HUDSettings: Equatable, Sendable {
     /// Pickers (menus, selection lists) open centered in the window.
     public var pickerWidth: Double = 600
     public var pickerMaxRows = 10
+    /// The workspace picker shows the selected workspace live, beside the list. Off by default.
+    public var pickerPreview = false
+    /// Seconds the selection rests before the preview appears, so quick choices skip it.
+    public var pickerPreviewDelay: Double = 1
     /// Show each shortcut Hyprmux acts on, for screen sharing and recordings.
     public var keycast = false
 

@@ -1,12 +1,30 @@
 import AppKit
 import HyprmuxCore
 
+/// A live workspace preview to the right of a picker, and what to do as the selection
+/// moves and when the picker closes.
+struct PickerPreview {
+    let view: WorkspacePreviewView
+    /// Seconds the selection must rest before the preview appears. A quick choice never
+    /// shows it. Zero: it opens with the picker.
+    let delay: TimeInterval
+    /// The selected row changed; nil when nothing matches.
+    let onSelect: (PickerItem?) -> Void
+    /// Runs as the picker closes, before its completion.
+    let onClose: () -> Void
+}
+
 /// Shows one picker at a time and holds the keyboard while it's open, like a
 /// Hyprland layer with exclusive keyboard focus: binds are off, keys go to the
 /// picker, and Escape or a click outside closes it.
 final class PickerPresenter {
     private unowned let hud: HUD
     private var view: PickerView?
+    private var preview: PickerPreview?
+    /// Whether the preview is on screen.
+    private var previewShown = false
+    /// Shows the preview once the selection has rested; restarted by every move.
+    private var previewTimer: DispatchWorkItem?
     private let scrim = PickerScrim()
     private var anchor: HUDAnchor = .monitor(.center)
     private var completion: ((PickerResult?) -> Void)?
@@ -35,7 +53,8 @@ final class PickerPresenter {
     /// Opens `picker`, replacing (cancelling) one that's already open. `completion` gets
     /// the choice, or nil when cancelled.
     func present(_ picker: Picker, anchor: HUDAnchor = .monitor(.center), icons: [String: NSImage] = [:],
-                 requestID: UUID? = nil, completion: @escaping (PickerResult?) -> Void) {
+                 requestID: UUID? = nil, preview: PickerPreview? = nil,
+                 completion: @escaping (PickerResult?) -> Void) {
         if isOpen { finish(nil) }
         self.anchor = anchor
         self.completion = completion
@@ -49,16 +68,65 @@ final class PickerPresenter {
             self.accept()
         }
         view = v
+        self.preview = preview
         // Above the scrim, below any notification.
         scrim.frame = hud.layer.bounds
         hud.layer.addSubview(scrim, positioned: .below, relativeTo: nil)
         hud.layer.addSubview(v, positioned: .above, relativeTo: scrim)
-        hud.animateIn(v, to: frame(for: v), position: anchor.position, defaultStyle: defaultStyle)
+        previewShown = preview.map { $0.delay <= 0 } ?? false
+        let frames = frames(for: v)
+        hud.animateIn(v, to: frames.picker, position: anchor.position, defaultStyle: defaultStyle)
+        if let preview {
+            hud.layer.addSubview(preview.view, positioned: .above, relativeTo: scrim)
+            if previewShown, let f = frames.preview {
+                hud.animateIn(preview.view, to: f, position: anchor.position, defaultStyle: defaultStyle)
+            } else {
+                preview.view.isHidden = true
+            }
+            v.onSelectionChange = { [weak self] item in self?.selectionChanged(item) }
+            v.onChange = { [weak self] in self?.restartPreviewTimer() }
+        }
         if let w = hud.layer.window { focus(in: w) }
         log.debug("picker open title=\(picker.title, privacy: .public) items=\(picker.items.count)")
     }
 
     func cancel() { if isOpen { finish(nil) } }
+
+    // MARK: Preview
+
+    private func selectionChanged(_ item: PickerItem?) {
+        if previewShown {
+            preview?.onSelect(item)
+        } else {
+            restartPreviewTimer()
+        }
+    }
+
+    /// The selection or query moved before the preview appeared: wait again.
+    private func restartPreviewTimer() {
+        guard let preview, !previewShown else { return }
+        previewTimer?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.showPreview() }
+        previewTimer = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + preview.delay, execute: work)
+    }
+
+    /// The selection rested: the picker moves over and the preview comes in beside it,
+    /// the two centered together.
+    private func showPreview() {
+        previewTimer = nil
+        guard let v = view, let preview, !previewShown else { return }
+        previewShown = true
+        let frames = frames(for: v)
+        guard let f = frames.preview else {
+            previewShown = false
+            return
+        }
+        preview.onSelect(v.picker.selectedItem)
+        preview.view.isHidden = false
+        hud.animateMove(v, to: frames.picker, animated: true)
+        hud.animateIn(preview.view, to: f, position: anchor.position, defaultStyle: defaultStyle)
+    }
 
     /// Closes the picker only if it's still the one opened with `requestID`.
     func cancel(requestID: UUID) {
@@ -114,21 +182,47 @@ final class PickerPresenter {
     func relayout() {
         guard let v = view else { return }
         scrim.frame = hud.layer.bounds
-        hud.animateMove(v, to: frame(for: v), animated: false)
+        let frames = frames(for: v)
+        hud.animateMove(v, to: frames.picker, animated: false)
+        if let p = preview?.view, previewShown {
+            p.isHidden = frames.preview == nil
+            if let f = frames.preview { hud.animateMove(p, to: f, animated: false) }
+        }
     }
 
     /// Config reloaded: restyle in place, keeping the query and selection.
     func reload() {
         guard let v = view else { return }
         v.apply(hud.theme)
+        preview?.view.apply(hud.theme)
         relayout()
     }
 
-    private func frame(for v: PickerView) -> CGRect {
+    /// The picker's frame, and its preview's to the right while it shows and fits. The
+    /// two are placed as one group, each centered on the group's middle line.
+    private func frames(for v: PickerView) -> (picker: CGRect, preview: CGRect?) {
         let area = hud.area(for: anchor) ?? hud.monitor
-        let width = min(CGFloat(hud.config.hud.pickerWidth), area.width - 2 * hud.margin)
+        let room = area.width - 2 * hud.margin
+        let width = min(CGFloat(hud.config.hud.pickerWidth), room)
         let height = v.layout(width: width)
-        return HUDLayout.place(CGSize(width: width, height: height), at: anchor.position, in: area, margin: hud.margin)
+        let size = CGSize(width: width, height: height)
+        let alone = HUDLayout.place(size, at: anchor.position, in: area, margin: hud.margin)
+        guard let p = preview?.view, previewShown else { return (alone, nil) }
+        let gap = max(hud.spacing, 12)
+        let minWidth: CGFloat = 160
+        let tallest = area.height - 2 * hud.margin
+        func previewSize(width w: CGFloat) -> CGSize {
+            let s = p.size(width: w, monitor: hud.monitor.size)
+            return s.height > tallest ? p.size(width: s.width * tallest / s.height, monitor: hud.monitor.size) : s
+        }
+        let s = previewSize(width: min(width, room - width - gap))
+        guard s.width >= minWidth else { return (alone, nil) }
+        let group = HUDLayout.place(CGSize(width: width + gap + s.width, height: max(height, s.height)),
+                                    at: anchor.position, in: area, margin: hud.margin)
+        let picker = CGRect(x: group.minX, y: round(group.midY - height / 2), width: width, height: height)
+        let side = CGRect(x: group.minX + width + gap, y: round(group.midY - s.height / 2),
+                          width: s.width, height: s.height)
+        return (picker, side)
     }
 
     private func accept() {
@@ -151,6 +245,21 @@ final class PickerPresenter {
             w.makeFirstResponder(nil)
         }
         hud.animateOut(v, position: anchor.position, defaultStyle: defaultStyle)
+        let shownPreview = preview
+        preview = nil
+        previewShown = false
+        previewTimer?.cancel()
+        previewTimer = nil
+        if let shownPreview {
+            v.onSelectionChange = nil
+            v.onChange = nil
+            if shownPreview.view.isHidden {
+                shownPreview.view.removeFromSuperview()
+            } else {
+                hud.animateOut(shownPreview.view, position: anchor.position, defaultStyle: defaultStyle)
+            }
+            shownPreview.onClose()
+        }
         let done = completion
         completion = nil
         requestID = nil

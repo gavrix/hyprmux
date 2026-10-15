@@ -195,6 +195,10 @@ hud {
     picker {
         width = 600
         max_rows = 10
+        # The workspace picker can show the selected workspace live, to its right,
+        # once the selection rests for preview_delay milliseconds (0 = at once).
+        # preview = true
+        # preview_delay = 1000
     }
 }
 

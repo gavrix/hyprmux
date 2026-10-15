@@ -333,6 +333,8 @@ hud {
 | `notifications:width` | 380 | Width in points. |
 | `picker:width` | 600 | Width of pickers in points. They open centered in the window. |
 | `picker:max_rows` | 10 | Rows shown at once. Longer lists scroll. |
+| `picker:preview` | false | The workspace picker shows the selected workspace beside the list, live, as a miniature of its tiles. |
+| `picker:preview_delay` | 1000 | Milliseconds the selection must rest before the preview appears. A quick choice never shows it; moving the selection or typing restarts the wait. Once shown, it follows the selection. 0 opens it with the picker. |
 | `keycast` | false | Show each shortcut Hyprmux acts on at the bottom of the window, with what it did: **⌘↩** New terminal. Quick repeats count up (×3). Plain typing never shows. For screen sharing and recordings. |
 
 **What shows up:**

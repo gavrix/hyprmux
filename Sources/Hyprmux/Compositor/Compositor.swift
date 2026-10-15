@@ -38,6 +38,8 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
     var resumeReports: [ClientID: ResumeReport] = [:]
     /// The open workspace picker, whose activity badges update live.
     var workspacePicker: (request: UUID, choices: [WindowManager.WorkspaceChoice])?
+    /// The workspace picker's live preview (Compositor+Preview).
+    var workspacePreview: WorkspacePreviewState?
     /// Agents a restore typed into terminals, until they report (Compositor+Session).
     var restoredAgents: [ClientID: RestoredAgent] = [:]
     /// Agents in terminals and the state shown for them (Compositor+Agents).
@@ -457,7 +459,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
             // Its badges follow the tiles while it's open (refreshBarActivity).
             let request = UUID()
             workspacePicker = (request, choices)
-            hud.picker.present(picker, requestID: request) { [weak self] r in
+            hud.picker.present(picker, requestID: request, preview: moving ? nil : makeWorkspacePreview()) { [weak self] r in
                 if self?.workspacePicker?.request == request { self?.workspacePicker = nil }
                 guard let self, let r, let t = WorkspacePicker.target(for: r) else { return }
                 self.dispatch(moving ? .moveToWorkspace(t, silent: kind == .moveToWorkspaceSilent) : .workspace(t),
@@ -737,6 +739,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         restack(snap)
         updateChrome(snap)
         updateFocus(snap)
+        refreshWorkspacePreview()
         scheduleSessionSave()
     }
 

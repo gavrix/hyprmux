@@ -387,6 +387,15 @@ public final class WindowManager {
         snapshot().placements.last { $0.visible && $0.frame.contains(p) }?.id
     }
 
+    /// The client that focus-follows-mouse may focus at a point.
+    /// While a scratchpad is open, only its own windows qualify: the pointer crosses the
+    /// regular workspace in every gap, and focusing it there would close the scratchpad.
+    public func hoverTarget(at p: CGPoint) -> ClientID? {
+        guard let id = client(at: p) else { return nil }
+        if let s = specialVisible, clients[id]?.workspace != .special(s) { return nil }
+        return id
+    }
+
     // MARK: Internals: workspaces
 
     var visibleWorkspaces: [WorkspaceID] {

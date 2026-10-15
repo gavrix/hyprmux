@@ -985,7 +985,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         // Views track the mouse even while Hyprmux is in the background. Without this,
         // passing the pointer over the window from another app silently moved focus.
         guard NSApp.isActive, window.isKeyWindow, !hud.contains(p) else { return }
-        guard config.followMouse == 1, let id = wm.client(at: p), id != wm.focused else { return }
+        guard config.followMouse == 1, let id = wm.hoverTarget(at: p), id != wm.focused else { return }
         log.debug("focus reason=mouse client=\(id.raw)")
         wm.focus(id)
         apply(animated: true)

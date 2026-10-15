@@ -213,6 +213,27 @@ final class WindowManagerTests: XCTestCase {
         XCTAssertEqual(wm.snapshot().placement(ClientID(2))?.visible, false)
     }
 
+    func testHoverIgnoresRegularWorkspaceWhileScratchpadIsOpen() {
+        var s = WMSettings()
+        s.gapsIn = Insets(all: 10)
+        s.gapsOut = Insets(all: 40)
+        s.dwindle.forceSplit = 2
+        let wm = WindowManager(monitor: CGRect(x: 0, y: 0, width: 1600, height: 1000), settings: s)
+        wm.addClient(ClientID(1))
+        wm.dispatch(.toggleSpecialWorkspace("magic"))
+        wm.addClient(ClientID(2))
+        wm.addClient(ClientID(3))
+        let snap = wm.snapshot()
+        let left = snap.placement(ClientID(2))!.frame, right = snap.placement(ClientID(3))!.frame
+        let gap = CGPoint(x: (left.maxX + right.minX) / 2, y: left.midY)
+        XCTAssertEqual(wm.client(at: gap), ClientID(1), "the regular tile shows through the gap")
+        XCTAssertNil(wm.hoverTarget(at: gap), "hovering the gap must not pick the regular tile")
+        XCTAssertEqual(wm.hoverTarget(at: CGPoint(x: left.midX, y: left.midY)), ClientID(2))
+        XCTAssertEqual(wm.hoverTarget(at: CGPoint(x: right.midX, y: right.midY)), ClientID(3))
+        wm.dispatch(.toggleSpecialWorkspace("magic"))
+        XCTAssertEqual(wm.hoverTarget(at: gap), ClientID(1), "no scratchpad: hover works as before")
+    }
+
     func testFloatingLiftsOffThenRemembers() {
         let wm = makeWM()
         wm.addClient(ClientID(1))

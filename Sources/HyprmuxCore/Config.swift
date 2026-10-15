@@ -145,6 +145,13 @@ public struct HyprmuxConfig: Sendable {
     public var animations: [String: AnimationSpec] = [:]
     /// 0 = click to focus, 1 = focus follows mouse.
     public var followMouse = 1
+    /// Focus-follows-mouse refocuses on any move inside a tile, not only when the pointer
+    /// crosses into one (Hyprland's input:mouse_refocus). Off by default, unlike Hyprland:
+    /// on, a keyboard focus change is undone by the next mouse bump.
+    public var mouseRefocus = false
+    /// Keep the pointer where it is when focus moves without it (Hyprland's
+    /// cursor:no_warps). On by default, unlike Hyprland: macOS apps don't move the pointer.
+    public var noWarps = true
     /// Bound chords an app gets instead of Hyprmux while its tile has the keyboard, by
     /// app id (`app:<id> { pass = SUPER P, SUPER SHIFT P }`). Binds win everywhere else.
     public var appPass: [String: Set<AppChord>] = [:]
@@ -476,6 +483,8 @@ public enum ConfigParser {
                 break  // Hyprland blur tuning; macOS blur has no equivalent knobs.
             case "animations:enabled": if let v = bool() { config.animationsEnabled = v }
             case "input:follow_mouse": if let v = num() { config.followMouse = Int(v) }
+            case "input:mouse_refocus": if let v = bool() { config.mouseRefocus = v }
+            case "cursor:no_warps": if let v = bool() { config.noWarps = v }
             case let k where k.hasPrefix("app:") && k.hasSuffix(":pass") && k.count > "app::pass".count:
                 let id = String(k.dropFirst("app:".count).dropLast(":pass".count))
                 config.appPass[id, default: []].formUnion(chords(k))

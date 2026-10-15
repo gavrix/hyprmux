@@ -60,6 +60,8 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
     private var consumedKeyUps: Set<UInt16> = []
     private var monitors: [Any] = []
     private var drag: Drag?
+    /// Focus-follows-mouse refocusing and pointer warps (input:mouse_refocus, cursor:no_warps).
+    private var pointerFocus = PointerFocus()
 
     private struct Drag {
         let id: ClientID
@@ -94,6 +96,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
     init(runtime: GhosttyRuntime, config: HyprmuxConfig) {
         self.runtime = runtime
         self.config = config
+        pointerFocus = PointerFocus(mouseRefocus: config.mouseRefocus, warps: !config.noWarps)
         let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
         // First launch fills the screen; later launches restore the autosaved frame.
         var frame = screen
@@ -212,6 +215,8 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         let ghosttyChanged = newConfig.ghostty != config.ghostty
         let brokerSettingChanged = newConfig.registerBroker != config.registerBroker
         config = newConfig
+        pointerFocus.mouseRefocus = newConfig.mouseRefocus
+        pointerFocus.warps = !newConfig.noWarps
         if brokerSettingChanged { broker.update(setting: newConfig.registerBroker) }
 
         wm.settings = newConfig.wm
@@ -739,8 +744,55 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         restack(snap)
         updateChrome(snap)
         updateFocus(snap)
+        updatePointer(snap)
         refreshWorkspacePreview()
         scheduleSessionSave()
+    }
+
+    // MARK: Pointer
+
+    /// Where the pointer is, in monitor coordinates.
+    private var pointerLocation: CGPoint {
+        root.convert(window.convertPoint(fromScreen: NSEvent.mouseLocation), from: nil)
+    }
+
+    /// After a layout: track the tile under the pointer, and warp the pointer to a tile
+    /// that got focus some other way (keyboard, hyprmuxctl), if cursor:no_warps is off.
+    private func updatePointer(_ snap: Snapshot) {
+        let p = pointerLocation
+        let under = hud.contains(p) ? nil : wm.hoverTarget(at: p)
+        let frame = snap.focused.flatMap { snap.placement($0)?.frame }
+        let mayWarp = NSApp.isActive && window.isKeyWindow && drag == nil && !Self.pointerIsActive
+        guard let target = pointerFocus.layoutApplied(focus: snap.focused, frame: frame, pointer: p,
+                                                      under: under, mayWarp: mayWarp) else { return }
+        warpPointer(to: target)
+    }
+
+    /// Whether the event being handled, or one just handled, came from the mouse or
+    /// trackpad. The pointer caused this change then, or the user is moving it: either way
+    /// it stays put. An old event doesn't count: IPC work runs with the last one current.
+    private static var pointerIsActive: Bool {
+        guard let e = NSApp.currentEvent, ProcessInfo.processInfo.systemUptime - e.timestamp < 0.5 else { return false }
+        switch e.type {
+        case .leftMouseDown, .leftMouseUp, .leftMouseDragged, .rightMouseDown, .rightMouseUp, .rightMouseDragged,
+             .otherMouseDown, .otherMouseUp, .otherMouseDragged, .mouseMoved, .mouseEntered, .mouseExited,
+             .scrollWheel, .pressure, .magnify, .rotate, .swipe, .smartMagnify, .beginGesture, .endGesture:
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// Moves the pointer to a point in monitor coordinates.
+    private func warpPointer(to p: CGPoint) {
+        guard let primary = NSScreen.screens.first else { return }
+        let s = window.convertPoint(toScreen: root.convert(p, to: nil))
+        // Core Graphics counts from the top of the primary display, AppKit from the bottom.
+        CGWarpMouseCursorPosition(CGPoint(x: s.x, y: primary.frame.maxY - s.y))
+        // After a warp macOS ignores the mouse for a quarter second; this ends that.
+        CGAssociateMouseAndMouseCursorPosition(1)
+        wm.cursor = p
+        log.debug("pointer warp x=\(Int(p.x)) y=\(Int(p.y))")
     }
 
     /// Tab strip for a grouped placement (nil removes it).
@@ -982,10 +1034,14 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         guard e.window === window, drag == nil else { return }
         let p = point(e)
         wm.cursor = p
+        // Track the tile under the pointer even when this can't focus, so focus moves only
+        // when the pointer crosses into a tile (unless input:mouse_refocus is on).
+        let hovered = hud.contains(p) ? nil : wm.hoverTarget(at: p)
+        let target = pointerFocus.pointerMoved(over: hovered, focused: wm.focused)
         // Views track the mouse even while Hyprmux is in the background. Without this,
         // passing the pointer over the window from another app silently moved focus.
-        guard NSApp.isActive, window.isKeyWindow, !hud.contains(p) else { return }
-        guard config.followMouse == 1, let id = wm.hoverTarget(at: p), id != wm.focused else { return }
+        guard NSApp.isActive, window.isKeyWindow else { return }
+        guard config.followMouse == 1, let id = target else { return }
         log.debug("focus reason=mouse client=\(id.raw)")
         wm.focus(id)
         apply(animated: true)

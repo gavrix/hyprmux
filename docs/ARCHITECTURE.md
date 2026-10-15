@@ -196,7 +196,11 @@ handles occlusion, close, and destroy.
   ⌘-right-drag resizes from the grabbed edge or corner.
 - **Clicks:** a click on any tile focuses it first.
 - **Follow-mouse:** focus follows the pointer, only while Hyprmux is the
-  active app.
+  active app. It moves when the pointer crosses into another tile, not on
+  every move (`input:mouse_refocus`), so a keyboard focus change survives a
+  mouse bump. `PointerFocus` in the core decides both this and warps.
+- **Pointer warps:** with `cursor:no_warps = false`, focus that moves without
+  the mouse moves the pointer to the middle of the focused tile.
 - **Keyboard focus:** after every apply, the focused surface's focus target
   becomes first responder. Focus already somewhere inside the surface (an
   address bar, for example) is left alone.

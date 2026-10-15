@@ -128,6 +128,13 @@ global
 | Option | Default | Meaning |
 |---|---|---|
 | `follow_mouse` | 1 | 1 = focus follows the pointer (only while Hyprmux is active), 0 = click to focus. |
+| `mouse_refocus` | false | With `follow_mouse = 1`: true refocuses the tile under the pointer on any move; false only when the pointer crosses into another tile. Hyprland defaults to true. Off, a keyboard focus change survives a mouse bump. |
+
+### `cursor`
+
+| Option | Default | Meaning |
+|---|---|---|
+| `no_warps` | true | false = when focus moves without the mouse (a bind, `hyprmuxctl`), the pointer jumps to the middle of the focused tile, like Hyprland. It stays put if it's already over that tile, while you use the mouse or trackpad, and while Hyprmux isn't the active app. Hyprland defaults to false; macOS apps don't move the pointer on their own. |
 
 ### `app`
 

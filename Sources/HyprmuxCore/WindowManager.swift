@@ -438,12 +438,9 @@ public final class WindowManager {
     public func hoverTarget(at p: CGPoint) -> ClientID? {
         guard var id = client(at: p) else { return nil }
         if let s = specialVisible, clients[id]?.workspace != .special(s) { return nil }
-        // A preview only expands on a click or a bind: hovering it counts as its parent, or
-        // as the expanded sibling under it, which keeps focus.
-        if isCollapsedAttached(id) {
-            let parent = layoutOwner(id)
-            id = focused.flatMap { attachedParent(of: $0) == parent ? $0 : nil } ?? parent
-        }
+        // A preview only expands on a click or a bind: hovering it counts as its parent.
+        // Over an expanded sibling, that collapses the sibling.
+        if isCollapsedAttached(id) { id = layoutOwner(id) }
         return id
     }
 

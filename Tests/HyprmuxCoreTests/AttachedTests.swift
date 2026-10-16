@@ -220,7 +220,7 @@ final class AttachedTests: XCTestCase {
             let preview = try XCTUnwrap(snap.placement(other)).frame
             let center = CGPoint(x: preview.midX, y: preview.midY)
             XCTAssertEqual(wm.client(at: center), other, "a click reaches the preview over the expanded one")
-            XCTAssertEqual(wm.hoverTarget(at: center), expanded, "hovering it keeps the expanded one focused")
+            XCTAssertEqual(wm.hoverTarget(at: center), parent, "hovering it collapses the expanded one")
         }
     }
 

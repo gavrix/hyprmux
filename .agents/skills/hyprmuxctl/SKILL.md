@@ -1,6 +1,6 @@
 ---
 name: hyprmuxctl
-description: Discover, open, arrange, close, read, and control Hyprmux surfaces with hyprmuxctl. Use when coordinating work between Hyprmux terminals, opening a terminal or web tile on a workspace, moving or closing surfaces, sending commands or keys to another surface, reading rendered terminal output, or testing Hyprmux without changing focus.
+description: Discover, open, arrange, close, read, and control Hyprmux surfaces with hyprmuxctl. Use when coordinating work between Hyprmux terminals, opening a terminal or web tile on a workspace, moving or closing surfaces, sending commands or keys to another surface, reading rendered terminal output, or testing Hyprmux without changing focus. Also use it inside a Hyprmux terminal (HYPRMUX_CLIENT set) to run builds, tests, dev servers, watchers, or any long or non-exiting command as a visible background job (hyprmuxctl run, hyprmuxctl jobs) instead of blocking the shell.
 compatibility: macOS with Hyprmux running and hyprmuxctl available
 ---
 
@@ -200,8 +200,10 @@ hyprmuxctl run --reveal-after 1.5 -- npm test
 ```
 
 **Servers, watchers, and anything that doesn't exit: start a job.** Never run them in
-the foreground: your shell call would block until its timeout. `--no-wait` returns
-at once with the job's JSON; its `ref` is the job id:
+the foreground: your shell call would block until its timeout. Use a job instead of
+`&`, `nohup`, `disown`, or `setsid` too: the user sees what runs, and you can read its
+output and stop it later, from any shell call. `--no-wait` returns at once with the
+job's JSON; its `ref` is the job id:
 
 ```sh
 job=$(hyprmuxctl run --no-wait --title "dev server" -- npm run dev | jq -r .ref)

@@ -11,9 +11,14 @@ func jobsUsage() -> String {
            hyprmuxctl jobs wait <id> [--timeout <s>]
                                                  wait for it to end; exits with its status
                                                  (124 when the timeout passes first)
-           hyprmuxctl jobs log <id> [--lines <n>] [--follow] [--raw]
+           hyprmuxctl jobs log <id> [--new [--reader <name>]] [--lines <n>] [--follow] [--raw]
                                                  its output as plain text, also after it closed;
+                                                 --new: only what came since this reader's last
+                                                 --new read (reader: the calling tile), whole
+                                                 lines, then the job's state on stderr;
                                                  --follow streams it until the job ends
+           hyprmuxctl jobs send <id> <text>      type into it (\\n is Enter), to answer a prompt
+           hyprmuxctl jobs send <id> --key <key> press a key, e.g. ctrl+c or enter
            hyprmuxctl jobs stop <id>             close its terminal, which ends it
     <id> is the job's surface: 14 or surface:14.
     """
@@ -67,6 +72,43 @@ private func render(_ data: Data, raw: Bool, lines: Int?) -> String {
     return text
 }
 
+/// `jobs log --new`: output since this reader's last `--new` read, in whole lines while
+/// the job runs (a line still being written comes next time), then its state on stderr.
+/// The reader's position is a small file next to the log.
+private func readNew(_ j: [String: Any], handle: FileHandle, log: String, reader: String?,
+                     raw: Bool, lines: Int?) -> Int32 {
+    let env = ProcessInfo.processInfo.environment
+    let name = reader ?? env["HYPRMUX_SURFACE_ID"].flatMap { $0.isEmpty ? nil : $0 } ?? env["HYPRMUX_CLIENT"] ?? "default"
+    let safe = String(name.map { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" ? $0 : "_" })
+    let cursorPath = "\(log).read-\(safe)"
+    let offset = (try? String(contentsOfFile: cursorPath, encoding: .utf8)).flatMap { UInt64($0) } ?? 0
+    let size = handle.seekToEndOfFile()
+    handle.seek(toFileOffset: min(offset, size))
+    var chunk = handle.readDataToEndOfFile()
+    let running = j["state"] as? String == "running"
+    // A line still being written comes next time, unless the output stopped there: a
+    // prompt waiting for an answer has no newline, and must show.
+    let modified = (try? FileManager.default.attributesOfItem(atPath: log)[.modificationDate]) as? Date
+    let stalled = modified.map { Date().timeIntervalSince($0) >= 1 } ?? false
+    var paused = false
+    if running, chunk.last != 0x0A, !chunk.isEmpty {
+        if stalled {
+            paused = true
+        } else if let lastNewline = chunk.lastIndex(of: 0x0A) {
+            chunk = chunk.prefix(through: lastNewline)
+        } else {
+            chunk = Data()
+        }
+    }
+    try? String(min(offset, size) + UInt64(chunk.count)).write(toFile: cursorPath, atomically: true, encoding: .utf8)
+    var text = render(chunk, raw: raw, lines: lines)
+    if paused, !text.hasSuffix("\n") { text += "\n" }
+    FileHandle.standardOutput.write(Data(text.utf8))
+    let note = paused ? ", stopped mid-line: it may wait for input (jobs send)" : chunk.isEmpty ? ", no new output" : ""
+    FileHandle.standardError.write(Data("[\(summary(j))\(note)]\n".utf8))
+    return 0
+}
+
 private func parseID(_ text: String?) -> UInt64? {
     guard let text, case .success(let ref) = SurfaceReference.parse(text) else { return nil }
     return ref.raw
@@ -74,7 +116,7 @@ private func parseID(_ text: String?) -> UInt64? {
 
 func jobsCommand(_ arguments: [String]) -> Int32 {
     var rest = arguments
-    let sub = rest.first.flatMap { ["wait", "log", "stop", "list", "-h", "--help"].contains($0) ? $0 : nil } ?? "list"
+    let sub = rest.first.flatMap { ["wait", "log", "send", "stop", "list", "-h", "--help"].contains($0) ? $0 : nil } ?? "list"
     if !rest.isEmpty, rest[0] == sub { rest.removeFirst() }
     switch sub {
     case "-h", "--help":
@@ -136,10 +178,16 @@ func jobsCommand(_ arguments: [String]) -> Int32 {
         }
     case "log":
         guard let id = parseID(rest.first) else { return jobsFail("log needs a job id\n\(jobsUsage())") }
-        var lines: Int?, follow = false, raw = false
+        var lines: Int?, follow = false, raw = false, new = false
+        var reader: String?
         var i = 1
         while i < rest.count {
             switch rest[i] {
+            case "--new": new = true
+            case "--reader":
+                guard i + 1 < rest.count, !rest[i + 1].isEmpty else { return jobsFail("--reader needs a name") }
+                reader = rest[i + 1]
+                i += 1
             case "--lines":
                 guard i + 1 < rest.count, let n = Int(rest[i + 1]), n > 0 else { return jobsFail("--lines needs a count") }
                 lines = n
@@ -155,6 +203,10 @@ func jobsCommand(_ arguments: [String]) -> Int32 {
             return jobsFail("job \(id) has no log: it ran in the foreground, and its output went to its caller")
         }
         guard let handle = FileHandle(forReadingAtPath: path) else { return jobsFail("can't read \(path)") }
+        if new {
+            guard !follow else { return jobsFail("--new and --follow don't mix: --follow already shows new output") }
+            return readNew(j, handle: handle, log: path, reader: reader, raw: raw, lines: lines)
+        }
         let data = handle.readDataToEndOfFile()
         FileHandle.standardOutput.write(Data(render(data, raw: raw, lines: lines).utf8))
         guard follow else { return 0 }
@@ -180,6 +232,23 @@ func jobsCommand(_ arguments: [String]) -> Int32 {
             }
             usleep(50_000)
         }
+    case "send":
+        guard let id = parseID(rest.first), rest.count >= 2 else { return jobsFail("usage: jobs send <id> <text> | --key <key>") }
+        guard let j = job(id) else { return jobsFail("no job \(id)") }
+        guard (j["open"] as? Bool) == true else { return jobsFail("job \(id)'s terminal is closed") }
+        let line: String
+        if rest[1] == "--key" {
+            guard rest.count == 3, case .success = TerminalKey.parse(rest[2]) else {
+                return jobsFail("--key takes one key, like ctrl+c or enter")
+            }
+            line = "send-key --surface \(id) \(rest[2])"
+        } else {
+            let text = IPCText.unescape(rest.dropFirst().joined(separator: " "))
+            line = "send --surface \(id) --base64 \(Data(text.utf8).base64EncodedString())"
+        }
+        guard let reply = controlRequest(line) else { return jobsFail("can't reach Hyprmux") }
+        guard !reply.hasPrefix("error:") else { return jobsFail(reply) }
+        return 0
     case "stop":
         guard rest.count == 1, let id = parseID(rest.first) else { return jobsFail("usage: jobs stop <id>") }
         guard let j = job(id) else { return jobsFail("no job \(id)") }

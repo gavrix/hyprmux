@@ -207,7 +207,10 @@ job's JSON; its `ref` is the job id:
 
 ```sh
 job=$(hyprmuxctl run --no-wait --title "dev server" -- npm run dev | jq -r .ref)
-hyprmuxctl jobs log "$job" --lines 40            # its output so far, as plain text
+hyprmuxctl jobs log "$job" --new                 # what's new since your last --new read
+hyprmuxctl jobs log "$job" --lines 40            # the last 40 lines, read or not
+hyprmuxctl jobs send "$job" 'y\n'                # answer a prompt (\n is Enter)
+hyprmuxctl jobs send "$job" --key ctrl+c         # interrupt it
 hyprmuxctl jobs wait "$job" --timeout 120        # block until it ends; exits with its status
 hyprmuxctl jobs log "$job" --follow              # stream it until it ends
 hyprmuxctl jobs                                  # this tile's jobs: state, exit status, time
@@ -215,6 +218,9 @@ hyprmuxctl jobs stop "$job"                      # end it when you're done
 ```
 
 - Give each job a `--title`: the user sees it on the preview.
+- Check on a job with `jobs log --new`: it prints only output you haven't seen, then
+  the job's state on stderr, like `[surface:14 running]`. "stopped mid-line: it may wait
+  for input" means its last line is a prompt: answer with `jobs send`.
 - Poll a server's log for "ready" or a port before you use it.
 - Stop the jobs you started once you don't need them. A failed job's preview stays
   until someone closes it; a finished one goes after a few seconds.

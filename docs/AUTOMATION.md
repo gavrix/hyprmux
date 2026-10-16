@@ -393,6 +393,8 @@ id, the `ref` (or `id`) in that JSON:
 ```sh
 hyprmuxctl jobs                         # this tile's jobs (--all: every tile's; --json)
 hyprmuxctl jobs log surface:14 --lines 40   # its output as plain text (--raw, --follow)
+hyprmuxctl jobs log surface:14 --new    # only what's new since this reader's last --new
+hyprmuxctl jobs send surface:14 'y\n'   # type into it; --key ctrl+c presses a key
 hyprmuxctl jobs wait surface:14 --timeout 60   # exits with its status; 124 on timeout
 hyprmuxctl jobs stop surface:14         # close its terminal, which ends it
 ```
@@ -401,6 +403,13 @@ Hyprmux keeps a job's record (title, state, exit status, log path) after its ter
 closes, for the last 100 closed jobs, so `wait` and `log` still answer. States:
 `running`, `done` (exit 0), `failed`, and `stopped` (closed while it ran; `wait` exits
 129). Only `--no-wait` jobs have a log: a job `run` waits for streams to its caller.
+
+`--new` remembers each reader's position, in a file next to the log. The reader is the
+calling tile, or `--reader NAME`. While the job runs, it returns whole lines, and a
+line still being written comes next time. When the output has stopped for a second
+in the middle of a line, as at a prompt, it returns that line too. It ends with the
+job's state on stderr: `[surface:14 running]`, or
+`[surface:14 running, stopped mid-line: it may wait for input (jobs send)]`.
 The log is a file under `$TMPDIR`, left for macOS to clean up.
 
 - **The preview:** the real terminal, scaled down. The command sees the full size

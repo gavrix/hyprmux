@@ -38,6 +38,8 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
     var resumeReports: [ClientID: ResumeReport] = [:]
     /// Attached terminals' commands (Compositor+Attached.swift).
     var attachedJobs: [ClientID: AttachedJob] = [:]
+    /// Every job's record, kept after its terminal closes (`hyprmuxctl jobs`).
+    var jobs = JobBook()
     /// The open workspace picker, whose activity badges update live.
     var workspacePicker: (request: UUID, choices: [WindowManager.WorkspaceChoice])?
     /// The workspace picker's live preview (Compositor+Preview).
@@ -1268,6 +1270,8 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
                 return handleAgentReport(r)
             case .attach(let r):
                 return openAttached(r)
+            case .jobs(let parent):
+                return json(jobs.list(parent: parent.map(ClientID.init)).map(jobInfo))
             case .resume(let r):
                 let id = ClientID(r.client)
                 guard views[id]?.surface is TerminalView else { return "error: no terminal \(r.client)" }

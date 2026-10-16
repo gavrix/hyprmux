@@ -231,3 +231,41 @@ final class AttachedTests: XCTestCase {
         guard case .failure = IPCRequest.parse(#"attach {"parent": 3, "command": ""}"#) else { return XCTFail() }
     }
 }
+
+final class JobBookTests: XCTestCase {
+    func record(_ n: UInt64) -> JobRecord {
+        JobRecord(id: ClientID(n), parent: ClientID(1), title: "job \(n)", log: nil, started: Date(timeIntervalSince1970: 0))
+    }
+
+    func testStates() {
+        var book = JobBook()
+        book.started(record(2))
+        book.started(record(3))
+        book.started(record(4))
+        XCTAssertEqual(book.records[ClientID(2)]?.state, "running")
+        book.exited(ClientID(2), status: 0)
+        book.exited(ClientID(3), status: 2)
+        book.closed(ClientID(4))
+        XCTAssertEqual(book.list().map(\.state), ["done", "failed", "stopped"])
+        book.closed(ClientID(2))
+        book.exited(ClientID(4), status: 0)
+        XCTAssertEqual(book.list().map(\.state), ["done", "failed", "stopped"], "closing keeps the exit; a late exit doesn't revive")
+    }
+
+    func testClosedOnesArePrunedOldestFirst() {
+        var book = JobBook()
+        book.keepClosed = 2
+        for n in 2...5 { book.started(record(UInt64(n))) }
+        for n in 2...4 { book.closed(ClientID(UInt64(n)), at: Date(timeIntervalSince1970: Double(n))) }
+        XCTAssertEqual(book.list().map(\.id.raw), [3, 4, 5])
+    }
+
+    func testListByParent() {
+        var book = JobBook()
+        book.started(record(2))
+        book.started(JobRecord(id: ClientID(3), parent: ClientID(9), title: "", log: nil, started: Date()))
+        XCTAssertEqual(book.list(parent: ClientID(9)).map(\.id.raw), [3])
+        guard case .success(.jobs(parent: 9)) = IPCRequest.parse("jobs --parent 9") else { return XCTFail() }
+        guard case .success(.jobs(parent: nil)) = IPCRequest.parse("jobs") else { return XCTFail() }
+    }
+}

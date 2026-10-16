@@ -33,6 +33,9 @@ guard !args.isEmpty, args[0] != "-h", args[0] != "--help" else {
       run [--title <text>] [--reveal-after <s>] [--linger <s>] [--no-wait] [--] <command>
                                       run a command in a terminal attached to this tile, as a
                                       live preview on it; output streams back here (run --help)
+      jobs [--all] [--json] | jobs wait|log|stop <id> ...
+                                      background jobs (run --no-wait): list this tile's, wait for
+                                      one, read its output, or stop it (jobs --help)
       skill install|status|path|source|uninstall [--force]
                                       manage the bundled agent skill locally
       apps [list | refresh] [--json]  the apps Hyprmux can open (.hmapp bundles), load errors,
@@ -174,6 +177,10 @@ func runSkillCommand(_ arguments: [String]) throws -> Int32 {
 
 if args.first == "run" {
     exit(runCommand(Array(args.dropFirst())))
+}
+
+if args.first == "jobs" {
+    exit(jobsCommand(Array(args.dropFirst())))
 }
 
 if args.first == "skill" {

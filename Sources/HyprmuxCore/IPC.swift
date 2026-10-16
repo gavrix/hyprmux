@@ -167,16 +167,18 @@ public struct AttachRequest: Codable, Equatable, Sendable {
     /// A file the command's exit status lands in. It wins over the status Ghostty reports,
     /// which is the wrapper's (the login shell's), not the command's.
     public var statusFile: String?
+    /// The command's output log, for `jobs log` (`hyprmuxctl run` writes it).
+    public var log: String?
 
     enum CodingKeys: String, CodingKey {
-        case parent, command, cwd, env, title, owner, linger
+        case parent, command, cwd, env, title, owner, linger, log
         case revealAfter = "reveal_after"
         case statusFile = "status_file"
     }
 
     public init(parent: UInt64, command: String, cwd: String? = nil, env: [String: String]? = nil,
                 title: String? = nil, owner: Int32? = nil, revealAfter: Double? = nil, linger: Double? = nil,
-                statusFile: String? = nil) {
+                statusFile: String? = nil, log: String? = nil) {
         self.parent = parent
         self.command = command
         self.cwd = cwd
@@ -186,6 +188,7 @@ public struct AttachRequest: Codable, Equatable, Sendable {
         self.revealAfter = revealAfter
         self.linger = linger
         self.statusFile = statusFile
+        self.log = log
     }
 }
 
@@ -241,6 +244,8 @@ public enum IPCRequest: Equatable {
     case agent(AgentReport)
     /// Runs a command in a terminal attached to a tile: `attach {"parent":…, "command":…, …}`.
     case attach(AttachRequest)
+    /// Background jobs (`hyprmuxctl run`), running and finished: `jobs [--parent N]`.
+    case jobs(parent: UInt64?)
     /// Demo recordings: a caption at the top of the window. Empty clears it.
     case caption(String)
     /// Tests: performs a main-menu item by title, as a click on it would.
@@ -496,6 +501,18 @@ public enum IPCRequest: Equatable {
                 return .failure(ParseError("agent: expected JSON with client, pid, kind, and state (working, blocked, idle)"))
             }
             return .success(.agent(r))
+        case "jobs":
+            var args = words(rest)
+            var parent: UInt64?
+            switch takeOption("--parent", from: &args) {
+            case .failure(let error): return .failure(error)
+            case .success(let value?):
+                guard let n = UInt64(value) else { return .failure(ParseError("jobs: --parent takes a surface id")) }
+                parent = n
+            case .success(nil): break
+            }
+            guard args.isEmpty else { return .failure(ParseError("jobs: unexpected \(args[0])")) }
+            return .success(.jobs(parent: parent))
         case "attach":
             guard let r = try? JSONDecoder().decode(AttachRequest.self, from: Data(rest.utf8)) else {
                 return .failure(ParseError("attach: expected JSON with parent and command"))

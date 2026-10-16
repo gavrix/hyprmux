@@ -18,7 +18,8 @@ func runUsage() -> String {
       --title <text>       the preview's title (default: the command)
       --reveal-after <s>   show the preview only if it still runs after s seconds (default 0)
       --linger <s>         keep a finished preview s seconds after success (default 5; 0 keeps it)
-      --no-wait            print the attached terminal as JSON and return at once
+      --no-wait            start it as a background job: print its JSON (with its log) and
+                           return; manage it with hyprmuxctl jobs
       --raw                pass output through as is (default when stdout is a terminal);
                            otherwise escape sequences go and carriage-return redraws collapse
       --keep-pager         leave PAGER and GIT_PAGER alone (default: cat, so nothing waits)
@@ -191,7 +192,7 @@ func runCommand(_ arguments: [String]) -> Int32 {
         "env": childEnv, "title": title ?? defaultTitle(argv), "reveal_after": revealAfter,
         "status_file": statusPath,
     ]
-    if wait { request["owner"] = Int(getpid()) }
+    if wait { request["owner"] = Int(getpid()) } else { request["log"] = logPath }
     if let linger { request["linger"] = linger }
     guard let json = try? JSONSerialization.data(withJSONObject: request, options: [.sortedKeys]) else {
         return fail("can't encode the request")

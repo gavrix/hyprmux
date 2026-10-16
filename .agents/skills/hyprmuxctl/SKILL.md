@@ -188,18 +188,36 @@ App and workspace dispatchers such as `exec` and `workspace` reject `--surface`.
 
 ### Background jobs
 
-Run a long command (build, tests, dev server) with `hyprmuxctl run` instead of
-directly. It runs in a real terminal attached to your tile as a live preview the user
-can expand and type into. Its output still streams back to you, as plain text, and
-`run` exits with the command's status:
+Inside a Hyprmux terminal (`HYPRMUX_CLIENT` is set), run commands that take a while
+through `hyprmuxctl run`. Each runs in a real terminal attached to your tile, as a
+live preview the user can watch, expand, and type into.
+
+**Builds and tests: wait for them.** Prefix the command. Output streams back as plain
+text, and `run` exits with the command's status, as if it ran in place:
 
 ```sh
 hyprmuxctl run --reveal-after 1.5 -- npm test
-hyprmuxctl run --no-wait --title "dev server" -- npm run dev   # keeps running; read it later
-hyprmuxctl read-screen --surface surface:N --lines 50          # N from the JSON it printed
 ```
 
-Killing `run` ends the job. A failed job's preview stays until someone closes it.
+**Servers, watchers, and anything that doesn't exit: start a job.** Never run them in
+the foreground: your shell call would block until its timeout. `--no-wait` returns
+at once with the job's JSON; its `ref` is the job id:
+
+```sh
+job=$(hyprmuxctl run --no-wait --title "dev server" -- npm run dev | jq -r .ref)
+hyprmuxctl jobs log "$job" --lines 40            # its output so far, as plain text
+hyprmuxctl jobs wait "$job" --timeout 120        # block until it ends; exits with its status
+hyprmuxctl jobs log "$job" --follow              # stream it until it ends
+hyprmuxctl jobs                                  # this tile's jobs: state, exit status, time
+hyprmuxctl jobs stop "$job"                      # end it when you're done
+```
+
+- Give each job a `--title`: the user sees it on the preview.
+- Poll a server's log for "ready" or a port before you use it.
+- Stop the jobs you started once you don't need them. A failed job's preview stays
+  until someone closes it; a finished one goes after a few seconds.
+- `jobs log` and `jobs wait` still answer after the job's terminal closed.
+- `jobs wait` exits 124 when the timeout passes first, and 129 for a stopped job.
 
 ## Drive web tiles
 

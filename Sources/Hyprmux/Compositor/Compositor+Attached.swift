@@ -39,6 +39,7 @@ extension Compositor {
         surface.onCloseAfterExit = { [weak self] in self?.removeClient(id) }
         attachedJobs[id] = AttachedJob(linger: r.linger ?? 5, statusFile: r.statusFile)
         adopt(surface)
+        jobs.started(JobRecord(id: id, parent: parent, title: surface.title, log: r.log, started: Date()))
         let reveal = r.revealAfter ?? 0
         wm.addAttached(id, to: parent, revealed: reveal <= 0)
         if reveal > 0 {
@@ -66,6 +67,7 @@ extension Compositor {
             .flatMap { try? String(contentsOfFile: $0, encoding: .utf8) }
             .flatMap { Int($0.trimmingCharacters(in: .whitespacesAndNewlines)) } ?? reported
         s.exited(status)
+        jobs.exited(id, status: status)
         attachedJobs[id]?.owner?.cancel()
         attachedJobs[id]?.owner = nil
         log.debug("attach exited client=\(id.raw) status=\(status)")
@@ -116,6 +118,24 @@ extension Compositor {
         for child in wm.attached(to: id) { removeClient(child) }
         attachedJobs[id]?.owner?.cancel()
         attachedJobs[id] = nil
+        jobs.closed(id)
+    }
+
+    /// `hyprmuxctl jobs`: one job, open or closed.
+    func jobInfo(_ r: JobRecord) -> [String: Any] {
+        var info: [String: Any] = [
+            "id": r.id.raw, "ref": SurfaceReference(r.id.raw).description, "parent": r.parent.raw,
+            "title": r.title, "state": r.state, "open": views[r.id] != nil,
+            "started": r.started.timeIntervalSince1970,
+        ]
+        if let code = r.exitStatus { info["exitStatus"] = code }
+        if let e = r.ended { info["ended"] = e.timeIntervalSince1970 }
+        if let log = r.log { info["log"] = log }
+        if let p = wm.snapshot().placement(r.id), let a = p.attachment {
+            info["expanded"] = a.expanded
+            info["revealed"] = a.revealed
+        }
+        return info
     }
 
     /// Each layout: an attached terminal learns its expanded size and whether it's a preview.
@@ -128,6 +148,7 @@ extension Compositor {
     func attachmentInfo(_ p: Placement) -> [String: Any]? {
         guard let a = p.attachment else { return nil }
         var info: [String: Any] = ["parent": a.parent.raw, "expanded": a.expanded, "revealed": a.revealed]
+        if let log = jobs.records[p.id]?.log { info["log"] = log }
         if let s = views[p.id]?.surface as? AttachedTerminal {
             info["running"] = s.isRunning
             if let code = s.exitStatus { info["exitStatus"] = code }

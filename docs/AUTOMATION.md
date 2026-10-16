@@ -384,8 +384,24 @@ works as a drop-in prefix:
 ```sh
 hyprmuxctl run -- npm test                       # streams here; a preview shows on this tile
 hyprmuxctl run --reveal-after 1.5 -- make        # no preview if it ends within 1.5 seconds
-hyprmuxctl run --no-wait --title dev -- npm run dev   # leave it running; prints its JSON
+hyprmuxctl run --no-wait --title dev -- npm run dev   # a background job; prints its JSON
 ```
+
+A job started with `--no-wait` keeps running after `run` returns. Manage it by its
+id, the `ref` (or `id`) in that JSON:
+
+```sh
+hyprmuxctl jobs                         # this tile's jobs (--all: every tile's; --json)
+hyprmuxctl jobs log surface:14 --lines 40   # its output as plain text (--raw, --follow)
+hyprmuxctl jobs wait surface:14 --timeout 60   # exits with its status; 124 on timeout
+hyprmuxctl jobs stop surface:14         # close its terminal, which ends it
+```
+
+Hyprmux keeps a job's record (title, state, exit status, log path) after its terminal
+closes, for the last 100 closed jobs, so `wait` and `log` still answer. States:
+`running`, `done` (exit 0), `failed`, and `stopped` (closed while it ran; `wait` exits
+129). Only `--no-wait` jobs have a log: a job `run` waits for streams to its caller.
+The log is a file under `$TMPDIR`, left for macOS to clean up.
 
 - **The preview:** the real terminal, scaled down. The command sees the full size
   (the expanded frame), so nothing reflows when it expands. Previews stack down from
@@ -417,11 +433,13 @@ its own. `surfaces` lists a job with `"attached": {"parent", "expanded", "reveal
 the command in a `tool_call` handler, so it works with extensions that re-register
 bash. `PI_HYPRMUX_RUN=0` turns it off; `HYPRMUX_RUN_REVEAL_AFTER` sets the delay.
 
-On the socket, `run` sends one line and gets the job's `surfaces` entry back:
+On the socket, `run` sends one line and gets the job's `surfaces` entry back. `jobs`
+lists the records, all or one tile's:
 
 ```json
 attach {"parent": 12, "command": "...", "cwd": "...", "env": {...}, "title": "npm test",
-        "owner": 4711, "reveal_after": 1.5, "linger": 5, "status_file": "..."}
+        "owner": 4711, "reveal_after": 1.5, "linger": 5, "status_file": "...", "log": "..."}
+jobs --parent 12
 ```
 
 ## Recommended agent workflow

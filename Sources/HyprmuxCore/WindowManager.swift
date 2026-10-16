@@ -24,6 +24,8 @@ public struct WMSettings: Equatable, Sendable {
     public var autoGroup = true
     /// Names from workspace rules (`workspace = 3, defaultName:mail`).
     public var workspaceNames: [Int: String] = [:]
+    /// Attached terminals' previews (WindowManager+Attached.swift).
+    public var attached = AttachedSettings()
     public init() {}
 }
 
@@ -56,6 +58,8 @@ public struct Placement: Equatable, Sendable {
     public let z: Int
     /// Set for group members, shown or hidden.
     public var group: GroupInfo? = nil
+    /// Set for clients attached to another tile (WindowManager+Attached.swift).
+    public var attachment: AttachmentInfo? = nil
 }
 
 public struct Snapshot: Equatable, Sendable {
@@ -73,7 +77,9 @@ public struct Snapshot: Equatable, Sendable {
     /// What a workspace shows when it's active, bottom to top: its placements without
     /// the hidden tabs of its groups. For the workspace picker's preview.
     public func preview(of ws: WorkspaceID) -> [Placement] {
-        placements.filter { p in p.workspace == ws && (p.group.map { $0.active == p.id } ?? true) }
+        placements.filter { p in
+            p.workspace == ws && (p.group.map { $0.active == p.id } ?? true) && p.attachment?.revealed != false
+        }
     }
 }
 
@@ -102,6 +108,8 @@ public final class WindowManager {
         /// Where the client was tiled before it floated, to return there.
         var tiledSlot: DwindleLayout.Slot?
         var group: GroupID?
+        /// Set when the client is attached to another tile instead of placed in the layout.
+        var attachment: Attachment?
     }
 
     public var settings: WMSettings {
@@ -155,7 +163,7 @@ public final class WindowManager {
         if ws.fullscreen != nil, takesFocus { ws.fullscreen = nil }
         clients[id] = ClientState(workspace: wsID, floating: floating)
         // Opened from a focused group: become its new tab instead of a new tile.
-        if settings.autoGroup, workspace == nil, let f = focused, let gid = clients[f]?.group, let g = groups[gid],
+        if settings.autoGroup, workspace == nil, let f = focused.map(layoutOwner), let gid = clients[f]?.group, let g = groups[gid],
            clients[f]?.workspace == wsID {
             let at = g.members.firstIndex(of: g.active)! + 1
             g.members.insert(id, at: at)
@@ -188,6 +196,24 @@ public final class WindowManager {
 
     public func removeClient(_ id: ClientID) {
         guard let state = clients[id], let ws = workspaces[state.workspace] else { return }
+        if let parent = state.attachment?.parent {
+            // Not in the layout: only focus has to move, back to the parent.
+            clients[id] = nil
+            recency[id] = nil
+            if ws.lastFocused == id { ws.lastFocused = parent }
+            if focused == id {
+                focused = nil
+                focus(parent)
+            }
+            return
+        }
+        // Its attached clients go with it. The host closes their surfaces first.
+        for child in attached(to: id) {
+            clients[child] = nil
+            recency[child] = nil
+            if ws.lastFocused == child { ws.lastFocused = id }
+            if focused == child { focused = id }
+        }
         let nextTab = state.group != nil ? leaveGroup(id) : nil
         if nextTab == nil { detach(id, from: ws) }
         clients[id] = nil
@@ -203,6 +229,10 @@ public final class WindowManager {
 
     /// Focuses a client, switching to its workspace if needed.
     public func focus(_ id: ClientID) {
+        if let parent = clients[id]?.attachment?.parent, let ws = clients[parent]?.workspace {
+            clients[id]!.workspace = ws
+            if isHiddenMember(parent) { activate(parent) }
+        }
         guard let state = clients[id], let ws = workspaces[state.workspace] else { return }
         if isHiddenMember(id) { activate(id) }
         switch state.workspace {
@@ -231,7 +261,13 @@ public final class WindowManager {
     public func dispatch(_ d: Dispatcher, target: ClientID? = nil) {
         if target != nil, !d.targetsWindow { return }
         if let target, clients[target] == nil { return }
+        var target = target
+        // An attached client has no slot: layout dispatchers act on its parent's.
+        if let s = target ?? focused, let parent = clients[s]?.attachment?.parent, !actsOnAttached(d) {
+            target = parent
+        }
         let subject = target ?? focused
+        defer { syncAttachedWorkspaces() }
         switch d {
         case .exec(let cmd): perform(.spawn(command: cmd))
         case .web(let url): perform(.spawnWeb(url: url))
@@ -255,6 +291,7 @@ public final class WindowManager {
         case .splitRatio(let v, let exact): withTiledSlot(target) { $0.tiled.splitRatio($1, v, exact: exact) }
         case .cycleNext(let prev): cycleNext(previous: prev, target)
         case .focusCurrentOrLast: focusCurrentOrLast()
+        case .focusAttached: focusAttached(subject)
         case .centerWindow: centerWindow(target)
         case .submap(let name): perform(.submap(name))
         case .renameWorkspace(let n, let name): rename(n, to: name)
@@ -273,6 +310,7 @@ public final class WindowManager {
     // MARK: Snapshot
 
     public func snapshot() -> Snapshot {
+        syncAttachedWorkspaces()
         var out: [Placement] = []
         let visibleIDs = Set(visibleWorkspaces)
         for ws in workspaces.values {
@@ -311,7 +349,13 @@ public final class WindowManager {
                     floating: p.floating, fullscreen: nil, z: p.z - 1, group: info))
             }
         }
-        out.sort { $0.z < $1.z || ($0.z == $1.z && $0.id < $1.id) }
+        out += attachedPlacements(parents: out)
+        // Attached clients sit just above their parent, which has the same z.
+        out.sort { a, b in
+            if a.z != b.z { return a.z < b.z }
+            let aa = a.attachment != nil, ba = b.attachment != nil
+            return aa != ba ? ba : a.id < b.id
+        }
         var nums = Set(workspaces.keys.compactMap { id -> Int? in
             if case .regular(let n) = id, !(workspaces[id]?.isEmpty ?? true) { return n }
             return nil
@@ -391,8 +435,10 @@ public final class WindowManager {
     /// While a scratchpad is open, only its own windows qualify: the pointer crosses the
     /// regular workspace in every gap, and focusing it there would close the scratchpad.
     public func hoverTarget(at p: CGPoint) -> ClientID? {
-        guard let id = client(at: p) else { return nil }
+        guard var id = client(at: p) else { return nil }
         if let s = specialVisible, clients[id]?.workspace != .special(s) { return nil }
+        // A preview only expands on a click or a bind: hovering it counts as its parent.
+        if isCollapsedAttached(id) { id = layoutOwner(id) }
         return id
     }
 
@@ -550,7 +596,7 @@ public final class WindowManager {
     var tileArea: CGRect { workArea }
 
     func insertTiled(_ id: ClientID, into ws: Workspace, useCursor: Bool = true, focal: CGPoint? = nil) {
-        let target = ws.lastFocused.flatMap { ws.tiled.contains($0) ? $0 : nil }
+        let target = ws.lastFocused.map(layoutOwner).flatMap { ws.tiled.contains($0) ? $0 : nil }
         var focalPoint = focal
         if focalPoint == nil, useCursor, settings.dwindle.forceSplit == 0, let c = cursor, tileArea.contains(c) {
             focalPoint = c

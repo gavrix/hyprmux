@@ -83,6 +83,7 @@ extension Dispatcher {
         case .splitRatio: return "Split ratio"
         case .cycleNext(let prev): return prev ? "Previous window" : "Next window"
         case .focusCurrentOrLast: return "Last window"
+        case .focusAttached: return "Background job"
         case .centerWindow: return "Center window"
         case .submap(let s): return s == "reset" ? "Leave mode" : s.prefix(1).uppercased() + s.dropFirst() + " mode"
         case .renameWorkspace: return "Name workspace"

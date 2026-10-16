@@ -186,6 +186,21 @@ Without `--surface`, `dispatch` acts on the focused window, which may belong to 
 Use `movetoworkspacesilent` or `move-surface` to move a window without following it.
 App and workspace dispatchers such as `exec` and `workspace` reject `--surface`.
 
+### Background jobs
+
+Run a long command (build, tests, dev server) with `hyprmuxctl run` instead of
+directly. It runs in a real terminal attached to your tile as a live preview the user
+can expand and type into. Its output still streams back to you, as plain text, and
+`run` exits with the command's status:
+
+```sh
+hyprmuxctl run --reveal-after 1.5 -- npm test
+hyprmuxctl run --no-wait --title "dev server" -- npm run dev   # keeps running; read it later
+hyprmuxctl read-screen --surface surface:N --lines 50          # N from the JSON it printed
+```
+
+Killing `run` ends the job. A failed job's preview stays until someone closes it.
+
 ## Drive web tiles
 
 Drive Chromium web tiles through CDP with agent-browser or Playwright.

@@ -374,6 +374,56 @@ an empty STATE when the agent goes away. On the socket, the report is one line:
 agent {"client": 12, "pid": 4711, "kind": "claude", "state": "blocked", "message": "Allow rm?"}
 ```
 
+## Background jobs
+
+`hyprmuxctl run` runs a command in a terminal attached to the caller's tile. The
+terminal shows as a small live preview in the tile's top-right corner. The output
+also streams back to the caller, and `run` exits with the command's status, so it
+works as a drop-in prefix:
+
+```sh
+hyprmuxctl run -- npm test                       # streams here; a preview shows on this tile
+hyprmuxctl run --reveal-after 1.5 -- make        # no preview if it ends within 1.5 seconds
+hyprmuxctl run --no-wait --title dev -- npm run dev   # leave it running; prints its JSON
+```
+
+- **The preview:** the real terminal, scaled down. The command sees the full size
+  (the expanded frame), so nothing reflows when it expands. Previews stack down from
+  the corner, then leftward. They move, hide, and slide with their tile.
+- **Expand:** click a preview, or press `$mod SHIFT B` (`focusattached`). It covers
+  its tile, minus a margin, and takes the keyboard: answer a prompt, press ctrl-c.
+  Focus leaving it, or `focusattached` again, collapses it.
+- **Status:** the border pulses orange while it runs. It turns green when the command
+  succeeds, and goes after `--linger` seconds (default 5; 0 keeps it). It turns red
+  ("needs you") when the command fails, and stays until closed (`killactive`).
+- **Lifetime:** closing the tile closes its jobs. When the `run` process dies first
+  (an agent aborting a tool call, even with SIGKILL), Hyprmux closes the job's terminal,
+  which hangs up on it. `close-surface` on the job ends it.
+- **Output:** to a terminal, `run` passes the bytes as they are. To a pipe, it drops
+  escape sequences and keeps the last state of lines redrawn with a carriage return,
+  so a progress bar leaves one line. `--raw` keeps everything.
+- **Environment:** the command gets the caller's environment and directory, a real
+  terminal (`TERM` and size from the attached terminal), and `PAGER=cat` and
+  `GIT_PAGER=cat`, so nothing waits in a pager (`--keep-pager` to keep yours).
+  stdout and stderr arrive merged, as in any terminal.
+- **Outside Hyprmux** (no `HYPRMUX_CLIENT`), `run` runs the command in place.
+
+Layout dispatchers sent to a job act on its tile: a job has no place in the layout of
+its own. `surfaces` lists a job with `"attached": {"parent", "expanded", "revealed",
+"running", "exitStatus"}`, and its `status`.
+
+**pi:** `Resources/agents/pi/hyprmux-run.ts` routes pi's bash tool through
+`hyprmuxctl run --reveal-after 1.5`. Copy it to `~/.pi/agent/extensions/`. It rewrites
+the command in a `tool_call` handler, so it works with extensions that re-register
+bash. `PI_HYPRMUX_RUN=0` turns it off; `HYPRMUX_RUN_REVEAL_AFTER` sets the delay.
+
+On the socket, `run` sends one line and gets the job's `surfaces` entry back:
+
+```json
+attach {"parent": 12, "command": "...", "cwd": "...", "env": {...}, "title": "npm test",
+        "owner": 4711, "reveal_after": 1.5, "linger": 5, "status_file": "..."}
+```
+
 ## Recommended agent workflow
 
 1. Run `surfaces` and inspect `kind`, `workspace`, `title`, and `capabilities`.

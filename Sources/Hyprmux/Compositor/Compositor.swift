@@ -36,6 +36,8 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
     let apps = AppRuntime()
     /// Agents' resume reports, by terminal (see `hyprmuxctl resume`).
     var resumeReports: [ClientID: ResumeReport] = [:]
+    /// Attached terminals' commands (Compositor+Attached.swift).
+    var attachedJobs: [ClientID: AttachedJob] = [:]
     /// The open workspace picker, whose activity badges update live.
     var workspacePicker: (request: UUID, choices: [WindowManager.WorkspaceChoice])?
     /// The workspace picker's live preview (Compositor+Preview).
@@ -388,18 +390,21 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
 
     /// The terminal a surface shows: a terminal tile, or an app's terminal toplevel.
     static func terminal(in surface: Surface) -> TerminalView? {
-        (surface as? TerminalView) ?? (surface as? ClientSurface)?.terminal
+        (surface as? TerminalView) ?? (surface as? ClientSurface)?.terminal ?? (surface as? AttachedTerminal)?.terminal
     }
 
     /// A terminal surface with Hyprmux's environment, not yet managed. `id` is the tile's
     /// when the terminal fills an existing tile (an app's terminal toplevel).
-    func makeTerminal(_ options: SurfaceOptions, id: ClientID? = nil) -> TerminalView? {
+    /// `keepPath`: the options' PATH wins over Hyprmux's (a caller's environment).
+    func makeTerminal(_ options: SurfaceOptions, id: ClientID? = nil, keepPath: Bool = false) -> TerminalView? {
         guard let app = runtime.app else { return nil }
         let id = id ?? allocateID()
         var opts = options
         opts.env["HYPRMUX_CLIENT"] = "\(id.raw)"
         opts.env["HYPRMUX_SURFACE_ID"] = "\(id.raw)"
-        opts.env.merge(hyprmuxEnvironment) { _, ours in ours }
+        var ours = hyprmuxEnvironment
+        if keepPath, opts.env["PATH"] != nil { ours["PATH"] = nil }
+        opts.env.merge(ours) { _, ours in ours }
         let term = TerminalView(app: app, id: id, options: opts)
         guard term.surface != nil else {
             log.error("failed to create terminal surface")
@@ -558,6 +563,8 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
     private var followScreenGeneration = 0
 
     func removeClient(_ id: ClientID) {
+        guard views[id] != nil else { return }
+        removeAttachedClients(of: id)
         guard let v = views.removeValue(forKey: id) else { return }
         agentBrowser.tileClosed(id)
         resumeReports[id] = nil
@@ -661,11 +668,17 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
                 d.inactiveBorder = config.groupInactiveBorder
                 if let w = config.groupBorderSize { d.borderSize = w }
             }
+            if p.attachment != nil {
+                // A preview is small and sits on its parent: see-through or dimmed, it can't be read.
+                d.inactiveOpacity = d.activeOpacity
+                d.dimInactive = false
+            }
             // Hidden tabs look "active" too, so a tab switch doesn't flash dimmed content.
             let isActive = p.focused || (p.group.map { $0.members.contains(snap.focused ?? ClientID(0)) } ?? false)
             v.setDecoration(d, active: isActive, borderDuration: dur(border),
                             opacityAnimation: (dur(fadeSwitch), fadeSwitch.curve))
             updateGroupBar(v, p.group)
+            configureAttached(v, p, borderSize: CGFloat(d.borderSize))
             let before = prev?.placement(p.id)
 
             // A group switching tabs (same group, same workspace): swap instantly, like
@@ -875,8 +888,9 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
     }
 
     private func restack(_ snap: Snapshot) {
-        var order: [ObjectIdentifier: Int] = [:]
-        for p in snap.placements { if let v = views[p.id] { order[ObjectIdentifier(v)] = p.z } }
+        var order: [ObjectIdentifier: Double] = [:]
+        // An attached terminal has its parent's z and stacks just above it.
+        for p in snap.placements { if let v = views[p.id] { order[ObjectIdentifier(v)] = Double(p.z) + (p.attachment != nil ? 0.5 : 0) } }
         for v in closing.values { order[ObjectIdentifier(v)] = 20_000 }
         order[ObjectIdentifier(specialDim)] = 9_999
         order[ObjectIdentifier(hint)] = -1
@@ -1072,9 +1086,17 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
                 }
                 return e
             }
+            // A click on a preview expands it (focus does), and doesn't reach its terminal.
+            if button == 272, mods.isEmpty, let id = wm.client(at: p), wm.isCollapsedAttached(id) {
+                log.debug("focus reason=click client=\(id.raw) attached")
+                wm.focus(id)
+                apply(animated: true)
+                return nil
+            }
+            // A drag on an attached terminal moves or resizes its parent.
             guard let bind = config.binds.first(where: {
                 $0.flags.contains("m") && $0.mods == mods && $0.trigger == .mouse(button)
-            }), let id = wm.client(at: p), let v = views[id] else {
+            }), let id = wm.client(at: p).map(wm.layoutOwner), let v = views[id] else {
                 // Plain click: focus the window under the pointer (web views don't report clicks to us).
                 if let id = wm.client(at: p), id != wm.focused {
                     log.debug("focus reason=click client=\(id.raw)")
@@ -1240,6 +1262,8 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
                 return Self.performMenuItem(title) ? "ok" : "error: no enabled menu item \(title)"
             case .agent(let r):
                 return handleAgentReport(r)
+            case .attach(let r):
+                return openAttached(r)
             case .resume(let r):
                 let id = ClientID(r.client)
                 guard views[id]?.surface is TerminalView else { return "error: no terminal \(r.client)" }
@@ -1407,6 +1431,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         for (k, v) in s?.info ?? [:] { info[k] = v }
         if let a = agentInfo(p.id) { info["agent"] = a }
         if let st = views[p.id]?.status { info["status"] = st }
+        if let a = attachmentInfo(p) { info["attached"] = a }
         if let v = views[p.id], s is FindableSurface {
             info["find"] = ["open": v.isFinding, "query": v.findQuery, "status": v.findStatus]
         }
@@ -1466,7 +1491,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         return (id, surface)
     }
 
-    private func json(_ v: Any) -> String {
+    func json(_ v: Any) -> String {
         guard let d = try? JSONSerialization.data(withJSONObject: v, options: [.prettyPrinted, .sortedKeys]),
               let s = String(data: d, encoding: .utf8) else { return "error: json" }
         return s
@@ -1765,8 +1790,8 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
 }
 
 private final class ZOrder {
-    let z: [ObjectIdentifier: Int]
-    init(_ z: [ObjectIdentifier: Int]) { self.z = z }
+    let z: [ObjectIdentifier: Double]
+    init(_ z: [ObjectIdentifier: Double]) { self.z = z }
 }
 
 extension Notification.Name {

@@ -102,6 +102,9 @@ public enum Dispatcher: Equatable, Sendable {
     case splitRatio(Double, exact: Bool)
     case cycleNext(previous: Bool)
     case focusCurrentOrLast
+    /// Expand the focused tile's latest attached terminal (a background job's preview) by
+    /// focusing it, or, from an attached terminal, go back to its parent. No Hyprland equivalent.
+    case focusAttached
     case centerWindow
     case submap(String)
     /// Name a regular workspace. An empty name clears it (back to its workspace-rule name, if any).
@@ -177,6 +180,7 @@ public enum Dispatcher: Equatable, Sendable {
             return .success(.splitRatio(v, exact: false))
         case "cyclenext": return .success(.cycleNext(previous: a == "prev"))
         case "focuscurrentorlast": return .success(.focusCurrentOrLast)
+        case "focusattached": return .success(.focusAttached)
         case "centerwindow": return .success(.centerWindow)
         case "submap": return .success(.submap(a.isEmpty ? "reset" : a))
         case "renameworkspace":
@@ -219,7 +223,7 @@ extension Dispatcher {
         switch self {
         case .webNav, .find, .fillCredential, .killActive, .moveFocus, .moveWindow, .swapWindow,
              .resizeActive, .moveActive, .moveToWorkspace, .toggleFloating, .fullscreen,
-             .toggleSplit, .swapSplit, .splitRatio, .cycleNext, .centerWindow,
+             .toggleSplit, .swapSplit, .splitRatio, .cycleNext, .centerWindow, .focusAttached,
              .toggleGroup, .changeGroupActive, .moveIntoGroup, .moveOutOfGroup, .moveGroupWindow:
             return true
         case .exec, .web, .launch, .workspace, .toggleSpecialWorkspace, .focusCurrentOrLast,
@@ -277,6 +281,7 @@ extension Dispatcher {
         case .splitRatio(let v, let exact): return ("splitratio", exact ? "exact \(num(v))" : num(v))
         case .cycleNext(let prev): return ("cyclenext", prev ? "prev" : "")
         case .focusCurrentOrLast: return ("focuscurrentorlast", "")
+        case .focusAttached: return ("focusattached", "")
         case .centerWindow: return ("centerwindow", "")
         case .submap(let s): return ("submap", s)
         case .renameWorkspace(let n, let name): return ("renameworkspace", name.isEmpty ? "\(n)" : "\(n) \(name)")

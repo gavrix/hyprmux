@@ -599,6 +599,7 @@ These names work in `bind` lines and with `hyprmuxctl dispatch`.
 | `splitratio` | `±x` or `exact x` | Change that split's ratio. |
 | `cyclenext` | [`prev`] | Focus the next window on the workspace. |
 | `focuscurrentorlast` | | Focus the previously focused window. |
+| `focusattached` | | Expand the focused tile's latest background job (`hyprmuxctl run`) by focusing it; from a job, go back to its tile. See [Background jobs](AUTOMATION.md#background-jobs). |
 | `centerwindow` | | Center a floating window. |
 | `togglegroup` | | Make the focused window a group, or dissolve its group. |
 | `changegroupactive` | `f`, `b`, or `N` | Switch tabs. |

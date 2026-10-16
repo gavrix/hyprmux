@@ -69,6 +69,7 @@ extension Compositor {
     /// nothing.
     func tileStatus(_ id: ClientID) -> String? {
         if let a = agents[id] { return a.state == .idle ? nil : a.state.rawValue }
+        if let t = views[id]?.surface as? AttachedTerminal { return t.status }
         return (views[id]?.surface as? ClientSurface)?.status
     }
 

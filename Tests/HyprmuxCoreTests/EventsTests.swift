@@ -14,7 +14,7 @@ final class EventsTests: XCTestCase {
             .moveToWorkspace(.id(2), silent: false), .moveToWorkspace(.special("magic"), silent: true),
             .toggleSpecialWorkspace("special"), .toggleSpecialWorkspace("magic"), .toggleFloating,
             .fullscreen(.maximize), .fullscreen(.fullscreen), .toggleSplit, .swapSplit, .splitRatio(0.1, exact: false),
-            .splitRatio(1.5, exact: true), .cycleNext(previous: false), .cycleNext(previous: true), .focusCurrentOrLast,
+            .splitRatio(1.5, exact: true), .cycleNext(previous: false), .cycleNext(previous: true), .focusCurrentOrLast, .focusAttached,
             .centerWindow, .submap("resize"), .submap("reset"), .renameWorkspace(2, "web"), .renameWorkspace(2, ""),
             .picker(.apps), .monitorFullscreen, .toggleGroup, .changeGroupActive(.next), .changeGroupActive(.previous),
             .changeGroupActive(.index(2)), .moveIntoGroup(.right), .moveOutOfGroup, .moveGroupWindow(forward: false),

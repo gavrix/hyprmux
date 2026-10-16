@@ -30,6 +30,9 @@ guard !args.isEmpty, args[0] != "-h", args[0] != "--help" else {
                                       read the terminal's most recent mouse selection
       send [--surface <id>] <text>   type text into a terminal; reads stdin when omitted
       send-key [--surface <id>] <key>  send a terminal key, e.g. ctrl+c or enter
+      run [--title <text>] [--reveal-after <s>] [--linger <s>] [--no-wait] [--] <command>
+                                      run a command in a terminal attached to this tile, as a
+                                      live preview on it; output streams back here (run --help)
       skill install|status|path|source|uninstall [--force]
                                       manage the bundled agent skill locally
       apps [list | refresh] [--json]  the apps Hyprmux can open (.hmapp bundles), load errors,
@@ -167,6 +170,10 @@ func runSkillCommand(_ arguments: [String]) throws -> Int32 {
     default:
         throw CLIError(message: "unknown skill command \(command)\n\(skillUsage())")
     }
+}
+
+if args.first == "run" {
+    exit(runCommand(Array(args.dropFirst())))
 }
 
 if args.first == "skill" {

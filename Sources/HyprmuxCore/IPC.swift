@@ -146,6 +146,49 @@ public struct NewSurfaceRequest: Equatable, Sendable {
     }
 }
 
+/// `attach {…}`: runs a command in a terminal attached to another tile, as a preview on
+/// it (WindowManager+Attached.swift). `hyprmuxctl run` sends it.
+public struct AttachRequest: Codable, Equatable, Sendable {
+    /// The tile to attach to (the caller's `HYPRMUX_CLIENT`).
+    public var parent: UInt64
+    /// What the terminal runs, as a terminal command (`new-surface -- COMMAND`).
+    public var command: String
+    public var cwd: String?
+    /// Added to the terminal's environment. A `PATH` here wins over Hyprmux's.
+    public var env: [String: String]?
+    /// The preview's title. Nil: the terminal's own.
+    public var title: String?
+    /// The process waiting for the command. When it exits first, the terminal closes.
+    public var owner: Int32?
+    /// Seconds before the preview shows. A command that ends sooner never shows.
+    public var revealAfter: Double?
+    /// Seconds the preview stays after the command succeeds. Nil: 5. Zero or less: until closed.
+    public var linger: Double?
+    /// A file the command's exit status lands in. It wins over the status Ghostty reports,
+    /// which is the wrapper's (the login shell's), not the command's.
+    public var statusFile: String?
+
+    enum CodingKeys: String, CodingKey {
+        case parent, command, cwd, env, title, owner, linger
+        case revealAfter = "reveal_after"
+        case statusFile = "status_file"
+    }
+
+    public init(parent: UInt64, command: String, cwd: String? = nil, env: [String: String]? = nil,
+                title: String? = nil, owner: Int32? = nil, revealAfter: Double? = nil, linger: Double? = nil,
+                statusFile: String? = nil) {
+        self.parent = parent
+        self.command = command
+        self.cwd = cwd
+        self.env = env
+        self.title = title
+        self.owner = owner
+        self.revealAfter = revealAfter
+        self.linger = linger
+        self.statusFile = statusFile
+    }
+}
+
 /// `broker` subcommands: the client-protocol broker's launch agent (docs/CLIENT_PROTOCOL.md).
 public enum BrokerAction: String, Equatable, Sendable, CaseIterable {
     case status, register, unregister
@@ -196,6 +239,8 @@ public enum IPCRequest: Equatable {
     case resume(ResumeReport)
     /// An agent says what it's doing: `agent {"client":…, "pid":…, "kind":…, "state":…}`.
     case agent(AgentReport)
+    /// Runs a command in a terminal attached to a tile: `attach {"parent":…, "command":…, …}`.
+    case attach(AttachRequest)
     /// Demo recordings: a caption at the top of the window. Empty clears it.
     case caption(String)
     /// Tests: performs a main-menu item by title, as a click on it would.
@@ -451,6 +496,12 @@ public enum IPCRequest: Equatable {
                 return .failure(ParseError("agent: expected JSON with client, pid, kind, and state (working, blocked, idle)"))
             }
             return .success(.agent(r))
+        case "attach":
+            guard let r = try? JSONDecoder().decode(AttachRequest.self, from: Data(rest.utf8)) else {
+                return .failure(ParseError("attach: expected JSON with parent and command"))
+            }
+            guard !r.command.isEmpty else { return .failure(ParseError("attach: command is empty")) }
+            return .success(.attach(r))
         case "resume":
             guard let r = try? JSONDecoder().decode(ResumeReport.self, from: Data(rest.utf8)) else {
                 return .failure(ParseError("resume: expected JSON with client, pid, kind, session"))

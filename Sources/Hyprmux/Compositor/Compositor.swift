@@ -889,8 +889,12 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
 
     private func restack(_ snap: Snapshot) {
         var order: [ObjectIdentifier: Double] = [:]
-        // An attached terminal has its parent's z and stacks just above it.
-        for p in snap.placements { if let v = views[p.id] { order[ObjectIdentifier(v)] = Double(p.z) + (p.attachment != nil ? 0.5 : 0) } }
+        // An attached terminal has its parent's z and stacks just above it: an expanded
+        // one under the previews, so they stay reachable (WindowManager.snapshot).
+        for p in snap.placements {
+            guard let v = views[p.id] else { continue }
+            order[ObjectIdentifier(v)] = Double(p.z) + (p.attachment.map { $0.expanded ? 0.25 : 0.5 } ?? 0)
+        }
         for v in closing.values { order[ObjectIdentifier(v)] = 20_000 }
         order[ObjectIdentifier(specialDim)] = 9_999
         order[ObjectIdentifier(hint)] = -1

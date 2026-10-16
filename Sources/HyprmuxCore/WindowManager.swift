@@ -350,11 +350,12 @@ public final class WindowManager {
             }
         }
         out += attachedPlacements(parents: out)
-        // Attached clients sit just above their parent, which has the same z.
+        // Attached clients have their parent's z and sit just above it: the expanded one
+        // first, then the previews, so they stay reachable over it.
         out.sort { a, b in
             if a.z != b.z { return a.z < b.z }
-            let aa = a.attachment != nil, ba = b.attachment != nil
-            return aa != ba ? ba : a.id < b.id
+            let ra = a.attachment.map { $0.expanded ? 1 : 2 } ?? 0, rb = b.attachment.map { $0.expanded ? 1 : 2 } ?? 0
+            return ra != rb ? ra < rb : a.id < b.id
         }
         var nums = Set(workspaces.keys.compactMap { id -> Int? in
             if case .regular(let n) = id, !(workspaces[id]?.isEmpty ?? true) { return n }
@@ -437,8 +438,12 @@ public final class WindowManager {
     public func hoverTarget(at p: CGPoint) -> ClientID? {
         guard var id = client(at: p) else { return nil }
         if let s = specialVisible, clients[id]?.workspace != .special(s) { return nil }
-        // A preview only expands on a click or a bind: hovering it counts as its parent.
-        if isCollapsedAttached(id) { id = layoutOwner(id) }
+        // A preview only expands on a click or a bind: hovering it counts as its parent, or
+        // as the expanded sibling under it, which keeps focus.
+        if isCollapsedAttached(id) {
+            let parent = layoutOwner(id)
+            id = focused.flatMap { attachedParent(of: $0) == parent ? $0 : nil } ?? parent
+        }
         return id
     }
 

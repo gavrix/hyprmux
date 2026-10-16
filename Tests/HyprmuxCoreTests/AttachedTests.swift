@@ -207,6 +207,23 @@ final class AttachedTests: XCTestCase {
         XCTAssertEqual(wm.hoverTarget(at: center), job)
     }
 
+    func testPreviewsStayAboveExpandedSibling() throws {
+        let wm = makeWM()
+        wm.addClient(parent)
+        wm.addAttached(job, to: parent)
+        wm.addAttached(job2, to: parent)
+        for expanded in [job, job2] {
+            wm.focus(expanded)
+            let snap = wm.snapshot()
+            let other = expanded == job ? job2 : job
+            XCTAssertEqual(snap.placements.map(\.id), [parent, expanded, other])
+            let preview = try XCTUnwrap(snap.placement(other)).frame
+            let center = CGPoint(x: preview.midX, y: preview.midY)
+            XCTAssertEqual(wm.client(at: center), other, "a click reaches the preview over the expanded one")
+            XCTAssertEqual(wm.hoverTarget(at: center), expanded, "hovering it keeps the expanded one focused")
+        }
+    }
+
     func testAttachRequestParses() {
         let line = #"attach {"parent": 3, "command": "make test", "cwd": "/tmp", "owner": 42, "reveal_after": 1.5}"#
         guard case .success(.attach(let r)) = IPCRequest.parse(line) else { return XCTFail("didn't parse") }

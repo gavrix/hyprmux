@@ -392,12 +392,14 @@ id, the `ref` (or `id`) in that JSON:
 
 ```sh
 hyprmuxctl jobs                         # this tile's jobs (--all: every tile's; --json)
-hyprmuxctl jobs log surface:14 --lines 40   # its output as plain text (--raw, --follow)
+hyprmuxctl jobs log surface:14 --lines 40   # its output as plain text
 hyprmuxctl jobs log surface:14 --new    # only what's new since this reader's last --new
-hyprmuxctl jobs send surface:14 'y\n'   # type into it; --key ctrl+c presses a key
 hyprmuxctl jobs wait surface:14 --timeout 60   # exits with its status; 124 on timeout
-hyprmuxctl jobs stop surface:14         # close its terminal, which ends it
 ```
+
+A job is a terminal surface, so the usual commands type into it and stop it:
+`send --surface surface:14 'y\n'`, `send-key --surface surface:14 ctrl+c`, and
+`close-surface --surface surface:14`.
 
 Hyprmux keeps a job's record (title, state, exit status, log path) after its terminal
 closes, for the last 100 closed jobs, so `wait` and `log` still answer. States:
@@ -405,11 +407,10 @@ closes, for the last 100 closed jobs, so `wait` and `log` still answer. States:
 129). Only `--no-wait` jobs have a log: a job `run` waits for streams to its caller.
 
 `--new` remembers each reader's position, in a file next to the log. The reader is the
-calling tile, or `--reader NAME`. While the job runs, it returns whole lines, and a
-line still being written comes next time. When the output has stopped for a second
-in the middle of a line, as at a prompt, it returns that line too. It ends with the
-job's state on stderr: `[surface:14 running]`, or
-`[surface:14 running, stopped mid-line: it may wait for input (jobs send)]`.
+calling tile, or `--reader NAME`. It returns everything up to the end of the log, then
+the job's state on stderr: `[surface:14 running]`. When a running job's output ends
+in the middle of a line, as at a prompt, the state says so:
+`[surface:14 running, its last line has no newline: it may wait for input]`.
 The log is a file under `$TMPDIR`, left for macOS to clean up.
 
 - **The preview:** the real terminal, scaled down. The command sees the full size
@@ -426,7 +427,7 @@ The log is a file under `$TMPDIR`, left for macOS to clean up.
   which hangs up on it. `close-surface` on the job ends it.
 - **Output:** to a terminal, `run` passes the bytes as they are. To a pipe, it drops
   escape sequences and keeps the last state of lines redrawn with a carriage return,
-  so a progress bar leaves one line. `--raw` keeps everything.
+  so a progress bar leaves one line.
 - **Environment:** the command gets the caller's environment and directory, a real
   terminal (`TERM` and size from the attached terminal), and `PAGER=cat` and
   `GIT_PAGER=cat`, so nothing waits in a pager (`--keep-pager` to keep yours).

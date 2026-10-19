@@ -50,7 +50,9 @@ public struct PlainTextFilter {
         case .text:
             break
         }
-        if pendingCR {
+        // A CR starts the line over, unless a newline follows. A terminal turns a
+        // program's "\r\n" into "\r\r\n", so several CRs count as one.
+        if pendingCR, b != 0x0D {
             pendingCR = false
             if b != 0x0A { line.removeAll() }
         }

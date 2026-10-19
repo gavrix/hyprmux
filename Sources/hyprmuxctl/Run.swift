@@ -20,8 +20,6 @@ func runUsage() -> String {
       --linger <s>         keep a finished preview s seconds after success (default 5; 0 keeps it)
       --no-wait            start it as a background job: print its JSON (with its log) and
                            return; manage it with hyprmuxctl jobs
-      --raw                pass output through as is (default when stdout is a terminal);
-                           otherwise escape sequences go and carriage-return redraws collapse
       --keep-pager         leave PAGER and GIT_PAGER alone (default: cat, so nothing waits)
     """
 }
@@ -118,7 +116,6 @@ func runCommand(_ arguments: [String]) -> Int32 {
     var revealAfter = 0.0
     var linger: Double?
     var wait = true
-    var raw: Bool?
     var keepPager = false
     var argv: [String] = []
     var index = 0
@@ -150,7 +147,6 @@ func runCommand(_ arguments: [String]) -> Int32 {
             guard let v = value(a).flatMap(Double.init) else { return fail("--linger needs seconds") }
             linger = v
         case "--no-wait": wait = false
-        case "--raw": raw = true
         case "--keep-pager": keepPager = true
         default:
             guard !a.hasPrefix("--") else { return fail("unknown option \(a)\n\(runUsage())") }
@@ -220,7 +216,8 @@ func runCommand(_ arguments: [String]) -> Int32 {
     }
     signal(SIGPIPE, SIG_IGN)
 
-    let plain = !(raw ?? (isatty(STDOUT_FILENO) != 0))
+    // A terminal gets the bytes as they are; a pipe (an agent) gets plain text.
+    let plain = isatty(STDOUT_FILENO) == 0
     var filter = PlainTextFilter()
     guard let log = FileHandle(forReadingAtPath: logPath) else { return fail("can't read \(logPath)") }
     func pump() -> Bool {

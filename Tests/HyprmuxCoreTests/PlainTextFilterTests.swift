@@ -18,6 +18,12 @@ final class PlainTextFilterTests: XCTestCase {
         XCTAssertEqual(plain(["10%\r50%\r", "100%\r\ndone"]), "100%\ndone")
     }
 
+    func testProgramCRLFThroughATerminal() {
+        // The terminal maps the program's \n to \r\n.
+        XCTAssertEqual(plain(["\u{1B}[31mred\u{1B}[0m\r\r\n"]), "red\n")
+        XCTAssertEqual(plain(["a\r", "\r", "\nb\r\rc\n"]), "a\nc\n")
+    }
+
     func testCRLFSplitAcrossChunks() {
         XCTAssertEqual(plain(["a\r", "\nb\r\n"]), "a\nb\n")
     }

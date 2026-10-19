@@ -44,6 +44,7 @@ final class IPCServer {
 
         fd = socket(AF_UNIX, SOCK_STREAM, 0)
         guard fd >= 0 else { return nil }
+        _ = fcntl(fd, F_SETFD, FD_CLOEXEC)
         var addr = sockaddr_un()
         addr.sun_family = sa_family_t(AF_UNIX)
         _ = withUnsafeMutableBytes(of: &addr.sun_path) { buf in
@@ -78,6 +79,10 @@ final class IPCServer {
                 if errno == EINTR { continue }
                 return
             }
+            // A request can open a terminal (new-surface, attach) while this connection is
+            // open. Its process must not inherit the connection: the client would wait for
+            // the end of the reply until that process exits.
+            _ = fcntl(c, F_SETFD, FD_CLOEXEC)
             var noSigPipe: Int32 = 1
             setsockopt(c, SOL_SOCKET, SO_NOSIGPIPE, &noSigPipe, socklen_t(MemoryLayout.size(ofValue: noSigPipe)))
             var data = Data()
@@ -112,6 +117,8 @@ final class IPCServer {
             }
             reply += "\n"
             Self.writeAll(Data(reply.utf8), to: c)
+            // Ends the connection even if another process still holds it.
+            shutdown(c, SHUT_RDWR)
             close(c)
         }
     }

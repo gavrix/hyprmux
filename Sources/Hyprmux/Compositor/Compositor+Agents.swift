@@ -7,7 +7,7 @@ extension Compositor {
     /// `agent {…}` on the control socket.
     func handleAgentReport(_ r: AgentReport) -> String {
         let id = ClientID(r.client)
-        guard let term = views[id]?.surface as? TerminalView else { return "error: no terminal \(r.client)" }
+        guard let term = shellTerminal(id) else { return "error: no terminal \(r.client)" }
         // Like resume: the report counts while the agent runs in the terminal's foreground.
         guard ProcessInspector.isRunning(r.pid, inGroup: term.foregroundPID) else {
             return "error: process \(r.pid) isn't in terminal \(r.client)'s foreground"
@@ -57,7 +57,7 @@ extension Compositor {
             guard let self else { return }
             self.agentWatchScheduled = false
             let gone = self.agents.prune { id, pid in
-                guard let term = self.views[id]?.surface as? TerminalView else { return false }
+                guard let term = self.shellTerminal(id) else { return false }
                 return ProcessInspector.isRunning(pid, inGroup: term.foregroundPID)
             }
             for c in gone { self.agentChanged(c) }

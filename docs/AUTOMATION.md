@@ -434,6 +434,12 @@ The log is a file under `$TMPDIR`, left for macOS to clean up.
   stdout and stderr arrive merged, as in any terminal.
 - **Outside Hyprmux** (no `HYPRMUX_CLIENT`), `run` runs the command in place.
 
+An agent running in a job reports its state like any agent (see Agent state): its
+preview takes the color, red with a notice when it needs you. A job started through
+`run` sits behind `script(1)`, outside the terminal's foreground process group, so its
+reports don't count. An agent harness sends `attach {…}` itself, without `status_file`
+or `log`, so the agent is the terminal's foreground program.
+
 Layout dispatchers sent to a job act on its tile: a job has no place in the layout of
 its own. `surfaces` lists a job with `"attached": {"parent", "expanded", "revealed",
 "running", "exitStatus"}`, and its `status`.

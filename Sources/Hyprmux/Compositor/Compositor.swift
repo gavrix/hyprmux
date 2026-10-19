@@ -283,7 +283,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
             bar.accent = NSColor(cgColor: HyprmuxCore.Color(r: c.r, g: c.g, b: c.b, a: 1).cg) ?? bar.accent
         }
         for v in views.values {
-            (v.surface as? TerminalView)?.backdrop = runtime.backgroundColor
+            shellTerminal(v.id)?.backdrop = runtime.backgroundColor
             (v.surface as? ClientSurface)?.refreshTerminalBackdrop(runtime.backgroundColor)
             v.refreshBackdrop()
         }
@@ -393,6 +393,13 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
     /// The terminal a surface shows: a terminal tile, or an app's terminal toplevel.
     static func terminal(in surface: Surface) -> TerminalView? {
         (surface as? TerminalView) ?? (surface as? ClientSurface)?.terminal ?? (surface as? AttachedTerminal)?.terminal
+    }
+
+    /// The terminal a tile's own shell and programs run in: a terminal tile's, or an
+    /// attached terminal's. Not an app's terminal toplevel, which its app speaks for.
+    func shellTerminal(_ id: ClientID) -> TerminalView? {
+        guard let s = views[id]?.surface else { return nil }
+        return (s as? TerminalView) ?? (s as? AttachedTerminal)?.terminal
     }
 
     /// A terminal surface with Hyprmux's environment, not yet managed. `id` is the tile's
@@ -556,7 +563,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
     }
 
     private var focusedSurface: Surface? { wm.focused.flatMap { views[$0]?.surface } }
-    private var focusedTerminal: TerminalView? { focusedSurface as? TerminalView }
+    private var focusedTerminal: TerminalView? { wm.focused.flatMap(shellTerminal) }
     /// The most recently focused terminal, for inheriting cwd when spawning from a web surface.
     private weak var lastTerminal: TerminalView?
     /// Focused client as of the last updateFocus, to tell focus changes from re-applies.
@@ -998,7 +1005,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         let chord = AppChord(mods: mods, key: code)
         // Cheap check first: the foreground program is a syscall.
         guard submap == "reset", config.terminalPass.values.contains(where: { $0.contains(chord) }),
-              let f = wm.focused, let t = views[f]?.surface as? TerminalView, window.firstResponder === t,
+              let f = wm.focused, let t = shellTerminal(f), window.firstResponder === t,
               let program = t.foregroundProgramName else { return false }
         return config.terminalPass[program]?.contains(chord) ?? false
     }

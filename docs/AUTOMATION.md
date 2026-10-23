@@ -377,13 +377,13 @@ agent {"client": 12, "pid": 4711, "kind": "claude", "state": "blocked", "message
 ## Background jobs
 
 `hyprmuxctl run` runs a command in a terminal attached to the caller's tile. The
-terminal shows as a small live preview in the tile's top-right corner. The output
-also streams back to the caller, and `run` exits with the command's status, so it
-works as a drop-in prefix:
+job shows as a chip in the tile's job bar, along its bottom edge. The output also
+streams back to the caller, and `run` exits with the command's status, so it works
+as a drop-in prefix:
 
 ```sh
-hyprmuxctl run -- npm test                       # streams here; a preview shows on this tile
-hyprmuxctl run --reveal-after 1.5 -- make        # no preview if it ends within 1.5 seconds
+hyprmuxctl run -- npm test                       # streams here; a chip shows on this tile
+hyprmuxctl run --reveal-after 1.5 -- make        # no chip if it ends within 1.5 seconds
 hyprmuxctl run --no-wait --title dev -- npm run dev   # a background job; prints its JSON
 ```
 
@@ -413,15 +413,23 @@ in the middle of a line, as at a prompt, the state says so:
 `[surface:14 running, its last line has no newline: it may wait for input]`.
 The log is a file under `$TMPDIR`, left for macOS to clean up.
 
-- **The preview:** the real terminal, scaled down. The command sees the full size
-  (the expanded frame), so nothing reflows when it expands. Previews stack down from
-  the corner, then leftward. They move, hide, and slide with their tile.
-- **Expand:** click a preview, or press `$mod SHIFT B` (`focusattached`). It covers
-  its tile, minus a margin, and takes the keyboard: answer a prompt, press ctrl-c.
-  Focus leaving it, or `focusattached` again, collapses it.
-- **Status:** the border pulses orange while it runs. It turns green when the command
-  succeeds, and goes after `--linger` seconds (default 5; 0 keeps it). It turns red
-  ("needs you") when the command fails, and stays until closed (`killactive`).
+- **The job bar:** a strip along the bottom of the tile, one chip per job: a status
+  dot, the title, and the run time. The tile's content shrinks to make room, so jobs
+  never cover it. The bar goes away with the tile's last job. Jobs that need you come
+  first, then running ones, then finished ones. When chips don't fit, titles
+  truncate, then chips shrink to their dot, then the last ones go behind a `+N` chip
+  that lists them. The bar moves, hides, and slides with its tile.
+- **Peek:** hover a chip to see its job: the real terminal, scaled down, just above
+  the chip. The command sees the full size (the expanded frame), so nothing reflows
+  when it expands. The peek stays while the pointer is on it.
+- **Expand:** click a chip or a peek, or press `$mod SHIFT B` (`focusattached`). It
+  covers its tile above the job bar, minus a margin, and takes the keyboard: answer a
+  prompt, press ctrl-c. Click its chip again, move focus away, or press
+  `focusattached` again to collapse it.
+- **Status:** the chip's dot (and the job's border) is orange while it runs. It turns
+  green when the command succeeds, and the job goes after `--linger` seconds (default
+  5; 0 keeps it). It turns red ("needs you") when the command fails, and stays until
+  closed (`killactive`).
 - **Lifetime:** closing the tile closes its jobs. When the `run` process dies first
   (an agent aborting a tool call, even with SIGKILL), Hyprmux closes the job's terminal,
   which hangs up on it. `close-surface` on the job ends it.
@@ -435,14 +443,15 @@ The log is a file under `$TMPDIR`, left for macOS to clean up.
 - **Outside Hyprmux** (no `HYPRMUX_CLIENT`), `run` runs the command in place.
 
 An agent running in a job reports its state like any agent (see Agent state): its
-preview takes the color, red with a notice when it needs you. A job started through
+chip takes the color, red with a notice when it needs you. A job started through
 `run` sits behind `script(1)`, outside the terminal's foreground process group, so its
 reports don't count. An agent harness sends `attach {…}` itself, without `status_file`
 or `log`, so the agent is the terminal's foreground program.
 
 Layout dispatchers sent to a job act on its tile: a job has no place in the layout of
 its own. `surfaces` lists a job with `"attached": {"parent", "expanded", "revealed",
-"running", "exitStatus"}`, and its `status`.
+"running", "exitStatus"}`, and its `status`. A tile with a job bar lists its jobs'
+ids in bar order as `"jobs"`.
 
 **pi:** `Resources/agents/pi/hyprmux-run.ts` routes pi's bash tool through
 `hyprmuxctl run --reveal-after 1.5`. Copy it to `~/.pi/agent/extensions/`. It rewrites

@@ -60,7 +60,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
     private var closing: [ClientID: ClientView] = [:]
     private var nextID: UInt64 = 1
     private(set) var submap = "reset"
-    private var last: Snapshot?
+    private(set) var last: Snapshot?
     private var consumedKeyUps: Set<UInt16> = []
     private var monitors: [Any] = []
     private var drag: Drag?
@@ -684,7 +684,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
                 if let w = config.groupBorderSize { d.borderSize = w }
             }
             if p.attachment != nil {
-                // A preview is small and sits on its parent: see-through or dimmed, it can't be read.
+                // A peek is small and sits on its parent: see-through or dimmed, it can't be read.
                 d.inactiveOpacity = d.activeOpacity
                 d.dimInactive = false
             }
@@ -693,6 +693,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
             v.setDecoration(d, active: isActive, borderDuration: dur(border),
                             opacityAnimation: (dur(fadeSwitch), fadeSwitch.curve))
             updateGroupBar(v, p.group)
+            updateJobBar(v, p)
             configureAttached(v, p, borderSize: CGFloat(d.borderSize))
             let before = prev?.placement(p.id)
 
@@ -781,7 +782,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
     // MARK: Pointer
 
     /// Where the pointer is, in monitor coordinates.
-    private var pointerLocation: CGPoint {
+    var pointerLocation: CGPoint {
         root.convert(window.convertPoint(fromScreen: NSEvent.mouseLocation), from: nil)
     }
 
@@ -857,11 +858,13 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         }
     }
 
-    /// Titles changed: refresh the tab strips without touching layout.
+    /// Titles or statuses changed: refresh the tab strips and job bars without touching layout.
     func refreshGroupBars() {
         guard let last else { return }
-        for p in last.placements where p.group != nil {
-            if let v = views[p.id] { updateGroupBar(v, p.group) }
+        for p in last.placements where p.group != nil || p.jobs != nil {
+            guard let v = views[p.id] else { continue }
+            if p.group != nil { updateGroupBar(v, p.group) }
+            if p.jobs != nil { updateJobBar(v, p) }
         }
     }
 
@@ -906,7 +909,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
     private func restack(_ snap: Snapshot) {
         var order: [ObjectIdentifier: Double] = [:]
         // An attached terminal has its parent's z and stacks just above it: an expanded
-        // one under the previews, so they stay reachable (WindowManager.snapshot).
+        // one under a peek, so it stays reachable (WindowManager.snapshot).
         for p in snap.placements {
             guard let v = views[p.id] else { continue }
             order[ObjectIdentifier(v)] = Double(p.z) + (p.attachment.map { $0.expanded ? 0.25 : 0.5 } ?? 0)
@@ -1072,6 +1075,8 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         // when the pointer crosses into a tile (unless input:mouse_refocus is on).
         let hovered = hud.contains(p) ? nil : wm.hoverTarget(at: p)
         let target = pointerFocus.pointerMoved(over: hovered, focused: wm.focused)
+        // A peek moves no focus: it works with Hyprmux in the background too.
+        updateJobPeek(at: p)
         // Views track the mouse even while Hyprmux is in the background. Without this,
         // passing the pointer over the window from another app silently moved focus.
         guard NSApp.isActive, window.isKeyWindow else { return }
@@ -1106,7 +1111,12 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
                 }
                 return e
             }
-            // A click on a preview expands it (focus does), and doesn't reach its terminal.
+            // A click on a job's chip expands it, or collapses it when it's expanded.
+            if button == 272, mods.isEmpty, let hit = jobBarHit(at: p) {
+                clickJobBar(hit.hit, parent: hit.parent)
+                return nil
+            }
+            // A click on a peek expands it (focus does), and doesn't reach its terminal.
             if button == 272, mods.isEmpty, let id = wm.client(at: p), wm.isCollapsedAttached(id) {
                 log.debug("focus reason=click client=\(id.raw) attached")
                 wm.focus(id)
@@ -1454,6 +1464,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         if let a = agentInfo(p.id) { info["agent"] = a }
         if let st = views[p.id]?.status { info["status"] = st }
         if let a = attachmentInfo(p) { info["attached"] = a }
+        if let j = p.jobs { info["jobs"] = JobBarLayout.order(j.members, status: tileStatus).map(\.raw) }
         if let v = views[p.id], s is FindableSurface {
             info["find"] = ["open": v.isFinding, "query": v.findQuery, "status": v.findStatus]
         }

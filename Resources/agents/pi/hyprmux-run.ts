@@ -7,8 +7,8 @@
  * be answered there. pi still gets the output, as plain text, and the exit status.
  *
  * A command that ends within HYPRMUX_RUN_REVEAL_AFTER seconds (default 1.5) never
- * shows. A longer one shows as a small live preview in the tile's top-right corner:
- * click it, or press SUPER+SHIFT+B, to expand it. A success goes away after a few
+ * shows. A longer one shows as a chip in the job bar along the tile's bottom edge:
+ * hover it to peek, click it or press SUPER+SHIFT+B to expand it. A success goes away after a few
  * seconds; a failure stays until you close it. Aborting the tool call closes it.
  *
  * Outside a Hyprmux terminal, with a Hyprmux that has no `hyprmuxctl run`, or with

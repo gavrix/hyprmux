@@ -1,12 +1,13 @@
 import AppKit
 import HyprmuxCore
 
-/// A terminal attached to another tile: a command that tile started, shown on it as a
-/// small live preview (WindowManager+Attached.swift). `hyprmuxctl run` opens one.
+/// A terminal attached to another tile: a command that tile started, shown as a chip in
+/// its job bar, and as a scaled live peek on hover (WindowManager+Attached.swift).
+/// `hyprmuxctl run` opens one.
 ///
-/// The terminal keeps the size it has when expanded. As a preview, the view scales it
+/// The terminal keeps the size it has when expanded. As a peek, the view scales it
 /// down with a layer transform instead of resizing it, so the program never sees a
-/// narrow terminal and expanding doesn't reflow anything. A preview takes no clicks:
+/// narrow terminal and expanding doesn't reflow anything. A peek takes no clicks:
 /// the compositor turns a click into focus, and focus expands it.
 final class AttachedTerminal: NSView, Surface {
     let terminal: TerminalView
@@ -37,7 +38,7 @@ final class AttachedTerminal: NSView, Surface {
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { false }
 
-    /// From each layout: the expanded content size, and whether it shows as a preview.
+    /// From each layout: the expanded content size, and whether it shows as a peek.
     func configure(logicalSize: CGSize, collapsed: Bool) {
         guard logicalSize != self.logicalSize || collapsed != self.collapsed else { return }
         self.logicalSize = logicalSize
@@ -85,7 +86,7 @@ final class AttachedTerminal: NSView, Surface {
         CATransaction.commit()
     }
 
-    /// A preview takes no clicks, and its terminal doesn't see the pointer.
+    /// A peek takes no clicks, and its terminal doesn't see the pointer.
     override func hitTest(_ point: NSPoint) -> NSView? {
         guard collapsed else { return super.hitTest(point) }
         return frame.contains(point) ? self : nil

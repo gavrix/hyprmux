@@ -2,7 +2,7 @@ import AppKit
 import HyprmuxCore
 
 /// One managed window: the decorated frame (see `DecoratedView`) around a surface,
-/// plus the inactive dim and the group tab strip.
+/// plus the inactive dim, the group tab strip, and the job bar.
 ///
 /// During geometry animations the terminal jumps to its final size once and the
 /// clip animates around it. That avoids sending a resize to the shell every frame.
@@ -34,6 +34,11 @@ final class ClientView: DecoratedView, FindBarHost {
     private var barHeight: CGFloat { groupBar == nil ? 0 : groupBarHeight }
     private var groupBarHeight: CGFloat = 20
     var onSelectTab: ((Int) -> Void)?
+
+    /// Background jobs along the bottom, inside the rounded clip below the content.
+    private var jobBar: JobBarView?
+    private var jobBarHeight: CGFloat = 0
+    var onJobBarExit: (() -> Void)?
 
     /// Find bar along the bottom, for surfaces that can search. Made on first use.
     private var findBar: FindBar?
@@ -119,11 +124,57 @@ final class ClientView: DecoratedView, FindBarHost {
         if heightChanged || bar.frame.height != style.height { layoutContent() }
     }
 
+    /// Shows (or removes, with nil) the job bar. The content shrinks to make room.
+    func setJobBar(_ chips: [JobChip]?, expanded: ClientID?, peeked: ClientID?, height: CGFloat, style: GroupBarStyle) {
+        guard let chips, !chips.isEmpty, height > 0 else {
+            if let bar = jobBar {
+                bar.removeFromSuperview()
+                jobBar = nil
+                jobBarHeight = 0
+                layoutContent()
+            }
+            return
+        }
+        let bar: JobBarView
+        var created = false
+        if let existing = jobBar {
+            bar = existing
+        } else {
+            created = true
+            bar = JobBarView()
+            bar.onPointerExit = { [weak self] in self?.onJobBarExit?() }
+            // Above the inactive dim: the bar stays readable while one of its jobs has focus.
+            clip.addSubview(bar, positioned: .above, relativeTo: dimView)
+            jobBar = bar
+        }
+        bar.update(chips: chips, expanded: expanded, peeked: peeked, style: style)
+        if jobBarHeight != height || created {
+            jobBarHeight = height
+            layoutContent()
+        }
+    }
+
+    /// What's under `p` (in `view`'s coordinates) in the job bar, with the rect in `view`'s.
+    func jobBarHit(at p: CGPoint, in view: NSView) -> JobBarView.Hit? {
+        guard let bar = jobBar, !bar.isHidden else { return nil }
+        switch bar.hit(bar.convert(p, from: view)) {
+        case .chip(let id, let r): return .chip(id, bar.convert(r, to: view))
+        case .overflow(let ids, let r): return .overflow(ids, bar.convert(r, to: view))
+        case nil: return nil
+        }
+    }
+
+    /// A job's chip, in `view`'s coordinates.
+    func jobChipRect(_ id: ClientID, in view: NSView) -> CGRect? {
+        guard let bar = jobBar, let r = bar.rect(of: id) else { return nil }
+        return bar.convert(r, to: view)
+    }
+
     override func targetFrameDidChange() { layoutContent() }
 
     /// Laid out for the target frame, so they don't move while the chrome animates.
     override var layersOutsideChromeAnimation: [CALayer] {
-        [surface.view.layer, groupBar?.layer, findBar?.layer].compactMap { $0 }
+        [surface.view.layer, groupBar?.layer, jobBar?.layer, findBar?.layer].compactMap { $0 }
     }
 
     /// Sizes the content (and tab strip) for the current target frame.
@@ -140,7 +191,11 @@ final class ClientView: DecoratedView, FindBarHost {
         // A browser's address bar sits at the top of the content when there are no tabs.
         (surface as? BrowserSurface)?.topCornerInset = bh > 0 ? 0 : CGFloat(RoundedShape.edgeInset(
             radius: Double(innerR), power: Double(decoration.roundingPower), depth: 15))
-        let content = CGRect(x: 0, y: bh, width: w, height: h - bh)
+        let jh = min(jobBarHeight, max(0, h - bh - 1))
+        jobBar?.frame = CGRect(x: 0, y: h - jh, width: w, height: jh)
+        jobBar?.sideInset = CGFloat(RoundedShape.edgeInset(
+            radius: Double(innerR), power: Double(decoration.roundingPower), depth: Double(jh) / 2))
+        let content = CGRect(x: 0, y: bh, width: w, height: h - bh - jh)
         if surface.view.frame != content { surface.view.frame = content }
         // Over the bottom of the content, so the terminal doesn't resize when it opens.
         findBar?.frame = CGRect(x: 0, y: content.maxY - FindBar.height, width: w, height: FindBar.height)

@@ -28,7 +28,7 @@ public struct WMSettings: Equatable, Sendable {
     public var autoGroup = true
     /// Names from workspace rules (`workspace = 3, defaultName:mail`).
     public var workspaceNames: [Int: String] = [:]
-    /// Attached terminals' previews (WindowManager+Attached.swift).
+    /// Attached terminals: job bar and peeks (WindowManager+Attached.swift).
     public var attached = AttachedSettings()
     public init() {}
 }
@@ -64,6 +64,8 @@ public struct Placement: Equatable, Sendable {
     public var group: GroupInfo? = nil
     /// Set for clients attached to another tile (WindowManager+Attached.swift).
     public var attachment: AttachmentInfo? = nil
+    /// Set for a tile with revealed attached clients: its job bar.
+    public var jobs: JobBarInfo? = nil
 }
 
 public struct Snapshot: Equatable, Sendable {
@@ -111,10 +113,10 @@ public struct Snapshot: Equatable, Sendable {
     }
 
     /// What a workspace shows when it's active, bottom to top: its placements without
-    /// the hidden tabs of its groups. For the workspace picker's preview.
+    /// the hidden tabs of its groups, or collapsed jobs. For the workspace picker's preview.
     public func preview(of ws: WorkspaceID) -> [Placement] {
         placements.filter { p in
-            p.workspace == ws && (p.group.map { $0.active == p.id } ?? true) && p.attachment?.revealed != false
+            p.workspace == ws && (p.group.map { $0.active == p.id } ?? true) && p.attachment?.expanded != false
         }
     }
 }
@@ -171,6 +173,8 @@ public final class WindowManager {
     var clients: [ClientID: ClientState] = [:]
     var workspaces: [WorkspaceID: Workspace] = [:]
     var recency: [ClientID: Int] = [:]
+    /// The job peeked at from its tile's job bar (WindowManager+Attached.swift).
+    var peek: Peek?
     var groups: [GroupID: Group] = [:]
     var nextGroupID: UInt64 = 1
     /// Workspaces a session or layout is filling in. They look empty until their tree is
@@ -241,6 +245,7 @@ public final class WindowManager {
             // Not in the layout: only focus has to move, back to the parent.
             clients[id] = nil
             recency[id] = nil
+            if peek?.id == id { peek = nil }
             if ws.lastFocused == id { ws.lastFocused = parent }
             if focused == id {
                 focused = nil
@@ -270,6 +275,7 @@ public final class WindowManager {
 
     /// Focuses a client, switching to its workspace if needed.
     public func focus(_ id: ClientID) {
+        if peek?.id == id { peek = nil }
         if let parent = clients[id]?.attachment?.parent, let ws = clients[parent]?.workspace {
             clients[id]!.workspace = ws
             if isHiddenMember(parent) { activate(parent) }
@@ -392,9 +398,9 @@ public final class WindowManager {
                     floating: p.floating, fullscreen: nil, z: p.z - 1, group: info))
             }
         }
-        out += attachedPlacements(parents: out)
+        addAttachedPlacements(&out)
         // Attached clients have their parent's z and sit just above it: the expanded one
-        // first, then the previews, so they stay reachable over it.
+        // first, then a peek.
         out.sort { a, b in
             if a.z != b.z { return a.z < b.z }
             let ra = a.attachment.map { $0.expanded ? 1 : 2 } ?? 0, rb = b.attachment.map { $0.expanded ? 1 : 2 } ?? 0
@@ -480,7 +486,7 @@ public final class WindowManager {
     public func hoverTarget(at p: CGPoint) -> ClientID? {
         guard var id = client(at: p) else { return nil }
         if let s = specialVisible, clients[id]?.workspace != .special(s) { return nil }
-        // A preview only expands on a click or a bind: hovering it counts as its parent.
+        // A peek only expands on a click or a bind: hovering it counts as its parent.
         // Over an expanded sibling, that collapses the sibling.
         if isCollapsedAttached(id) { id = layoutOwner(id) }
         return id

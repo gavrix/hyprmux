@@ -15,40 +15,23 @@ final class AttachedTests: XCTestCase {
 
     let parent = ClientID(1), other = ClientID(2), job = ClientID(3), job2 = ClientID(4)
 
-    func testPreviewSitsInParentsTopRightCornerAboveIt() throws {
-        let wm = makeWM()
-        wm.addClient(parent)
-        wm.addAttached(job, to: parent)
-        let snap = wm.snapshot()
-        let p = try XCTUnwrap(snap.placement(parent))
-        let a = try XCTUnwrap(snap.placement(job))
-        XCTAssertEqual(wm.focused, parent, "attaching doesn't take focus")
-        XCTAssertTrue(a.visible)
-        XCTAssertEqual(a.attachment?.parent, parent)
-        XCTAssertEqual(a.attachment?.expanded, false)
-        XCTAssertTrue(p.frame.contains(a.frame))
-        XCTAssertEqual(a.frame.maxX, p.frame.maxX - 12)
-        XCTAssertEqual(a.frame.minY, p.frame.minY + 12)
-        // Content scales uniformly from the expanded frame.
-        let e = try XCTUnwrap(a.attachment?.expandedFrame)
-        XCTAssertEqual(a.frame.width - 4, ((e.width - 4) * 0.25).rounded())
-        XCTAssertEqual(a.frame.height - 4, ((e.height - 4) * 0.25).rounded())
-        XCTAssertEqual(snap.placements.last?.id, job, "stacks just above its parent")
-        XCTAssertEqual(wm.workspace(of: job), .regular(1))
-    }
-
-    func testSecondPreviewStacksBelowFirst() throws {
+    func testJobGetsAChipInItsParentsJobBar() throws {
         let wm = makeWM()
         wm.addClient(parent)
         wm.addAttached(job, to: parent)
         wm.addAttached(job2, to: parent)
         let snap = wm.snapshot()
-        let a = try XCTUnwrap(snap.placement(job)), b = try XCTUnwrap(snap.placement(job2))
-        XCTAssertEqual(b.frame.minX, a.frame.minX)
-        XCTAssertEqual(b.frame.minY, a.frame.maxY + 8)
+        let p = try XCTUnwrap(snap.placement(parent))
+        let a = try XCTUnwrap(snap.placement(job))
+        XCTAssertEqual(wm.focused, parent, "attaching doesn't take focus")
+        XCTAssertEqual(p.jobs, JobBarInfo(members: [job, job2], expanded: nil, peeked: nil, height: 22))
+        XCTAssertFalse(a.visible, "a collapsed job is only its chip")
+        XCTAssertEqual(a.attachment?.parent, parent)
+        XCTAssertEqual(a.attachment?.expanded, false)
+        XCTAssertEqual(wm.workspace(of: job), .regular(1))
     }
 
-    func testPreviewIsNotInLayout() {
+    func testJobIsNotInLayout() {
         let wm = makeWM()
         wm.addClient(parent)
         wm.addAttached(job, to: parent)
@@ -57,38 +40,102 @@ final class AttachedTests: XCTestCase {
         XCTAssertEqual(wm.snapshot().placement(parent)?.frame.width, 800)
     }
 
-    func testUnrevealedPreviewIsHiddenAndTakesNoSlot() throws {
+    func testUnrevealedJobHasNoChip() {
         let wm = makeWM()
         wm.addClient(parent)
         wm.addAttached(job, to: parent, revealed: false)
-        wm.addAttached(job2, to: parent)
-        var snap = wm.snapshot()
-        XCTAssertEqual(snap.placement(job)?.visible, false)
-        XCTAssertEqual(snap.preview(of: .regular(1)).map(\.id), [parent, job2])
-        let first = try XCTUnwrap(snap.placement(job2)).frame
-        XCTAssertEqual(first.minY, 12, "the hidden one leaves the first slot free")
+        XCTAssertNil(wm.snapshot().placement(parent)?.jobs, "no bar without a revealed job")
+        wm.peekAttached(job)
+        XCTAssertNil(wm.peekedAttached, "nothing to peek at")
         wm.setAttachedRevealed(job, true)
-        snap = wm.snapshot()
-        XCTAssertEqual(snap.placement(job)?.visible, true)
-        XCTAssertEqual(snap.placement(job)?.frame.minY, 12)
+        XCTAssertEqual(wm.snapshot().placement(parent)?.jobs?.members, [job])
     }
 
-    func testFocusExpandsAndLeavingCollapses() throws {
+    func testBarIsAtMostHalfASmallTile() throws {
+        let wm = makeWM()
+        wm.monitor = CGRect(x: 0, y: 0, width: 400, height: 30)
+        wm.addClient(parent)
+        wm.addAttached(job, to: parent)
+        XCTAssertEqual(try XCTUnwrap(wm.snapshot().placement(parent)?.jobs).height, 13)
+    }
+
+    func testPeekSitsAboveTheBarOnItsChip() throws {
+        let wm = makeWM()
+        wm.addClient(parent)
+        wm.addAttached(job, to: parent)
+        XCTAssertTrue(wm.peekAttached(job, anchorX: 500))
+        XCTAssertFalse(wm.peekAttached(job, anchorX: 500), "no change")
+        var snap = wm.snapshot()
+        let p = try XCTUnwrap(snap.placement(parent))
+        var a = try XCTUnwrap(snap.placement(job))
+        XCTAssertTrue(a.visible)
+        XCTAssertEqual(a.attachment?.peeked, true)
+        XCTAssertEqual(p.jobs?.peeked, job)
+        let bar = WindowManager.jobBarFrame(parent: p.frame, height: 22, border: 2)
+        XCTAssertEqual(bar, CGRect(x: 2, y: 976, width: 1596, height: 22))
+        XCTAssertEqual(a.frame.maxY, bar.minY - 8)
+        XCTAssertEqual(a.frame.midX, 500, accuracy: 1)
+        // Content scales uniformly from the expanded frame.
+        let e = try XCTUnwrap(a.attachment?.expandedFrame)
+        XCTAssertEqual(a.frame.width - 4, ((e.width - 4) * 0.4).rounded())
+        XCTAssertEqual(a.frame.height - 4, ((e.height - 4) * 0.4).rounded())
+        XCTAssertEqual(snap.placements.last?.id, job, "stacks just above its parent")
+
+        wm.peekAttached(job, anchorX: 1590)
+        a = try XCTUnwrap(wm.snapshot().placement(job))
+        XCTAssertEqual(a.frame.maxX, p.frame.maxX - 2 - 8, "kept inside the tile")
+        XCTAssertTrue(wm.peekAttached(nil))
+        snap = wm.snapshot()
+        XCTAssertEqual(snap.placement(job)?.visible, false)
+        XCTAssertNil(snap.placement(parent)?.jobs?.peeked)
+    }
+
+    func testExpandedJobLeavesTheBarClear() throws {
         let wm = makeWM()
         wm.addClient(parent)
         wm.addClient(other)
         wm.focus(parent)
         wm.addAttached(job, to: parent)
         wm.focus(job)
-        var a = try XCTUnwrap(wm.snapshot().placement(job))
+        var snap = wm.snapshot()
+        var a = try XCTUnwrap(snap.placement(job))
+        let p = try XCTUnwrap(snap.placement(parent))
         XCTAssertEqual(a.attachment?.expanded, true)
+        XCTAssertTrue(a.visible)
         XCTAssertEqual(a.frame, a.attachment?.expandedFrame)
-        let p = try XCTUnwrap(wm.snapshot().placement(parent))
-        XCTAssertEqual(a.frame, p.frame.insetBy(dx: 24, dy: 24))
+        XCTAssertEqual(p.jobs?.expanded, job)
+        var area = p.frame
+        area.size.height -= 22
+        XCTAssertEqual(a.frame, area.insetBy(dx: 24, dy: 24))
         wm.focus(other)
-        a = try XCTUnwrap(wm.snapshot().placement(job))
+        snap = wm.snapshot()
+        a = try XCTUnwrap(snap.placement(job))
         XCTAssertEqual(a.attachment?.expanded, false)
-        XCTAssertLessThan(a.frame.width, p.frame.width / 2)
+        XCTAssertFalse(a.visible)
+        XCTAssertNil(snap.placement(parent)?.jobs?.expanded)
+    }
+
+    func testFocusEndsThePeek() throws {
+        let wm = makeWM()
+        wm.addClient(parent)
+        wm.addAttached(job, to: parent)
+        wm.peekAttached(job, anchorX: 100)
+        wm.focus(job)
+        XCTAssertNil(wm.peekedAttached)
+        XCTAssertEqual(wm.snapshot().placement(job)?.attachment?.peeked, false)
+        wm.focus(parent)
+        XCTAssertEqual(wm.snapshot().placement(job)?.visible, false, "collapsing doesn't bring the peek back")
+    }
+
+    func testWorkspacePreviewLeavesOutCollapsedJobs() {
+        let wm = makeWM()
+        wm.addClient(parent)
+        wm.addAttached(job, to: parent)
+        wm.addAttached(job2, to: parent)
+        wm.peekAttached(job2)
+        XCTAssertEqual(wm.snapshot().preview(of: .regular(1)).map(\.id), [parent])
+        wm.focus(job)
+        XCTAssertEqual(wm.snapshot().preview(of: .regular(1)).map(\.id), [parent, job])
     }
 
     func testFocusAttachedToggles() {
@@ -124,7 +171,9 @@ final class AttachedTests: XCTestCase {
         XCTAssertEqual(wm.workspace(of: job), .regular(2), "follows its parent")
         XCTAssertEqual(wm.snapshot().placement(job)?.visible, false)
         wm.dispatch(.workspace(.id(2)))
-        XCTAssertEqual(wm.snapshot().placement(job)?.visible, true)
+        let p = wm.snapshot().placement(parent)
+        XCTAssertEqual(p?.visible, true)
+        XCTAssertEqual(p?.jobs?.members, [job], "its job bar went along")
     }
 
     func testKillActiveClosesAttachedItself() {
@@ -175,6 +224,7 @@ final class AttachedTests: XCTestCase {
         wm.dispatch(.toggleGroup)
         wm.addClient(other)  // joins the group as the shown tab
         wm.addAttached(job, to: parent)
+        wm.peekAttached(job)
         XCTAssertEqual(wm.snapshot().placement(job)?.visible, false)
         wm.focus(job)
         let snap = wm.snapshot()
@@ -182,23 +232,26 @@ final class AttachedTests: XCTestCase {
         XCTAssertEqual(snap.placement(job)?.visible, true)
     }
 
-    func testFullscreenParentCarriesPreview() throws {
+    func testFullscreenParentCarriesItsJobs() throws {
         let wm = makeWM()
         wm.addClient(parent)
         wm.addClient(other)
         wm.focus(parent)
         wm.addAttached(job, to: parent)
         wm.dispatch(.fullscreen(.fullscreen))
+        wm.peekAttached(job)
         let snap = wm.snapshot()
         let p = try XCTUnwrap(snap.placement(parent)), a = try XCTUnwrap(snap.placement(job))
         XCTAssertEqual(a.z, p.z)
-        XCTAssertEqual(a.frame.maxX, p.frame.maxX - 12)
+        XCTAssertEqual(p.jobs?.members, [job])
+        XCTAssertEqual(a.frame.maxX, p.frame.maxX - 10)
     }
 
-    func testHoverOverPreviewTargetsParent() throws {
+    func testHoverOverPeekTargetsParent() throws {
         let wm = makeWM()
         wm.addClient(parent)
         wm.addAttached(job, to: parent)
+        wm.peekAttached(job)
         let a = try XCTUnwrap(wm.snapshot().placement(job))
         let center = CGPoint(x: a.frame.midX, y: a.frame.midY)
         XCTAssertEqual(wm.client(at: center), job, "clicks reach it")
@@ -207,21 +260,19 @@ final class AttachedTests: XCTestCase {
         XCTAssertEqual(wm.hoverTarget(at: center), job)
     }
 
-    func testPreviewsStayAboveExpandedSibling() throws {
+    func testPeekStaysAboveExpandedSibling() throws {
         let wm = makeWM()
         wm.addClient(parent)
         wm.addAttached(job, to: parent)
         wm.addAttached(job2, to: parent)
-        for expanded in [job, job2] {
-            wm.focus(expanded)
-            let snap = wm.snapshot()
-            let other = expanded == job ? job2 : job
-            XCTAssertEqual(snap.placements.map(\.id), [parent, expanded, other])
-            let preview = try XCTUnwrap(snap.placement(other)).frame
-            let center = CGPoint(x: preview.midX, y: preview.midY)
-            XCTAssertEqual(wm.client(at: center), other, "a click reaches the preview over the expanded one")
-            XCTAssertEqual(wm.hoverTarget(at: center), parent, "hovering it collapses the expanded one")
-        }
+        wm.focus(job)
+        wm.peekAttached(job2, anchorX: 800)
+        let snap = wm.snapshot()
+        XCTAssertEqual(snap.placements.map(\.id), [parent, job, job2])
+        let peek = try XCTUnwrap(snap.placement(job2)).frame
+        let center = CGPoint(x: peek.midX, y: peek.midY)
+        XCTAssertEqual(wm.client(at: center), job2, "a click reaches the peek over the expanded one")
+        XCTAssertEqual(wm.hoverTarget(at: center), parent)
     }
 
     func testAttachRequestParses() {
@@ -229,6 +280,49 @@ final class AttachedTests: XCTestCase {
         guard case .success(.attach(let r)) = IPCRequest.parse(line) else { return XCTFail("didn't parse") }
         XCTAssertEqual(r, AttachRequest(parent: 3, command: "make test", cwd: "/tmp", owner: 42, revealAfter: 1.5))
         guard case .failure = IPCRequest.parse(#"attach {"parent": 3, "command": ""}"#) else { return XCTFail() }
+    }
+}
+
+final class JobBarLayoutTests: XCTestCase {
+    func testFitsAtFullWidth() {
+        let l = JobBarLayout(natural: [100, 50], available: 300)
+        XCTAssertEqual(l.style, .full)
+        XCTAssertEqual(l.frames, [0...100, 104...154])
+        XCTAssertNil(l.overflow)
+    }
+
+    func testWidestTitlesTruncateFirst() {
+        let l = JobBarLayout(natural: [300, 50, 200], available: 358)
+        XCTAssertEqual(l.style, .full)
+        XCTAssertEqual(l.frames.map { $0.upperBound - $0.lowerBound }, [150, 50, 150])
+    }
+
+    func testDotsWhenTitlesGetTooNarrow() {
+        let l = JobBarLayout(natural: Array(repeating: 120, count: 10), available: 300)
+        XCTAssertEqual(l.style, .dot)
+        XCTAssertEqual(l.frames.count, 10)
+        XCTAssertEqual(l.frames.last, 216...236)
+        XCTAssertEqual(l.hidden, 0)
+    }
+
+    func testOverflowAfterDots() {
+        let l = JobBarLayout(natural: Array(repeating: 120, count: 30), available: 200, overflowWidth: { _ in 30 })
+        XCTAssertEqual(l.style, .dot)
+        XCTAssertEqual(l.frames.count, 7, "7 × 24 + 30 fits 200")
+        XCTAssertEqual(l.hidden, 23)
+        XCTAssertEqual(l.overflow, 168...198)
+    }
+
+    func testOrderPutsAttentionFirst() {
+        let status: [UInt64: String] = [1: "done", 2: "working", 3: "blocked", 4: "working"]
+        let ids = [1, 2, 3, 4, 5].map { ClientID(UInt64($0)) }
+        XCTAssertEqual(JobBarLayout.order(ids) { status[$0.raw] }.map(\.raw), [3, 2, 4, 5, 1])
+    }
+
+    func testElapsed() {
+        XCTAssertEqual(JobBarLayout.elapsed(8.9), "8s")
+        XCTAssertEqual(JobBarLayout.elapsed(72), "1m12s")
+        XCTAssertEqual(JobBarLayout.elapsed(3600 + 180 + 5), "1h03m")
     }
 }
 

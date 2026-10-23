@@ -190,7 +190,7 @@ App and workspace dispatchers such as `exec` and `workspace` reject `--surface`.
 
 Inside a Hyprmux terminal (`HYPRMUX_CLIENT` is set), run commands that take a while
 through `hyprmuxctl run`. Each runs in a real terminal attached to your tile, as a
-live preview the user can watch, expand, and type into.
+chip in its job bar the user can peek at, expand, and type into.
 
 **Builds and tests: wait for them.** Prefix the command. Output streams back as plain
 text, and `run` exits with the command's status, as if it ran in place:
@@ -216,12 +216,12 @@ hyprmuxctl send-key --surface "$job" ctrl+c      # interrupt it
 hyprmuxctl close-surface --surface "$job"        # end it when you're done
 ```
 
-- Give each job a `--title`: the user sees it on the preview.
+- Give each job a `--title`: the user sees it on the job's chip.
 - Check on a job with `jobs log --new`: it prints only output you haven't seen, then
   the job's state on stderr, like `[surface:14 running]`. "its last line has no newline:
   it may wait for input" usually means a prompt: answer it with `send --surface`.
 - Poll a server's log for "ready" or a port before you use it.
-- Stop the jobs you started once you don't need them. A failed job's preview stays
+- Stop the jobs you started once you don't need them. A failed job's chip stays
   until someone closes it; a finished one goes after a few seconds.
 - `jobs log` and `jobs wait` still answer after the job's terminal closed.
 - `jobs wait` exits 124 when the timeout passes first, and 129 for a stopped job.

@@ -69,6 +69,12 @@ every change:
 | `submap` | `NAME` | A bind submap started. Empty when it ends (`reset`). |
 | `configreloaded` | (empty) | The config was reloaded. |
 
+When a workspace closes and the ones after it shift down (`hyprmux:compact_workspaces`),
+the events describe the new numbers. Each window on a shifted workspace gets
+`movewindow` with its new number, and a name that moved gets `renameworkspace`.
+The last number gets `destroyworkspace`. If the shown workspace shifted, `workspace`
+and `workspacev2` report its new number, though it's the same workspace.
+
 These are Hyprmux's own:
 
 | Event | Data | When |

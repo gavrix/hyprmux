@@ -109,6 +109,9 @@ final class WindowManagerTests: XCTestCase {
         s.gapsIn = .zero
         s.gapsOut = .zero
         s.dwindle.forceSplit = 2
+        // Fixed numbers, as in Hyprland: these tests pick numbers with gaps.
+        // CompactWorkspaceTests covers `compactWorkspaces`.
+        s.compactWorkspaces = false
         return WindowManager(monitor: CGRect(x: 0, y: 0, width: 1600, height: 1000), settings: s)
     }
 

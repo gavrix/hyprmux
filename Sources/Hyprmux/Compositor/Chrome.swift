@@ -24,25 +24,46 @@ final class CompositorView: FlippedView {
 
 /// A minimal waybar-like strip: workspaces on the left, focused title in the middle.
 /// A workspace with tiles doing something shows their counts at the end of its pill
-/// (ActivityBadge), and the pill grows to make room.
+/// (ActivityBadge), and the pill grows to make room. Pills that don't fit scroll like
+/// tabs (PillStrip): the active one stays in view, and a count marks each clipped edge.
 final class BarView: NSView, NSViewToolTipOwner {
     var leadingInset: CGFloat = 0 { didSet { if leadingInset != oldValue { pillsChanged() } } }
     var workspaces: [Int] = [] { didSet { if workspaces != oldValue { pillsChanged() } } }
     /// Workspace names, shown after the number (the number always stays, for ⌘1…9).
     var names: [Int: String] = [:] { didSet { if names != oldValue { pillsChanged() } } }
     var active = 1 { didSet { if active != oldValue { pillsChanged() } } }
-    var special: String? { didSet { if special != oldValue { needsDisplay = true } } }
+    var special: String? { didSet { if special != oldValue { pillsChanged() } } }
     var title = "" { didSet { if title != oldValue { needsDisplay = true } } }
-    var submap = "reset" { didSet { if submap != oldValue { needsDisplay = true } } }
+    var submap = "reset" { didSet { if submap != oldValue { pillsChanged() } } }
     var accent = NSColor(srgbRed: 0.2, green: 0.8, blue: 1, alpha: 1)
     var onSelectWorkspace: ((Int) -> Void)?
     /// The area the workspace pills cover, in the bar's coordinates. Called when it changes.
     var onPillsFrame: ((CGRect) -> Void)?
     /// What each workspace's tiles are doing. Workspaces with nothing going on are absent.
-    var activity: [Int: WorkspaceActivity] = [:] { didSet { if activity != oldValue { activityChanged(from: oldValue) } } }
+    var activity: [Int: WorkspaceActivity] {
+        get { storedActivity }
+        set {
+            let old = storedActivity
+            storedActivity = newValue
+            if newValue != old { activityChanged(from: old) }
+        }
+    }
+    /// Behind `activity`, so `renumber` can move it without counting a change.
+    private var storedActivity: [Int: WorkspaceActivity] = [:]
 
-    private struct Pill { let id: Int; let rect: CGRect; let label: NSAttributedString }
+    /// `shown`: the whole pill is in view, not under a count or past an edge.
+    private struct Pill { let id: Int; let rect: CGRect; let label: NSAttributedString; let shown: Bool }
     private var pills: [Pill] = []
+    /// Where pills draw: the strip without its counts. The whole bar when everything fits.
+    private var clip: CGRect = .zero
+    /// The strip the pills scroll in, and the counts at its clipped edges.
+    private var strip: CGRect = .zero
+    private var before: (rect: CGRect, ids: [Int])?
+    private var after: (rect: CGRect, ids: [Int])?
+    /// The strip's scroll offset now, and where it's going. It eases there.
+    private var scroll: CGFloat = 0
+    private var scrollTarget: CGFloat = 0
+    private var scrollTimer: Timer?
     private var lastPillsFrame: CGRect?
     private var badges: [Int: ActivityBadge] = [:]
     /// The room each pill makes for its badge now. It eases toward the badge's width.
@@ -58,22 +79,42 @@ final class BarView: NSView, NSViewToolTipOwner {
 
     private static let font = NSFont.monospacedSystemFont(ofSize: 11, weight: .semibold)
     private static let nameFont = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+    private static let pillGap: CGFloat = 5
+    /// Room the pills leave for the focused window's title when they don't fit.
+    private static let minTitleWidth: CGFloat = 180
+    private static let smallAttrs: (NSColor) -> [NSAttributedString.Key: Any] = { [.font: font, .foregroundColor: $0] }
 
     override var isFlipped: Bool { true }
     override var mouseDownCanMoveWindow: Bool { false }
 
     override func setFrameSize(_ newSize: NSSize) {
-        let heightChanged = newSize.height != frame.height
+        let changed = newSize != frame.size
         super.setFrameSize(newSize)
-        if heightChanged { pillsChanged() }
+        if changed { pillsChanged() }
     }
 
-    /// Union of the pills, or an empty rect at the start when there are none.
+    /// Union of the pills, or of the strip when they scroll. An empty rect at the start
+    /// when there are none.
     var pillsFrame: CGRect {
         guard let first = pills.first?.rect, let last = pills.last?.rect else {
             return CGRect(x: leadingInset + 8, y: 0, width: 0, height: bounds.height)
         }
-        return first.union(last)
+        guard before != nil || after != nil else { return first.union(last) }
+        return CGRect(x: strip.minX, y: first.minY, width: strip.width, height: first.height)
+    }
+
+    /// The special workspace and submap, drawn at the right end.
+    private var rightLabels: [String] {
+        var right: [String] = []
+        if let special { right.append("special:\(special)") }
+        if submap != "reset" { right.append("submap: \(submap)") }
+        return right
+    }
+
+    /// Where the right-end labels start.
+    private var rightLabelsMinX: CGFloat {
+        let attrs = Self.smallAttrs(accent)
+        return rightLabels.reduce(bounds.maxX - 12) { x, s in x - (s as NSString).size(withAttributes: attrs).width - 14 } + 14
     }
 
     private func pillsChanged() {
@@ -90,8 +131,9 @@ final class BarView: NSView, NSViewToolTipOwner {
     private func layoutPills() {
         pills = []
         let h = bounds.height
-        var x = leadingInset + 8
+        let start = leadingInset + 8
         let pillH: CGFloat = min(18, h - 6)
+        var made: [(id: Int, width: CGFloat, label: NSAttributedString)] = []
         for n in workspaces {
             let isActive = n == active
             let color = isActive ? NSColor.black : NSColor(white: 0.92, alpha: 1)
@@ -104,9 +146,46 @@ final class BarView: NSView, NSViewToolTipOwner {
             }
             let size = label.size()
             let w = max(pillH + (isActive ? 10 : 0), size.width + (names[n] == nil ? 12 : 16)) + (room[n] ?? 0)
-            pills.append(Pill(id: n, rect: CGRect(x: x, y: (h - pillH) / 2, width: w, height: pillH), label: label))
-            x += w + 5
+            made.append((n, w, label))
         }
+        let widths = made.map(\.width)
+        let available = max(80, rightLabelsMinX - 14 - start - Self.minTitleWidth)
+        scrollTarget = PillStrip.offset(widths: widths, gap: Self.pillGap, available: available,
+                                        active: workspaces.firstIndex(of: active), previous: scrollTarget)
+        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion || window == nil { scroll = scrollTarget }
+        let layout = PillStrip(widths: widths, gap: Self.pillGap, available: available, offset: scroll)
+        scroll = layout.offset
+        if scroll != scrollTarget { startScrollAnimation() }
+
+        strip = CGRect(x: start, y: 0, width: available, height: h)
+        let vis = layout.visible
+        clip = layout.fits ? bounds : CGRect(x: start + vis.lowerBound - scroll, y: 0, width: vis.upperBound - vis.lowerBound, height: h)
+        let hidden = Set(layout.hiddenBefore + layout.hiddenAfter)
+        for (i, m) in made.enumerated() {
+            let rect = CGRect(x: start + layout.starts[i] - scroll, y: (h - pillH) / 2, width: m.width, height: pillH)
+            pills.append(Pill(id: m.id, rect: rect, label: m.label, shown: !hidden.contains(i)))
+        }
+        let ind = PillStrip.indicatorWidth
+        before = layout.leftIndicator
+            ? (CGRect(x: start, y: 0, width: ind, height: h), layout.hiddenBefore.map { made[$0].id }) : nil
+        after = layout.rightIndicator
+            ? (CGRect(x: strip.maxX - ind, y: 0, width: ind, height: h), layout.hiddenAfter.map { made[$0].id }) : nil
+    }
+
+    private func startScrollAnimation() {
+        guard scrollTimer == nil else { return }
+        let t = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] _ in self?.stepScroll() }
+        RunLoop.main.add(t, forMode: .common)
+        scrollTimer = t
+    }
+
+    private func stepScroll() {
+        scroll = abs(scrollTarget - scroll) < 0.5 ? scrollTarget : scroll + (scrollTarget - scroll) * 0.3
+        if scroll == scrollTarget {
+            scrollTimer?.invalidate()
+            scrollTimer = nil
+        }
+        pillsChanged()
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -115,7 +194,9 @@ final class BarView: NSView, NSViewToolTipOwner {
         positionBadges()
         let font = Self.font
         let h = bounds.height
-        for p in pills {
+        NSGraphicsContext.saveGraphicsState()
+        NSBezierPath(rect: clip).addClip()
+        for p in pills where p.rect.intersects(clip) {
             let r = p.rect
             let path = NSBezierPath(roundedRect: r, xRadius: r.height / 2, yRadius: r.height / 2)
             if p.id == active {
@@ -126,13 +207,13 @@ final class BarView: NSView, NSViewToolTipOwner {
             let labelMidX = r.midX - (room[p.id] ?? 0) / 2
             p.label.draw(at: CGPoint(x: labelMidX - size.width / 2, y: r.midY - size.height / 2))
         }
-        let x = (pills.last?.rect.maxX ?? leadingInset + 8) + 5
-        var right: [String] = []
-        if let special { right.append("special:\(special)") }
-        if submap != "reset" { right.append("submap: \(submap)") }
-        let small: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: accent]
+        NSGraphicsContext.restoreGraphicsState()
+        if let before { drawCount(before.ids, in: before.rect, arrowFirst: true) }
+        if let after { drawCount(after.ids, in: after.rect, arrowFirst: false) }
+        let x = (before != nil || after != nil ? strip.maxX : pills.last?.rect.maxX ?? leadingInset + 8) + 5
+        let small = Self.smallAttrs(accent)
         var rx = bounds.maxX - 12
-        for s in right.reversed() {
+        for s in rightLabels.reversed() {
             let str = s as NSString
             let size = str.size(withAttributes: small)
             rx -= size.width
@@ -152,12 +233,51 @@ final class BarView: NSView, NSViewToolTipOwner {
                options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine], attributes: titleAttrs)
     }
 
+    /// For `hyprmuxctl debug`: the pills in full view, the ones past each clipped edge,
+    /// and the strip, in the bar's points.
+    var debugState: [String: Any] {
+        ["width": bounds.width, "strip": [strip.minX, strip.width], "offset": scroll,
+         "shown": pills.filter(\.shown).map(\.id),
+         "before": before?.ids ?? [], "after": after?.ids ?? []]
+    }
+
+    /// The count at a clipped edge: how many pills are past it. It takes the color of the
+    /// most urgent activity among them, so a tile needing you isn't hidden.
+    private func drawCount(_ ids: [Int], in rect: CGRect, arrowFirst: Bool) {
+        var a = WorkspaceActivity()
+        for n in ids { if let w = activity[n] { a.blocked += w.blocked; a.done += w.done; a.working += w.working } }
+        let color = a.counts.first.flatMap { TileStatus.color($0.status) } ?? NSColor(white: 0.92, alpha: 0.7)
+        let text = (arrowFirst ? "‹\(ids.count)" : "\(ids.count)›") as NSString
+        let attrs = Self.smallAttrs(color)
+        let size = text.size(withAttributes: attrs)
+        text.draw(at: CGPoint(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2), withAttributes: attrs)
+    }
+
     // MARK: Activity
 
     /// The room a pill needs for its badge: the badge, and a little space after it.
     private func targetRoom(_ n: Int) -> CGFloat {
         guard let a = activity[n], !a.isEmpty else { return 0 }
         return ActivityBadge.width(for: a) + 1
+    }
+
+    /// Workspaces shifted to new numbers (`hyprmux:compact_workspaces`): their badges and
+    /// activity go with them, so a shift doesn't look like a tile finishing. A closed
+    /// workspace's badge leaves when the next one takes its number.
+    func renumber(_ map: [Int: Int]) {
+        guard !map.isEmpty else { return }
+        func moved<V>(_ d: [Int: V], dropped: (V) -> Void = { _ in }) -> [Int: V] {
+            var out: [Int: V] = [:]
+            for (n, v) in d { if let m = map[n] { out[m] = v } }
+            for (n, v) in d where map[n] == nil {
+                if out[n] == nil { out[n] = v } else { dropped(v) }
+            }
+            return out
+        }
+        badges = moved(badges) { $0.leave() }
+        room = moved(room)
+        storedActivity = moved(storedActivity)
+        needsDisplay = true
     }
 
     private func activityChanged(from old: [Int: WorkspaceActivity]) {
@@ -221,14 +341,19 @@ final class BarView: NSView, NSViewToolTipOwner {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         for p in pills {
-            badges[p.id]?.frame = CGRect(x: p.rect.maxX - 2, y: p.rect.midY, width: 0, height: 0)
+            guard let b = badges[p.id] else { continue }
+            b.frame = CGRect(x: p.rect.maxX - 2, y: p.rect.midY, width: 0, height: 0)
+            // A clipped pill's badge would spill past the strip; its count shows the activity.
+            b.isHidden = !p.shown
         }
         CATransaction.commit()
     }
 
     private func updateToolTips() {
         removeAllToolTips()
-        for p in pills where activity[p.id] != nil { addToolTip(p.rect, owner: self, userData: nil) }
+        for p in pills where activity[p.id] != nil && p.rect.intersects(clip) {
+            addToolTip(p.rect.intersection(clip), owner: self, userData: nil)
+        }
     }
 
     func view(_ view: NSView, stringForToolTip tag: NSView.ToolTipTag, point: NSPoint,
@@ -245,7 +370,12 @@ final class BarView: NSView, NSViewToolTipOwner {
 
     override func mouseDown(with event: NSEvent) {
         let p = convert(event.locationInWindow, from: nil)
-        if let hit = pills.first(where: { $0.rect.contains(p) }) {
+        // A count goes to the nearest workspace past it.
+        if let before, before.rect.contains(p), let n = before.ids.last {
+            onSelectWorkspace?(n)
+        } else if let after, after.rect.contains(p), let n = after.ids.first {
+            onSelectWorkspace?(n)
+        } else if clip.contains(p), let hit = pills.first(where: { $0.rect.contains(p) }) {
             onSelectWorkspace?(hit.id)
         } else {
             window?.performDrag(with: event)

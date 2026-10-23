@@ -654,7 +654,8 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
             let s = views[id]?.surface
             return EventDiff.Tile(kind: s?.kind ?? "", title: s?.title ?? "")
         })
-        let wsDelta = (prev?.activeWorkspace).map { snap.activeWorkspace - $0 } ?? 0
+        // By workspace, not number: a compacted workspace's number shifts when one before it closes.
+        let wsDelta = prev.map { snap.workspaceSwitch(from: $0) } ?? 0
         let specialOpened = snap.specialVisible != nil && prev?.specialVisible != snap.specialVisible
         let specialClosed = prev?.specialVisible != nil && snap.specialVisible != prev?.specialVisible
         let deco = Decoration(config)
@@ -668,6 +669,11 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         let width = root.bounds.width, height = root.bounds.height
 
         func dur(_ a: ResolvedAnimation) -> Double { animated && a.enabled ? a.duration : 0 }
+        /// Whether a tile is on the workspace it was on, which may have a new number.
+        func stayedOnWorkspace(_ p: Placement, _ before: Placement?) -> Bool {
+            guard let prev, let before else { return false }
+            return snap.isSameWorkspace(p.workspace, as: before.workspace, in: prev)
+        }
 
         for p in snap.placements {
             guard let v = views[p.id] else { continue }
@@ -693,7 +699,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
             // A group switching tabs (same group, same workspace): swap instantly, like
             // Hyprland. A cross-fade let the transparent background blink through.
             let tabSwitch = wsDelta == 0 && before != nil && p.group != nil && before?.group?.id == p.group?.id
-                && before?.workspace == p.workspace
+                && stayedOnWorkspace(p, before)
 
             if p.visible {
                 if !v.shown {
@@ -740,7 +746,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
                 } else if case .special = p.workspace, specialClosed {
                     anim = spAnim
                     to = Self.offset(p.frame, style: spAnim.style, delta: -1, width: width, height: height)
-                } else if wsDelta != 0, before?.visible == true, before?.workspace == p.workspace {
+                } else if wsDelta != 0, before?.visible == true, stayedOnWorkspace(p, before) {
                     anim = wsAnim
                     to = Self.offset(p.frame, style: wsAnim.style, delta: wsDelta > 0 ? -1 : 1, width: width, height: height)
                 } else {
@@ -764,6 +770,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
 
         updateSpecialDim(visible: snap.specialVisible != nil, duration: dur(config.animation("fadeDim")))
         restack(snap)
+        if let prev { bar.renumber(snap.renumbering(from: prev)) }
         updateChrome(snap)
         updateFocus(snap)
         updatePointer(snap)
@@ -1305,7 +1312,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
                              "firstResponder": frDesc, "keyboardClient": owner,
                              "focused": wm.focused?.raw as Any? ?? NSNull(),
                              "hud": hud.debugFrames.map { [$0.minX, $0.minY, $0.width, $0.height] },
-                             "picker": hud.debugPicker])
+                             "picker": hud.debugPicker, "bar": bar.debugState])
             case .sendText(let t):
                 guard let term = focusedTerminal else { return "error: no focused terminal" }
                 term.sendText(t)

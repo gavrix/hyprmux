@@ -573,6 +573,7 @@ public enum ConfigParser {
             case "hyprmux:window_frame": if let v = bool() { config.windowFrame = v }
             case "hyprmux:col.window_frame":
                 if let c = Color.parse(value) { config.windowFrameColor = c } else { error(file, line, "\(key): bad color") }
+            case "hyprmux:compact_workspaces": if let v = bool() { config.wm.compactWorkspaces = v }
             case "hyprmux:float_size": if let v = num() { config.wm.floatSizeFraction = min(max(v, 0.1), 1) }
             default:
                 // Unknown keys are reported but never fatal, so Hyprland configs mostly load.

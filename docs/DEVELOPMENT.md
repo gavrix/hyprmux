@@ -377,7 +377,7 @@ seconds: launch it from Hyprmux.
 | `hyprmuxctl sendscroll MODS, LINES, x y` | A notched mouse-wheel scroll, built as a real line-unit event (positive scrolls up). App tiles get it with its raw notch count, like hardware. |
 | `hyprmuxctl sendmenu TITLE` | Performs a menu bar item, as a click would (`sendmenu "Open App..."`). Works in the background. |
 | `hyprmuxctl hittest x y` | Which views a click reaches. This found the dim overlay that swallowed every click. |
-| `hyprmuxctl debug` | App active, key window, first responder, `keyboardClient`, the frames of HUD panels on screen, and the open picker (query, rows, selection). Use it for any "wrong window" bug, and to find where to click a notification. |
+| `hyprmuxctl debug` | App active, key window, first responder, `keyboardClient`, the frames of HUD panels on screen, the open picker (query, rows, selection), and the bar's pills (`bar`: in full view, scrolled past each edge). Use it for any "wrong window" bug, to find where to click a notification, and to check the bar without a screenshot. |
 | `hyprmuxctl surfaces` | References, capabilities, workspaces, frames, focus, groups, URLs, and terminal directories. |
 | `screencapture -x -o -l <windowid>` | Captures one window even when covered. Find the window ID with `CGWindowListCopyWindowInfo` for the test app's pid. |
 | Chromium `remote-debugging-port` | Set `web:chromium_flags = remote-debugging-port=9333` in a test config, then query targets and evaluate JavaScript over the DevTools protocol. |

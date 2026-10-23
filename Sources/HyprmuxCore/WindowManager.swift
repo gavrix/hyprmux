@@ -18,6 +18,10 @@ public struct WMSettings: Equatable, Sendable {
     public var borderSize: Double = 2
     public var dwindle = DwindleSettings()
     public var workspaceBackAndForth = false
+    /// Regular workspaces stay numbered 1…N with no gaps (`hyprmux:compact_workspaces`).
+    /// When one closes, the ones after it shift down a number. A named workspace stays
+    /// open, empty, until its name is cleared. Off, numbers are fixed, as in Hyprland.
+    public var compactWorkspaces = true
     /// Size of a new floating window relative to the work area.
     public var floatSizeFraction: Double = 0.6
     /// New windows opened while a group is focused join it as a tab (Hyprland group:auto_group).
@@ -66,13 +70,45 @@ public struct Snapshot: Equatable, Sendable {
     public let placements: [Placement]
     public let activeWorkspace: Int
     public let specialVisible: String?
-    /// Regular workspaces that have clients, plus the active one. Sorted.
+    /// Regular workspaces that have clients, plus the active one. Sorted. With
+    /// `compactWorkspaces`, every open one: named empty workspaces too.
     public let workspaces: [Int]
     /// Names of the workspaces in `workspaces` that have one.
     public var workspaceNames: [Int: String] = [:]
     public let focused: ClientID?
+    /// A key for each open regular workspace, by number. It stays when the workspace's
+    /// number shifts (`compactWorkspaces`), so two snapshots can tell a switch from a shift.
+    public var workspaceKeys: [Int: UInt64] = [:]
 
     public func placement(_ id: ClientID) -> Placement? { placements.first { $0.id == id } }
+
+    /// Whether the active workspace changed since `old`, and which way: 0 when it's the same
+    /// workspace, even with a new number; above 0 when the new one sits to the right.
+    public func workspaceSwitch(from old: Snapshot) -> Int {
+        let delta = activeWorkspace - old.activeWorkspace
+        guard let key = workspaceKeys[activeWorkspace], let oldKey = old.workspaceKeys[old.activeWorkspace] else { return delta }
+        if key == oldKey { return 0 }
+        if let was = old.workspaceKeys.first(where: { $0.value == key })?.key { return was - old.activeWorkspace }
+        // A new workspace. Compacted, it opened after the others; the old one may have
+        // closed and given it its number.
+        return delta != 0 ? delta : 1
+    }
+
+    /// Old number → new number for each workspace whose number shifted since `old`.
+    public func renumbering(from old: Snapshot) -> [Int: Int] {
+        var byKey: [UInt64: Int] = [:]
+        for (n, k) in workspaceKeys { byKey[k] = n }
+        var out: [Int: Int] = [:]
+        for (m, k) in old.workspaceKeys { if let n = byKey[k], n != m { out[m] = n } }
+        return out
+    }
+
+    /// Whether `ws` here is the workspace `oldWS` was in `old`, following a shifted number.
+    public func isSameWorkspace(_ ws: WorkspaceID, as oldWS: WorkspaceID, in old: Snapshot) -> Bool {
+        guard case .regular(let n) = ws, case .regular(let m) = oldWS,
+              let a = workspaceKeys[n], let b = old.workspaceKeys[m] else { return ws == oldWS }
+        return a == b
+    }
 
     /// What a workspace shows when it's active, bottom to top: its placements without
     /// the hidden tabs of its groups. For the workspace picker's preview.
@@ -86,14 +122,18 @@ public struct Snapshot: Equatable, Sendable {
 /// The window manager model: workspaces, layouts, focus, dispatchers.
 public final class WindowManager {
     final class Workspace {
-        let id: WorkspaceID
+        /// Changes when a compacted workspace shifts (`closeWorkspaceGaps`).
+        var id: WorkspaceID
+        /// Stays for the workspace's life (`Snapshot.workspaceKeys`).
+        let key: UInt64
         let tiled: DwindleLayout
         var floating: [ClientID] = []  // bottom → top
         var fullscreen: (id: ClientID, mode: FullscreenMode)?
         var lastFocused: ClientID?
 
-        init(id: WorkspaceID, settings: DwindleSettings) {
+        init(id: WorkspaceID, key: UInt64, settings: DwindleSettings) {
             self.id = id
+            self.key = key
             self.tiled = DwindleLayout(settings: settings)
         }
 
@@ -124,7 +164,7 @@ public final class WindowManager {
     public var perform: (Effect) -> Void = { _ in }
 
     public internal(set) var activeWorkspace = 1
-    public private(set) var previousWorkspace: Int?
+    public internal(set) var previousWorkspace: Int?
     public internal(set) var specialVisible: String?
     public internal(set) var focused: ClientID?
 
@@ -137,6 +177,7 @@ public final class WindowManager {
     /// set, and must not be collected meanwhile (see `restoreWorkspace`).
     var building: Set<WorkspaceID> = []
     private var focusCounter = 0
+    private var nextWorkspaceKey: UInt64 = 1
 
     public init(monitor: CGRect, settings: WMSettings = .init()) {
         self.monitor = monitor
@@ -155,7 +196,7 @@ public final class WindowManager {
     /// focus only when nothing has it and it lands in view.
     public func addClient(_ id: ClientID, floating: Bool = false, workspace: WorkspaceID? = nil, focus: Bool = true) {
         precondition(clients[id] == nil, "\(id) already managed")
-        let wsID = workspace ?? targetWorkspace
+        let wsID = withinOpenRange(workspace ?? targetWorkspace)
         let ws = ensure(wsID)
         let visible = visibleWorkspaces.contains(wsID)
         let takesFocus = focus || (focused == nil && visible)
@@ -294,7 +335,9 @@ public final class WindowManager {
         case .focusAttached: focusAttached(subject)
         case .centerWindow: centerWindow(target)
         case .submap(let name): perform(.submap(name))
-        case .renameWorkspace(let n, let name): rename(n, to: name)
+        case .renameWorkspace(let n, let name):
+            rename(n, to: name)
+            collectEmptyWorkspaces()  // compacted, an empty workspace that lost its name closes
         case .picker(let kind): perform(.picker(kind))
         case .monitorFullscreen: perform(.monitorFullscreen)
         case .toggleGroup: toggleGroup(target)
@@ -357,14 +400,11 @@ public final class WindowManager {
             let ra = a.attachment.map { $0.expanded ? 1 : 2 } ?? 0, rb = b.attachment.map { $0.expanded ? 1 : 2 } ?? 0
             return ra != rb ? ra < rb : a.id < b.id
         }
-        var nums = Set(workspaces.keys.compactMap { id -> Int? in
-            if case .regular(let n) = id, !(workspaces[id]?.isEmpty ?? true) { return n }
-            return nil
-        })
-        nums.insert(activeWorkspace)
+        let nums = shownWorkspaces()
         var snap = Snapshot(placements: out, activeWorkspace: activeWorkspace,
-                            specialVisible: specialVisible, workspaces: nums.sorted(), focused: focused)
+                            specialVisible: specialVisible, workspaces: nums, focused: focused)
         for n in nums { if let name = name(of: n) { snap.workspaceNames[n] = name } }
+        for (id, ws) in workspaces { if case .regular(let n) = id { snap.workspaceKeys[n] = ws.key } }
         return snap
     }
 
@@ -374,7 +414,9 @@ public final class WindowManager {
     var renamed: [Int: String] = [:]
 
     /// A workspace's name: the runtime one, else its workspace rule's. Nil when unnamed.
-    /// Names outlive the workspace: an emptied, dropped workspace keeps its name for next time.
+    /// Names outlive the workspace's windows. With fixed numbers, an emptied, dropped workspace
+    /// keeps its name for next time; compacted, a runtime name keeps the workspace open.
+    /// A rule's name labels a number either way.
     public func name(of n: Int) -> String? {
         let s = renamed[n] ?? settings.workspaceNames[n]
         return s?.isEmpty == false ? s : nil
@@ -388,6 +430,8 @@ public final class WindowManager {
     }
 
     private func rename(_ n: Int, to name: String) {
+        // Compacted, only an open workspace has a number to name, as in Hyprland.
+        if settings.compactWorkspaces, workspaces[.regular(n)] == nil { return }
         let s = name.trimmingCharacters(in: .whitespaces)
         if s.isEmpty { renamed[n] = nil } else { renamed[n] = s }
     }
@@ -406,12 +450,10 @@ public final class WindowManager {
         func count(_ id: WorkspaceID) -> Int {
             clients.values.filter { $0.workspace == id }.count
         }
-        var nums = Set(workspaces.keys.compactMap { id -> Int? in
-            if case .regular(let n) = id, !(workspaces[id]?.isEmpty ?? true) { return n }
-            return nil
-        })
-        nums.insert(activeWorkspace)
-        for n in Set(renamed.keys).union(settings.workspaceNames.keys) where name(of: n) != nil { nums.insert(n) }
+        var nums = Set(shownWorkspaces())
+        if !settings.compactWorkspaces {
+            for n in Set(renamed.keys).union(settings.workspaceNames.keys) where name(of: n) != nil { nums.insert(n) }
+        }
         var out = nums.sorted().map {
             WorkspaceChoice(id: .regular($0), name: name(of: $0), windows: count(.regular($0)),
                             active: $0 == activeWorkspace && specialVisible == nil)
@@ -467,20 +509,82 @@ public final class WindowManager {
     @discardableResult
     func ensure(_ id: WorkspaceID) -> Workspace {
         if let ws = workspaces[id] { return ws }
-        let ws = Workspace(id: id, settings: settings.dwindle)
+        let ws = Workspace(id: id, key: nextWorkspaceKey, settings: settings.dwindle)
+        nextWorkspaceKey += 1
         workspaces[id] = ws
         return ws
+    }
+
+    /// Open regular workspace numbers, sorted: every one in `workspaces`, empty or not.
+    var openWorkspaces: [Int] {
+        workspaces.keys.compactMap { id -> Int? in
+            if case .regular(let n) = id { return n }
+            return nil
+        }.sorted()
+    }
+
+    /// The regular workspaces the bar shows. With fixed numbers: those with windows, and
+    /// the active one. Compacted: every open one, since numbers have no gaps.
+    private func shownWorkspaces() -> [Int] {
+        var nums = Set(settings.compactWorkspaces ? openWorkspaces : workspaces.compactMap { id, ws -> Int? in
+            if case .regular(let n) = id, !ws.isEmpty { return n }
+            return nil
+        })
+        nums.insert(activeWorkspace)
+        return nums.sorted()
+    }
+
+    /// Compacted, a number past the open workspaces means a new one after them, so
+    /// `workspace, 9` with three open goes to 4.
+    func withinOpenRange(_ id: WorkspaceID) -> WorkspaceID {
+        guard settings.compactWorkspaces, case .regular(let n) = id, workspaces[id] == nil else { return id }
+        return .regular(min(n, Set(openWorkspaces + [activeWorkspace]).count + 1))
     }
 
     func collectEmptyWorkspaces() {
         for (id, ws) in workspaces where ws.isEmpty {
             if id == .regular(activeWorkspace) || building.contains(id) { continue }
             if case .special(let s) = id, s == specialVisible { continue }
+            // Compacted, a named workspace stays open until its name is cleared.
+            if settings.compactWorkspaces, case .regular(let n) = id, renamed[n] != nil { continue }
             workspaces[id] = nil
         }
+        closeWorkspaceGaps()
+    }
+
+    /// Compacted: renumbers regular workspaces 1…N in order, so the ones after a closed
+    /// workspace shift down. Their clients, names, and the active and previous numbers
+    /// follow. Waits while a workspace is being built: its builder holds its number.
+    func closeWorkspaceGaps() {
+        guard settings.compactWorkspaces, building.isEmpty else { return }
+        // A name with no workspace (from fixed numbers, or a session) opens it.
+        for n in renamed.keys where workspaces[.regular(n)] == nil { ensure(.regular(n)) }
+        ensure(.regular(activeWorkspace))
+        if let p = previousWorkspace, workspaces[.regular(p)] == nil { previousWorkspace = nil }
+        var map: [Int: Int] = [:]
+        for (i, n) in openWorkspaces.enumerated() where n != i + 1 { map[n] = i + 1 }
+        guard !map.isEmpty else { return }
+        func moved(_ id: WorkspaceID) -> WorkspaceID {
+            if case .regular(let n) = id, let m = map[n] { return .regular(m) }
+            return id
+        }
+        var next: [WorkspaceID: Workspace] = [:]
+        for (id, ws) in workspaces {
+            ws.id = moved(id)
+            next[ws.id] = ws
+        }
+        workspaces = next
+        for (c, st) in clients where moved(st.workspace) != st.workspace { clients[c]!.workspace = moved(st.workspace) }
+        renamed = Dictionary(uniqueKeysWithValues: renamed.map { (map[$0.key] ?? $0.key, $0.value) })
+        activeWorkspace = map[activeWorkspace] ?? activeWorkspace
+        previousWorkspace = previousWorkspace.map { map[$0] ?? $0 }
     }
 
     private func resolve(_ t: WorkspaceTarget) -> WorkspaceID? {
+        resolveNumber(t).map(withinOpenRange)
+    }
+
+    private func resolveNumber(_ t: WorkspaceTarget) -> WorkspaceID? {
         let used = workspaces.compactMap { id, ws -> Int? in
             if case .regular(let n) = id, !ws.isEmpty { return n }
             return nil
@@ -489,7 +593,8 @@ public final class WindowManager {
         case .id(let n): return .regular(n)
         case .relative(let d): return .regular(max(1, activeWorkspace + d))
         case .relativeExisting(let d):
-            var ring = Set(used)
+            // Compacted, an empty named workspace is open, and in the ring.
+            var ring = Set(settings.compactWorkspaces ? openWorkspaces : used)
             ring.insert(activeWorkspace)
             let sorted = ring.sorted()
             guard let i = sorted.firstIndex(of: activeWorkspace) else { return nil }
@@ -510,9 +615,17 @@ public final class WindowManager {
         }
     }
 
-    /// `name:NEW` just picked an unnamed number: give it the name.
+    /// `name:NEW` just picked a number that isn't called that: give it the name. Compacted,
+    /// the workspace opens now, and its name keeps it open.
     private func nameIfNew(_ t: WorkspaceTarget, _ target: WorkspaceID) {
-        if case .named(let s) = t, case .regular(let n) = target, name(of: n) == nil { rename(n, to: s) }
+        guard case .named(let s) = t, case .regular(let n) = target else { return }
+        if settings.compactWorkspaces {
+            guard name(of: n)?.lowercased() != s.lowercased() else { return }
+            ensure(target)
+        } else if name(of: n) != nil {
+            return
+        }
+        rename(n, to: s)
     }
 
     private func gotoWorkspace(_ t: WorkspaceTarget) {

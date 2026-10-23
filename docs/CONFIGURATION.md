@@ -381,6 +381,7 @@ the menu goes back to the menu. ⌃C, ⌃G, and a click outside close it.
 
 | Option | Default | Meaning |
 |---|---|---|
+| `compact_workspaces` | true | Workspaces stay numbered 1, 2, 3… without gaps: when one closes, the ones after it shift down a number. See [Workspaces](#workspaces). `false`: fixed numbers, as in Hyprland. |
 | `float_size` | 0.6 | Size of a window floated for the first time, as a fraction of the screen. |
 | `confirm_quit` | true | ⌘Q quits only when pressed twice within two seconds; the first press shows "Press ⌘Q again to quit". Quitting from the Dock, logging out, and the `exit` dispatcher don't ask. |
 | `bar_backdrop` | true | A frosted capsule behind the workspace pills, so they stay readable over any wallpaper. Liquid Glass on macOS 26; a vibrancy blur on older systems. |
@@ -389,14 +390,27 @@ the menu goes back to the menu. ⌃C, ⌃G, and a click outside close it.
 
 ### Workspaces
 
-Workspaces are numbered, and ⌘1…9 always reach them by number. A workspace can
-also have a name, shown after its number in the bar (`2 mail`).
+Workspaces are numbered, and ⌘1…9 reach them by number. A workspace can also
+have a name, shown after its number in the bar (`2 mail`).
+
+Numbers have no gaps (`hyprmux:compact_workspaces`). A workspace closes when it
+has no windows and no name, and you leave it. The workspaces after it then shift
+down a number, with their windows and names. So ⌘1…9 always reach the first nine,
+however many you opened and closed. A number past the last workspace opens a new
+one right after it: with three open, ⌘9 goes to 4.
+
+When the pills don't fit in the bar, they scroll like tabs. The current
+workspace's pill stays in view, and the strip moves only when it would leave it.
+A count at each cut-off end (`‹8`, `19›`) says how many pills are past it. It
+takes the color of the most urgent activity among them, and a click goes to the
+nearest one.
 
 - **Name the current one:** ⌘N (`picker, renameworkspace`) opens a prompt with
   the current name. An empty name clears it.
 - **Go to one:** ⌘P (`picker, workspace`) lists workspaces with windows, a name,
   or focus. Type to filter by number or name. A number or name that isn't listed
-  goes there; a new name makes a workspace with that name on the first free number.
+  goes there; a new name makes a workspace with that name on the first free number
+  (compacted, after the last one).
 - **Move the window to one:** ⇧⌘P (`picker, movetoworkspace`) works the same and
   also lists the scratchpads your binds use. `movetoworkspacesilent` stays behind.
 - **Names in the config:** Hyprland workspace rules set default names:
@@ -407,7 +421,11 @@ workspace = 2, defaultName:mail
 ```
 
 A name you set with ⌘N wins over the rule's until you clear it. Names stay when a
-workspace empties. Other workspace-rule keys are accepted and ignored.
+workspace empties. Compacted, a name you set keeps its workspace open, empty, in
+the bar; clear the name to close it. A rule's name labels a number, not a
+workspace: it doesn't keep a workspace open, and after a shift it names whichever
+workspace has that number. With fixed numbers, an emptied workspace closes and
+keeps its name for next time. Other workspace-rule keys are accepted and ignored.
 
 ### Session restore
 
@@ -675,7 +693,7 @@ See [Terminal automation](AUTOMATION.md) for workflows, limits, and agent skill 
 | `sendscroll <MODS>, <lines>, <x y>` | Injects a notched mouse-wheel scroll. Positive lines scroll up. |
 | `hittest <x y>` | Which views a click at that point reaches. |
 | `sendmenu <title>` | Performs a menu bar item by title, as a click would (`sendmenu Open App...`). Case doesn't matter, and `...` matches `…`. |
-| `debug` | Focus internals: app active, key window, first responder, and which window holds the keyboard. |
+| `debug` | Focus internals: app active, key window, first responder, and which window holds the keyboard. Also the open picker, and the bar's workspace pills: which are in full view and which scrolled past each edge. |
 | `resume {json}` | An agent reports how to bring its terminal back. See [Session restore](#session-restore). |
 | `caption [Title \| subtitle]` | A caption panel at the top of the window, for demo recordings. No text hides it. |
 

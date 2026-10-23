@@ -356,30 +356,35 @@ extension WindowManager {
     /// Shows the first of them and returns their numbers.
     @discardableResult
     public func loadLayout(_ layout: SessionState, defaultName: String?, make: (SessionTile) -> ClientID?) -> [Int] {
-        var touched: [Int] = []
+        // Workspaces, not numbers: a compacted workspace's number shifts when one before it closes.
+        var touched: [Workspace] = []
         let single = layout.workspaces.count == 1
         for w in layout.workspaces {
             let own = w.name?.trimmingCharacters(in: .whitespaces)
             let name = own?.isEmpty == false ? own : (single ? defaultName : nil)
-            if let name, let n = workspace(named: name), !(workspaces[.regular(n)]?.isEmpty ?? true) {
-                touched.append(n)
+            if let name, let n = workspace(named: name), let ws = workspaces[.regular(n)], !ws.isEmpty {
+                touched.append(ws)
                 continue
             }
-            let n = name.flatMap { workspace(named: $0) } ?? freeWorkspaceNumber()
-            guard !restoreWorkspace(w, into: .regular(n), make: make).isEmpty else { continue }
+            // Compacted, a rule's name past the open workspaces means a new one after them.
+            guard case .regular(let n) = withinOpenRange(.regular(name.flatMap { workspace(named: $0) } ?? freeWorkspaceNumber())),
+                  !restoreWorkspace(w, into: .regular(n), make: make).isEmpty, let ws = workspaces[.regular(n)] else { continue }
             if let name, self.name(of: n) != name { renamed[n] = name }
-            touched.append(n)
+            touched.append(ws)
         }
-        if let first = touched.first {
+        if let first = touched.first, case .regular(let n) = first.id {
             specialVisible = nil
-            if first != activeWorkspace { switchTo(first, focusAfter: true) }
-            if let ws = workspaces[.regular(first)], focused.flatMap({ clients[$0]?.workspace }) != .regular(first) {
+            if n != activeWorkspace { switchTo(n, focusAfter: true) }
+            if focused.flatMap({ clients[$0]?.workspace }) != first.id {
                 focused = nil
-                if let f = ws.lastFocused ?? mostRecent(in: ws) ?? ws.clients.first { focus(f) }
+                if let f = first.lastFocused ?? mostRecent(in: first) ?? first.clients.first { focus(f) }
             }
         }
         collectEmptyWorkspaces()
-        return touched
+        return touched.compactMap { ws in
+            if case .regular(let n) = ws.id { return n }
+            return nil
+        }
     }
 
     /// The first workspace number with no windows and no name.

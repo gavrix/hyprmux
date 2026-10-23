@@ -706,6 +706,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
                 if !v.shown {
                     v.shown = true
                     v.isHidden = false
+                    v.endZoom()
                     v.surface.setOccluded(false)
                     if tabSwitch {
                         v.move(to: p.frame, duration: 0, curve: .linear)
@@ -723,6 +724,11 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
                         let from = Self.offset(p.frame, style: wsAnim.style, delta: wsDelta > 0 ? 1 : -1, width: width, height: height)
                         v.move(to: p.frame, from: from, duration: dur(wsAnim), curve: wsAnim.curve)
                         v.fade(from: Self.fades(wsAnim.style) ? 0 : 1, to: 1, duration: dur(wsAnim), curve: wsAnim.curve)
+                    } else if let chip = jobChip(of: p) {
+                        // A job peeking or expanding grows out of its chip.
+                        v.move(to: p.frame, duration: 0, curve: .linear)
+                        v.zoom(chip, shrinking: false, duration: dur(winIn), curve: winIn.curve)
+                        v.fade(from: 0, to: 1, duration: dur(winIn), curve: winIn.curve)
                     } else {
                         v.move(to: p.frame, duration: 0, curve: .linear)
                         v.fade(from: 0, to: 1, duration: dur(fadeIn), curve: fadeIn.curve)
@@ -735,6 +741,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
                 let hide = { [weak v] in
                     guard let v, !v.shown else { return }
                     v.isHidden = true
+                    v.endZoom()
                     v.surface.setOccluded(true)
                 }
                 let anim: ResolvedAnimation
@@ -750,6 +757,16 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
                 } else if wsDelta != 0, before?.visible == true, stayedOnWorkspace(p, before) {
                     anim = wsAnim
                     to = Self.offset(p.frame, style: wsAnim.style, delta: wsDelta > 0 ? -1 : 1, width: width, height: height)
+                } else if let chip = jobChip(of: p) {
+                    // A job collapsing shrinks into its chip, from where it is.
+                    let out = config.animation("windowsOut")
+                    if dur(out) > 0 {
+                        v.zoom(chip, shrinking: true, duration: dur(out), curve: out.curve)
+                        v.fade(to: 0, duration: dur(out), curve: out.curve, completion: hide)
+                    } else {
+                        hide()
+                    }
+                    continue
                 } else {
                     anim = config.animation("fadeOut")
                     to = p.frame

@@ -81,10 +81,11 @@ final class JobBarView: NSView {
         return nil
     }
 
-    /// A shown chip's rect, in this view's coordinates.
+    /// A job's chip, in this view's coordinates: the "+N" chip for one behind it.
     func rect(of id: ClientID) -> CGRect? {
-        guard let i = chips.firstIndex(where: { $0.id == id }), i < layout.frames.count else { return nil }
-        return chipRect(layout.frames[i])
+        guard let i = chips.firstIndex(where: { $0.id == id }) else { return nil }
+        if i < layout.frames.count { return chipRect(layout.frames[i]) }
+        return layout.overflow.map(chipRect)
     }
 
     // MARK: Layout

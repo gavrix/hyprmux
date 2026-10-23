@@ -177,6 +177,13 @@ extension Compositor {
         }
     }
 
+    /// A collapsed job's chip, in monitor coordinates: where it grows from and shrinks to.
+    /// Nil when its tile is out of view (a workspace switch moves it with the tile).
+    func jobChip(of p: Placement) -> CGRect? {
+        guard let a = p.attachment, let parent = last?.placement(a.parent), parent.visible else { return nil }
+        return views[a.parent]?.jobChipRect(p.id, in: root)
+    }
+
     /// The job bar under a point, in monitor coordinates, and the tile it's on.
     func jobBarHit(at p: CGPoint) -> (hit: JobBarView.Hit, parent: ClientID)? {
         guard !hud.contains(p), let top = last?.placements.last(where: { $0.visible && $0.frame.contains(p) }),

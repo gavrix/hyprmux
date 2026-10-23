@@ -421,7 +421,8 @@ The log is a file under `$TMPDIR`, left for macOS to clean up.
   that lists them. The bar moves, hides, and slides with its tile.
 - **Peek:** hover a chip to see its job: the real terminal, scaled down, just above
   the chip. The command sees the full size (the expanded frame), so nothing reflows
-  when it expands. The peek stays while the pointer is on it.
+  when it expands. The peek stays while the pointer is on it. Peeks and expanded
+  jobs grow out of their chip and shrink back into it.
 - **Expand:** click a chip or a peek, or press `$mod SHIFT B` (`focusattached`). It
   covers its tile above the job bar, minus a margin, and takes the keyboard: answer a
   prompt, press ctrl-c. Click its chip again, move focus away, or press

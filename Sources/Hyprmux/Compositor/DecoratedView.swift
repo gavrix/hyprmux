@@ -391,6 +391,41 @@ class DecoratedView: NSView {
         after(duration, generation: \.alphaGeneration, pending: \.alphaCompletionGeneration, completion)
     }
 
+    /// Plays a scale between this view's frame and `rect`, in its superview's coordinates:
+    /// shrinking into it, or growing out of it. Unlike `move`, the content scales with the
+    /// chrome. The model stays untransformed: a shrink holds its last frame until `endZoom`.
+    func zoom(_ rect: CGRect, shrinking: Bool, duration: Double, curve: Bezier) {
+        endZoom()
+        guard duration > 0, let layer, frame.width > 0, frame.height > 0, rect.width > 0, rect.height > 0 else { return }
+        // The target relative to the frame, then in the layer's terms: its superlayer may
+        // count y up while the flipped superview counts it down.
+        let l = layer.frame
+        let yDown = abs(l.minY - frame.minY) < 0.5
+        let dy = yDown ? rect.minY - frame.minY : frame.maxY - rect.maxY
+        let target = CGRect(x: l.minX + rect.minX - frame.minX, y: l.minY + dy, width: rect.width, height: rect.height)
+        // Maps the layer's frame onto `target`, around its anchor point.
+        let sx = target.width / l.width, sy = target.height / l.height
+        let a = CGPoint(x: layer.bounds.minX + layer.anchorPoint.x * layer.bounds.width,
+                        y: layer.bounds.minY + layer.anchorPoint.y * layer.bounds.height)
+        let p = layer.position
+        let tx = target.minX - p.x + sx * (a.x - layer.bounds.minX)
+        let ty = target.minY - p.y + sy * (a.y - layer.bounds.minY)
+        let small = CATransform3DConcat(CATransform3DMakeScale(sx, sy, 1), CATransform3DMakeTranslation(tx, ty, 0))
+        let animation = CABasicAnimation(keyPath: "transform")
+        animation.fromValue = NSValue(caTransform3D: shrinking ? CATransform3DIdentity : small)
+        animation.toValue = NSValue(caTransform3D: shrinking ? small : CATransform3DIdentity)
+        animation.duration = duration
+        animation.timingFunction = curve.timingFunction
+        if shrinking {
+            animation.fillMode = .forwards
+            animation.isRemovedOnCompletion = false
+        }
+        layer.add(animation, forKey: Self.animationKeyPrefix + "zoom")
+    }
+
+    /// Drops a zoom's held end state.
+    func endZoom() { layer?.removeAnimation(forKey: Self.animationKeyPrefix + "zoom") }
+
     /// True while the screen still shows a move or fade, or its completion hasn't run.
     var isAnimating: Bool {
         CACurrentMediaTime() < max(frameAnimationEnd, alphaAnimationEnd)

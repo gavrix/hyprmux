@@ -1,0 +1,7 @@
+{
+  "format": 1,
+  "id": "dev.gavrix.hyprmux.notes",
+  "name": "Notes",
+  "kind": "qml",
+  "instances": "single"
+}

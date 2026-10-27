@@ -69,6 +69,16 @@ final class BarView: NSView, NSViewToolTipOwner {
     /// The room each pill makes for its badge now. It eases toward the badge's width.
     private var room: [Int: CGFloat] = [:]
     private var roomTimer: Timer?
+    /// Clients' slots (plugins), right-aligned before the right-end labels, in order.
+    private(set) var items: [ClientPanelView] = []
+    private static let itemGap: CGFloat = 6
+    /// Items are as tall as the frosted capsule around the pills, and sit in one too.
+    static let itemHeight: CGFloat = 18 + 2 * BarBackdrop.padding
+    /// Where the leftmost item starts. The right-end labels' start when there are none.
+    private var itemsMinX: CGFloat = 0
+    /// The area the items cover, in the bar's coordinates. Called when it changes.
+    var onItemsFrame: ((CGRect) -> Void)?
+    private var lastItemsFrame: CGRect?
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -117,7 +127,53 @@ final class BarView: NSView, NSViewToolTipOwner {
         return rightLabels.reduce(bounds.maxX - 12) { x, s in x - (s as NSString).size(withAttributes: attrs).width - 14 } + 14
     }
 
+    // MARK: Items
+
+    func addItem(_ item: ClientPanelView) {
+        items.append(item)
+        // Stable: equal orders keep the order they arrived in.
+        items = items.enumerated().sorted { ($0.element.order, $0.offset) < ($1.element.order, $1.offset) }.map(\.element)
+        item.onSizeChange = { [weak self] _ in self?.pillsChanged() }
+        addSubview(item)
+        pillsChanged()
+    }
+
+    func removeItem(_ item: ClientPanelView) {
+        items.removeAll { $0 === item }
+        item.onSizeChange = nil
+        if item.superview === self { item.removeFromSuperview() }
+        pillsChanged()
+    }
+
+    /// Lays the items out right to left, ending before the right-end labels.
+    private func layoutItems() {
+        var x = rightLabels.isEmpty ? bounds.maxX - 8 : rightLabelsMinX - 10
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        for item in items.reversed() {
+            let w = item.granted
+            item.isHidden = w <= 0
+            guard w > 0 else { continue }
+            let h = min(Self.itemHeight, bounds.height)
+            let frame = CGRect(x: x - w, y: ((bounds.height - h) / 2).rounded(), width: w, height: h).integral
+            if item.frame != frame { item.frame = frame }
+            x -= w + Self.itemGap
+        }
+        CATransaction.commit()
+        itemsMinX = items.contains { $0.granted > 0 } ? x + Self.itemGap : rightLabelsMinX
+        let shown = items.filter { $0.granted > 0 }.map(\.frame)
+        let f = shown.dropFirst().reduce(shown.first ?? .zero) { $0.union($1) }
+        if f != lastItemsFrame {
+            lastItemsFrame = f
+            onItemsFrame?(f)
+        }
+    }
+
+    /// Union of the shown items. Empty when there are none.
+    var itemsFrame: CGRect { lastItemsFrame ?? .zero }
+
     private func pillsChanged() {
+        layoutItems()
         layoutPills()
         updateToolTips()
         needsDisplay = true
@@ -149,7 +205,7 @@ final class BarView: NSView, NSViewToolTipOwner {
             made.append((n, w, label))
         }
         let widths = made.map(\.width)
-        let available = max(80, rightLabelsMinX - 14 - start - Self.minTitleWidth)
+        let available = max(80, min(rightLabelsMinX, itemsMinX) - 14 - start - Self.minTitleWidth)
         scrollTarget = PillStrip.offset(widths: widths, gap: Self.pillGap, available: available,
                                         active: workspaces.firstIndex(of: active), previous: scrollTarget)
         if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion || window == nil { scroll = scrollTarget }
@@ -226,7 +282,7 @@ final class BarView: NSView, NSViewToolTipOwner {
         ]
         let t = title as NSString
         let ts = t.size(withAttributes: titleAttrs)
-        let maxW = max(0, min(rx, bounds.width) - x - 20)
+        let maxW = max(0, min(rx, itemsMinX - 14, bounds.width) - x - 20)
         let drawW = min(ts.width, maxW)
         let tx = max(x + 10, (bounds.width - drawW) / 2)
         t.draw(with: CGRect(x: tx, y: (h - ts.height) / 2, width: drawW, height: ts.height),
@@ -238,7 +294,8 @@ final class BarView: NSView, NSViewToolTipOwner {
     var debugState: [String: Any] {
         ["width": bounds.width, "strip": [strip.minX, strip.width], "offset": scroll,
          "shown": pills.filter(\.shown).map(\.id),
-         "before": before?.ids ?? [], "after": after?.ids ?? []]
+         "before": before?.ids ?? [], "after": after?.ids ?? [],
+         "items": items.map { ["id": $0.itemID, "frame": [$0.frame.minX, $0.frame.minY, $0.frame.width, $0.frame.height]] }]
     }
 
     /// The count at a clipped edge: how many pills are past it. It takes the color of the

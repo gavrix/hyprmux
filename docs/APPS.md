@@ -56,10 +56,11 @@ Visual Studio Code.hmapp/
 | `format` | yes | `1`. |
 | `id` | yes | Unique. Letters, digits, `.`, `_`, `-`. Generated apps use the target's bundle id. |
 | `name` | yes | What the launcher shows. |
-| `kind` | yes | `native` (the target speaks the [client protocol](CLIENT_PROTOCOL.md)) or `adapter` (an [adapter](ADAPTERS.md) lifts it). Informational: `exec` and `app` decide how it opens. |
+| `kind` | yes | `native` (the target speaks the [client protocol](CLIENT_PROTOCOL.md)), `adapter` (an [adapter](ADAPTERS.md) lifts it), or `qml` (a [QML app](QML.md) in the bundle, run by Hyprmux's QML host). For `native` and `adapter` it's informational: `exec` and `app` decide how it opens. |
 | `adapter` | when `kind` is `adapter` | The adapter's id. `hyprmuxctl adapters` lists the processes it started. |
 | `app` | no | Absolute path of the `.app` it opens or lifts. Gives the launcher its icon when there's no `icon.png`. |
 | `version` | no | The target's version when Hyprmux generated it. |
+| `main` | no | A `qml` app's main file, relative to the bundle. Default `main.qml`. |
 | `exec` | no | The executable. An absolute path; a path relative to the `.hmapp` (it contains `/`, like `bin/zed`); or a bare name, looked up in the adapter bin directories, then in the `.hmapp`. |
 | `args` | no | Default `["{args}"]`. `{app}` is `app`, `{bundle}` is the `.hmapp`'s path, and an `{args}` element is replaced by the arguments given at launch. |
 | `instances` | no | `multiple` (the default): a process per launch. `single`: one process. A launch while it runs goes to that process, which opens the window ([Single instance](#single-instance)). |

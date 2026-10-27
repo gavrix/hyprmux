@@ -35,6 +35,14 @@ final class ConfigTests: XCTestCase {
         XCTAssertFalse(ConfigParser.parse("bindp = SUPER, 1, workspace, 1").errors.isEmpty, "the p flag is gone")
     }
 
+    func testPluginLines() {
+        let c = ConfigParser.parse("plugin = sysload\nplugin = ~/src/calendar\nplugin = sysload\n# plugin = slack")
+        XCTAssertTrue(c.errors.isEmpty, "\(c.errors)")
+        XCTAssertEqual(c.plugins, ["sysload", "~/src/calendar"])  // in order, once each
+        XCTAssertFalse(ConfigParser.parse("plugin =").errors.isEmpty)
+        XCTAssertEqual(ConfigParser.parse(defaultConfig).plugins, [])
+    }
+
     func testConfirmQuit() {
         XCTAssertTrue(ConfigParser.parse(defaultConfig).confirmQuit)
         XCTAssertTrue(HyprmuxConfig().confirmQuit)

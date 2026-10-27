@@ -556,6 +556,17 @@ exec = btop          # also run on every config reload
 Without any `exec-once`, Hyprmux opens one terminal at startup. A
 [terminal hook](HOOKS.md#hooks) on `launch` or `firstlaunch` replaces it too.
 
+### Plugins
+
+```ini
+plugin = sysload            # a folder in plugins/ next to this file
+plugin = ~/src/my-plugin    # or a path to one
+```
+
+Each line loads a plugin: listed means enabled, so remove the line to disable
+it. A reload starts and stops plugins to match. A plugin's own settings live in
+its folder under `plugin-config/`, not here. See [Plugins](PLUGINS.md).
+
 ## Binds
 
 ```ini
@@ -690,6 +701,7 @@ See [Terminal automation](AUTOMATION.md) for workflows, limits, and agent skill 
 | `sendmouse down\|drag\|up\|move <MODS>, <button>, <x y>` | Injects one mouse event (holds, hand-timed gestures). Buttons: 272 left, 273 right, 274 middle. |
 | `senddrag <MODS>, <button>, <x1 y1>, <x2 y2>` | Injects a paced drag (about 16 ms per step). |
 | `snapshot [--surface ID] FILE.png` | Writes a tile to a PNG: an app tile's current frame, or any other tile as it shows, decoration included. |
+| `snapshot --window FILE.png` | Writes the whole window to a PNG, the bar included. |
 | `sendscroll <MODS>, <lines>, <x y>` | Injects a notched mouse-wheel scroll. Positive lines scroll up. |
 | `hittest <x y>` | Which views a click at that point reaches. |
 | `sendmenu <title>` | Performs a menu bar item by title, as a click would (`sendmenu Open App...`). Case doesn't matter, and `...` matches `…`. |

@@ -10,18 +10,43 @@ extension ClientSurface {
     // MARK: Dialogs
 
     /// One sheet at a time per window; later requests wait their turn.
-    private static var sheetQueue: [(NSWindow) -> Void] = []
+    private struct QueuedSheet {
+        weak var owner: ClientSurface?
+        let show: (NSWindow) -> Void
+    }
+    private static var sheetQueue: [QueuedSheet] = []
     private static var sheetOpen = false
 
-    private static func enqueueSheet(on window: NSWindow, _ show: @escaping (NSWindow, @escaping () -> Void) -> Void) {
-        sheetQueue.append { w in show(w) { sheetOpen = false; runNextSheet(on: w) } }
-        runNextSheet(on: window)
+    /// `show` presents the sheet, records it in `openSheet`, and calls `done` once
+    /// it's answered.
+    private func enqueueSheet(on window: NSWindow, _ show: @escaping (NSWindow, @escaping () -> Void) -> Void) {
+        Self.sheetQueue.append(QueuedSheet(owner: self) { [weak self] w in
+            show(w) {
+                self?.openSheet = nil
+                Self.sheetOpen = false
+                Self.runNextSheet(on: w)
+            }
+        })
+        Self.runNextSheet(on: window)
     }
 
     private static func runNextSheet(on window: NSWindow) {
+        // Sheets for tiles that went away while queued are dropped.
+        sheetQueue.removeAll { $0.owner == nil || $0.owner?.closed == true }
         guard !sheetOpen, !sheetQueue.isEmpty else { return }
         sheetOpen = true
-        sheetQueue.removeFirst()(window)
+        sheetQueue.removeFirst().show(window)
+    }
+
+    /// The client left: its menu and sheet close, and its queued sheets never show.
+    /// Nothing is answered: there's no one to answer.
+    func dismissWindowUI() {
+        Self.sheetQueue.removeAll { $0.owner === self }
+        openMenu?.cancelTracking()
+        openMenu = nil
+        if let sheet = openSheet, let parent = sheet.sheetParent {
+            parent.endSheet(sheet, returnCode: .cancel)
+        }
     }
 
     func showDialog(kind: String, options o: [String: Any], reply: @escaping ([String: Any]) -> Void) {
@@ -31,8 +56,9 @@ extension ClientSurface {
         }
         switch kind {
         case HMDialogKind.open, HMDialogKind.save:
-            Self.enqueueSheet(on: window) { w, done in
+            enqueueSheet(on: window) { [weak self] w, done in
                 let panel = kind == HMDialogKind.open ? Self.openPanel(o) : Self.savePanel(o)
+                self?.openSheet = panel
                 panel.beginSheetModal(for: w) { response in
                     let ok = response == .OK
                     if let open = panel as? NSOpenPanel {
@@ -44,8 +70,9 @@ extension ClientSurface {
                 }
             }
         case HMDialogKind.message:
-            Self.enqueueSheet(on: window) { w, done in
+            enqueueSheet(on: window) { [weak self] w, done in
                 let (alert, cancelIndex) = Self.alert(o)
+                self?.openSheet = alert.window
                 alert.beginSheetModal(for: w) { response in
                     let index = response.rawValue - NSApplication.ModalResponse.alertFirstButtonReturn.rawValue
                     let valid = index >= 0 && index < alert.buttons.count
@@ -69,6 +96,11 @@ extension ClientSurface {
         panel.canCreateDirectories = props.contains("createDirectory") || panel is NSSavePanel && !(panel is NSOpenPanel)
         panel.treatsFilePackagesAsDirectories = props.contains("treatPackageAsDirectory")
         if let path = (o["defaultPath"] as? String).map({ ($0 as NSString).expandingTildeInPath }), !path.isEmpty {
+            // A bare name: just the name, in the folder the panel picks.
+            guard path.contains("/") else {
+                if !defaultIsDirectory { panel.nameFieldStringValue = path }
+                return finishConfigure(panel, o)
+            }
             var isDir: ObjCBool = false
             if FileManager.default.fileExists(atPath: path, isDirectory: &isDir), isDir.boolValue || defaultIsDirectory {
                 panel.directoryURL = URL(fileURLWithPath: path)
@@ -77,6 +109,10 @@ extension ClientSurface {
                 panel.nameFieldStringValue = (path as NSString).lastPathComponent
             }
         }
+        finishConfigure(panel, o)
+    }
+
+    private static func finishConfigure(_ panel: NSSavePanel, _ o: [String: Any]) {
         let extensions = (o["filters"] as? [[String: Any]] ?? []).flatMap { $0["extensions"] as? [String] ?? [] }
         if !extensions.isEmpty, !extensions.contains("*") {
             panel.allowedContentTypes = extensions.compactMap { UTType(filenameExtension: $0) }
@@ -144,8 +180,10 @@ extension ClientSurface {
         // than a GCD block keeps the main queue draining, so the client keeps drawing
         // and its messages keep arriving while the menu is open.
         RunLoop.main.perform(inModes: [.common]) { [weak self] in
-            guard let self, self.window != nil else { reply(nil); return }
+            guard let self, self.window != nil, !self.closed else { reply(nil); return }
+            self.openMenu = menu
             menu.popUp(positioning: nil, at: point, in: self)
+            if self.openMenu === menu { self.openMenu = nil }
             // The picked item's action has run by the time tracking returns.
             reply(target.picked)
         }
@@ -186,10 +224,24 @@ extension ClientSurface {
             case "tab": key = "\t"
             case "space": key = " "
             case "backspace": key = "\u{8}"
-            case "delete": key = "\u{7f}"
+            case "delete", "del": key = String(UnicodeScalar(NSDeleteFunctionKey)!)
             case "esc", "escape": key = "\u{1b}"
             case "plus": key = "+"
-            default: key = part.count == 1 ? part : ""
+            case "left": key = String(UnicodeScalar(NSLeftArrowFunctionKey)!)
+            case "right": key = String(UnicodeScalar(NSRightArrowFunctionKey)!)
+            case "up": key = String(UnicodeScalar(NSUpArrowFunctionKey)!)
+            case "down": key = String(UnicodeScalar(NSDownArrowFunctionKey)!)
+            case "home": key = String(UnicodeScalar(NSHomeFunctionKey)!)
+            case "end": key = String(UnicodeScalar(NSEndFunctionKey)!)
+            case "pageup", "pgup": key = String(UnicodeScalar(NSPageUpFunctionKey)!)
+            case "pagedown", "pgdown": key = String(UnicodeScalar(NSPageDownFunctionKey)!)
+            default:
+                // F1 to F24, else one character.
+                if part.count >= 2, part.first == "f", let n = Int(part.dropFirst()), (1...24).contains(n) {
+                    key = String(UnicodeScalar(NSF1FunctionKey + n - 1)!)
+                } else {
+                    key = part.count == 1 ? part : ""
+                }
             }
         }
         guard !key.isEmpty else { return }

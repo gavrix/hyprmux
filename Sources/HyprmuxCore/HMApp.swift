@@ -12,6 +12,8 @@ public struct HMAppManifest: Equatable, Sendable {
         case native
         /// An adapter lifts the target.
         case adapter
+        /// A QML app in the bundle, run by Hyprmux's QML host (docs/QML.md).
+        case qml
     }
 
     /// How many processes the app runs.
@@ -39,6 +41,8 @@ public struct HMAppManifest: Equatable, Sendable {
     /// The executable: absolute, relative to the bundle (contains `/`), or a bare name
     /// looked up in the adapter bin directories.
     public var exec: String?
+    /// A QML app's main file, relative to the bundle. Default `main.qml`.
+    public var main: String?
     /// `{app}`, `{bundle}`, and an `{args}` element that splices the user's arguments.
     public var args: [String]
     public var instances: Instances
@@ -61,7 +65,13 @@ public struct HMAppManifest: Equatable, Sendable {
 
     public var isGenerated: Bool { generatedBy == Self.generator }
 
-    static let keys: Set<String> = ["format", "id", "name", "kind", "adapter", "app", "version", "exec", "args", "instances", "generatedBy"]
+    static let keys: Set<String> = ["format", "id", "name", "kind", "adapter", "app", "version", "exec", "main", "args", "instances", "generatedBy"]
+
+    /// The QML host's name, looked up like a bare `exec`: next to Hyprmux.
+    public static let qmlHost = "hyprmux-qml"
+
+    /// A QML app's main file, relative to the bundle.
+    public var qmlMain: String { main ?? "main.qml" }
 
     /// Letters, digits, `.`, `_`, `-`.
     public static func isValidID(_ id: String) -> Bool {
@@ -94,13 +104,18 @@ public struct HMAppManifest: Equatable, Sendable {
             let name = try string("name", required: true).get()!
             let kindName = try string("kind", required: true).get()!
             guard let kind = Kind(rawValue: kindName) else {
-                return .failure(ParseError("\"kind\" must be native or adapter"))
+                return .failure(ParseError("\"kind\" must be native, adapter, or qml"))
             }
             var m = HMAppManifest(id: id, name: name, kind: kind)
             m.adapter = try string("adapter").get()
             m.app = try string("app").get()
             m.version = try string("version").get()
             m.exec = try string("exec").get()
+            m.main = try string("main").get()
+            if let main = m.main, main.hasPrefix("/") || main.split(separator: "/").contains("..") {
+                return .failure(ParseError("\"main\" must be a path inside the bundle"))
+            }
+            if m.main != nil, kind != .qml { return .failure(ParseError("\"main\" is for qml apps")) }
             m.generatedBy = try string("generatedBy").get()
             if let v = o["args"] {
                 guard let a = v as? [String] else { return .failure(ParseError("\"args\" must be an array of strings")) }
@@ -118,7 +133,7 @@ public struct HMAppManifest: Equatable, Sendable {
             if let app = m.app, !app.hasPrefix("/") {
                 return .failure(ParseError("\"app\" must be an absolute path"))
             }
-            guard m.exec != nil || m.app != nil else {
+            guard m.exec != nil || m.app != nil || kind == .qml else {
                 return .failure(ParseError("needs \"exec\" or \"app\""))
             }
             return .success(m)
@@ -136,6 +151,7 @@ public struct HMAppManifest: Equatable, Sendable {
         if let app { o["app"] = app }
         if let version { o["version"] = version }
         if let exec { o["exec"] = exec }
+        if let main { o["main"] = main }
         if args != Self.defaultArgs { o["args"] = args }
         if instances != .multiple { o["instances"] = instances.rawValue }
         if let generatedBy { o["generatedBy"] = generatedBy }
@@ -225,7 +241,19 @@ public struct HMApp: Equatable, Sendable {
 
     public func command(args: [String], binDirectories: [String]) -> Result<Command, ParseError> {
         let m = manifest
-        let arguments = HMAppManifest.expand(m.args, app: m.app, bundle: path, args: args)
+        var arguments = HMAppManifest.expand(m.args, app: m.app, bundle: path, args: args)
+        // A QML app runs in the QML host, on its main file.
+        if m.kind == .qml, m.exec == nil {
+            guard let host = AdapterRegistry.resolveExecutable(HMAppManifest.qmlHost, manifestDir: path, binDirectories: binDirectories) else {
+                return .failure(ParseError("\(m.name): this Hyprmux has no QML host (hyprmux-qml)"))
+            }
+            let main = (path as NSString).appendingPathComponent(m.qmlMain)
+            guard FileManager.default.fileExists(atPath: main) else {
+                return .failure(ParseError("\(m.name): no \(m.qmlMain) in the bundle"))
+            }
+            arguments = [main] + arguments
+            return .success(Command(executable: host, app: nil, arguments: arguments))
+        }
         if let exec = m.exec {
             guard let exe = m.resolveExecutable(bundle: path, binDirectories: binDirectories) else {
                 return .failure(ParseError("\(m.name): executable \(exec) not found"))
@@ -253,6 +281,7 @@ public struct HMApp: Equatable, Sendable {
         if let a = m.app { o["app"] = a }
         if let v = m.version { o["version"] = v }
         if let e = m.exec { o["exec"] = e }
+        if m.kind == .qml { o["main"] = m.qmlMain }
         if m.isGenerated { o["generatedBy"] = m.generatedBy }
         if let overrides { o["overrides"] = overrides }
         return o

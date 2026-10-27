@@ -8,7 +8,16 @@ extension Compositor {
     func writeWindowSnapshot(of id: ClientID, to url: URL) throws {
         guard let v = views[id], !v.isHidden else { throw SnapshotError("surface \(id.raw) isn't shown") }
         let margin: CGFloat = 16
-        let inWindow = v.convert(v.bounds, to: nil).insetBy(dx: -margin, dy: -margin)
+        try writeWindowSnapshot(v.convert(v.bounds, to: nil).insetBy(dx: -margin, dy: -margin), to: url)
+    }
+
+    /// `hyprmuxctl snapshot --window`: the whole window, bar included.
+    func writeWindowSnapshot(to url: URL) throws {
+        try writeWindowSnapshot(CGRect(origin: .zero, size: window.frame.size), to: url)
+    }
+
+    /// `inWindow`: the part to keep, in window coordinates (bottom-left origin).
+    private func writeWindowSnapshot(_ inWindow: CGRect, to url: URL) throws {
         // A window may capture itself without Screen Recording permission. The API is
         // unavailable to Swift on newer SDKs, so it's looked up at run time.
         typealias Capture = @convention(c) (CGRect, UInt32, UInt32, UInt32) -> Unmanaged<CGImage>?

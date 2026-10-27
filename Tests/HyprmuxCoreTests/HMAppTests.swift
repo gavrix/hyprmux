@@ -52,7 +52,7 @@ final class HMAppTests: XCTestCase {
         XCTAssertEqual(error(#"{"format":1,"id":"a b","name":"A","kind":"native","app":"/x"}"#), "\"id\" must use letters, digits, . _ -")
         XCTAssertEqual(error(#"{"format":1,"id":"a","kind":"native","app":"/x"}"#), "\"name\" is required")
         XCTAssertEqual(error(#"{"format":1,"id":"a","name":"","kind":"native","app":"/x"}"#), "\"name\" must not be empty")
-        XCTAssertEqual(error(#"{"format":1,"id":"a","name":"A","kind":"magic","app":"/x"}"#), "\"kind\" must be native or adapter")
+        XCTAssertEqual(error(#"{"format":1,"id":"a","name":"A","kind":"magic","app":"/x"}"#), "\"kind\" must be native, adapter, or qml")
         XCTAssertEqual(error(#"{"format":1,"id":"a","name":"A","kind":"adapter","app":"/x","exec":"b"}"#),
                        "\"adapter\" is required when \"kind\" is adapter")
         XCTAssertEqual(error(#"{"format":1,"id":"a","name":"A","kind":"native"}"#), "needs \"exec\" or \"app\"")
@@ -157,6 +157,31 @@ final class HMAppTests: XCTestCase {
                        HMApp.Command(executable: nil, app: root.path, arguments: ["x"]))
         let missing = HMApp(manifest: HMAppManifest(id: "a", name: "Gone", kind: .native, exec: "nope"), path: bundle, source: .installed)
         if case .success = missing.command(args: [], binDirectories: []) { XCTFail("expected an error") }
+    }
+
+    func testQMLApps() throws {
+        let m = try parse(#"{"format":1,"id":"dev.x.notes","name":"Notes","kind":"qml"}"#).get()
+        XCTAssertEqual(m.kind, .qml)
+        XCTAssertEqual(m.qmlMain, "main.qml")
+        XCTAssertEqual(try parse(#"{"format":1,"id":"a","name":"A","kind":"qml","main":"ui/App.qml"}"#).get().qmlMain, "ui/App.qml")
+        XCTAssertEqual(error(#"{"format":1,"id":"a","name":"A","kind":"qml","main":"/etc/x.qml"}"#), "\"main\" must be a path inside the bundle")
+        XCTAssertEqual(error(#"{"format":1,"id":"a","name":"A","kind":"qml","main":"../x.qml"}"#), "\"main\" must be a path inside the bundle")
+        XCTAssertEqual(error(#"{"format":1,"id":"a","name":"A","kind":"native","exec":"x","main":"a.qml"}"#), "\"main\" is for qml apps")
+
+        // It runs in the host Hyprmux ships, on the bundle's main file.
+        let bundle = root.appendingPathComponent("Notes.hmapp").path
+        let bin = root.appendingPathComponent("bin").path
+        try executable((bin as NSString).appendingPathComponent("hyprmux-qml"))
+        try FileManager.default.createDirectory(atPath: bundle, withIntermediateDirectories: true)
+        FileManager.default.createFile(atPath: (bundle as NSString).appendingPathComponent("main.qml"), contents: Data())
+        let app = HMApp(manifest: m, path: bundle, source: .installed)
+        XCTAssertEqual(try app.command(args: ["note.txt"], binDirectories: [bin]).get(),
+                       HMApp.Command(executable: (bin as NSString).appendingPathComponent("hyprmux-qml"), app: nil,
+                                     arguments: [(bundle as NSString).appendingPathComponent("main.qml"), "note.txt"]))
+        // No host, or no main file: it says so.
+        if case .success = app.command(args: [], binDirectories: []) { XCTFail("expected an error without a host") }
+        try FileManager.default.removeItem(atPath: (bundle as NSString).appendingPathComponent("main.qml"))
+        if case .success = app.command(args: [], binDirectories: [bin]) { XCTFail("expected an error without main.qml") }
     }
 
     func testSlugs() {

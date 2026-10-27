@@ -48,6 +48,21 @@ EBRIDGE_BIN="$BIN_DIR/hyprmux-electron-bridge"
 MOBILE_BIN="$BIN_DIR/hyprmux-mobile"
 CREDENTIAL_1PASSWORD_BIN="$BIN_DIR/hyprmux-credential-1password"
 
+# The QML host (docs/PLUGINS.md), built against the pinned Qt in vendor/qt
+# (scripts/fetch-qt.sh) and shipped with it (scripts/deploy-qt.sh), so plugins and
+# QML apps run on any Mac. HYPRMUX_SKIP_QML_HOST=1 leaves it out; needs CMake.
+QML_HOST_BIN=""
+QT_PREFIX="$ROOT/vendor/qt"
+if [[ -z "${HYPRMUX_SKIP_QML_HOST:-}" ]]; then
+  command -v cmake >/dev/null || { echo "error: the QML host needs CMake (brew install cmake), or set HYPRMUX_SKIP_QML_HOST=1" >&2; exit 1; }
+  "$ROOT/scripts/fetch-qt.sh" >/dev/null
+  QML_BUILD="$ROOT/.build/qml-host"
+  cmake -S "$ROOT/clients/qml" -B "$QML_BUILD" -DCMAKE_PREFIX_PATH="$QT_PREFIX" -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+    -DCMAKE_OSX_ARCHITECTURES=arm64 -DQT_NO_PRIVATE_MODULE_WARNING=ON >/dev/null
+  cmake --build "$QML_BUILD" -j 8 >/dev/null
+  QML_HOST_BIN="$QML_BUILD/hyprmux-qml"
+fi
+
 # HYPRMUX_APP builds the bundle somewhere else (test copies, demo recordings).
 APP="${HYPRMUX_APP:-$ROOT/build/Hyprmux.app}"
 rm -rf "$APP"
@@ -63,6 +78,14 @@ cp "$EBRIDGE_BIN" "$APP/Contents/MacOS/hyprmux-electron-bridge"
 # programs here, so they resolve by bare name and are signed with the app.
 cp "$MOBILE_BIN" "$APP/Contents/MacOS/hyprmux-mobile"
 cp "$CREDENTIAL_1PASSWORD_BIN" "$APP/Contents/MacOS/hyprmux-credential-1password"
+if [[ -n "$QML_HOST_BIN" ]]; then
+  cp "$QML_HOST_BIN" "$APP/Contents/MacOS/hyprmux-qml"
+  "$ROOT/scripts/deploy-qt.sh" "$APP" "$QT_PREFIX"
+  # The Hyprmux module's type information, for qmllint and qmlls (docs/QML.md).
+  # Its qmldir points the engine at the module compiled into the host.
+  mkdir -p "$APP/Contents/Resources/qml/Hyprmux"
+  cp "$QML_BUILD/Hyprmux/qmldir" "$QML_BUILD/Hyprmux/hyprmux-qml.qmltypes" "$APP/Contents/Resources/qml/Hyprmux/"
+fi
 cp "$ROOT/Resources/electron-hook.js" "$APP/Contents/Resources/electron-hook.js"
 rm -rf "$APP/Contents/Resources/adapters"
 cp -R "$ROOT/Resources/adapters" "$APP/Contents/Resources/adapters"
@@ -72,6 +95,9 @@ cp -R "$ROOT/Resources/hooks" "$APP/Contents/Resources/hooks"
 # Agent integrations (docs/AUTOMATION.md, Agent state): files agents load to report their state.
 rm -rf "$APP/Contents/Resources/agents"
 cp -R "$ROOT/Resources/agents" "$APP/Contents/Resources/agents"
+# Built-in plugins (docs/PLUGINS.md): `plugin = sysload` finds them here.
+rm -rf "$APP/Contents/Resources/plugins"
+cp -R "$ROOT/Resources/plugins" "$APP/Contents/Resources/plugins"
 rm -rf "$APP/Contents/Resources/apps"
 cp -R "$ROOT/Resources/apps" "$APP/Contents/Resources/apps"
 # The markdown viewer's scripts and styles (plans/markdown-viewer.md).
@@ -92,6 +118,8 @@ if [[ ! -f "$SKILL/SKILL.md" ]]; then
 fi
 mkdir -p "$APP/Contents/Resources/skills"
 cp -R "$SKILL" "$APP/Contents/Resources/skills/hyprmuxctl"
+# For writing QML apps and plugins (docs/QML.md).
+cp -R "$ROOT/.agents/skills/hyprmux-qml" "$APP/Contents/Resources/skills/hyprmux-qml"
 
 # libghostty resources are checked in so building Hyprmux does not require an
 # installed Ghostty or cmux app. Keep these paths aligned with what libghostty
@@ -160,6 +188,12 @@ sign "$APP/Contents/MacOS/hyprmux-broker"
 sign "$APP/Contents/MacOS/hyprmux-electron-bridge"
 sign "$APP/Contents/MacOS/hyprmux-mobile"
 sign "$APP/Contents/MacOS/hyprmux-credential-1password"
+if [[ -f "$APP/Contents/MacOS/hyprmux-qml" ]]; then
+  # Qt's plugins and frameworks first: nested code is signed before what contains it.
+  while IFS= read -r -d '' lib; do sign "$lib"; done < <(find "$APP/Contents/PlugIns" -name '*.dylib' -print0)
+  for fw in "$APP"/Contents/Frameworks/Qt*.framework; do sign "$fw"; done
+  sign "$APP/Contents/MacOS/hyprmux-qml"
+fi
 sign "$APP"
 if [[ "$SIGN" == "-" ]]; then
   echo "signed ad hoc: permissions reset on every build (see docs/DEVELOPMENT.md, Signing)" >&2

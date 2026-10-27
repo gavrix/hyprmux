@@ -1,0 +1,18 @@
+{
+  "id": "dev.gavrix.sysload",
+  "name": "System load",
+  "contributes": { "bar": { "slot": "right", "item": "Bar.qml" } },
+  "permissions": ["system-stats", "tiles"],
+  "config": {
+    "interval_ms": 2000,
+    "cpu_warn": 85,
+    "cpu_sustain_s": 10,
+    "battery_warn": 20,
+    "row_cpu_warn": 50,
+    "row_memory_warn_gb": 4,
+    "max_rows": 12,
+    "history_s": 300,
+    "sample_s": 5,
+    "bar_graph_s": 60
+  }
+}

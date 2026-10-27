@@ -211,6 +211,8 @@ public enum IPCRequest: Equatable {
     case moveSurface(surface: SurfaceReference?, workspace: WorkspaceTarget, focus: Bool)
     case clients
     case surfaces
+    /// The plugins the config lists (docs/PLUGINS.md): state, process, log, errors.
+    case plugins
     case identify(SurfaceReference?)
     case workspaces
     case activeWindow
@@ -234,7 +236,8 @@ public enum IPCRequest: Equatable {
     /// A notched mouse-wheel scroll of `lines` (positive scrolls up) at a point, for tests.
     case sendScroll(Modifiers, lines: Int, at: CGPoint)
     /// Writes an app tile's current frame to a PNG at `path`, for tests and bug reports.
-    case snapshot(surface: SurfaceReference?, path: String)
+    /// `window`: the whole Hyprmux window, bar included, instead of one tile.
+    case snapshot(surface: SurfaceReference?, path: String, window: Bool = false)
     /// The CDP endpoint agents drive Chromium web tiles through (docs/AUTOMATION.md).
     /// With a surface the endpoint reaches only that tile and the tiles its agent opens.
     case cdpURL(surface: SurfaceReference?)
@@ -307,9 +310,12 @@ public enum IPCRequest: Equatable {
             return .success(.moveSurface(surface: surface, workspace: workspace, focus: focus))
         case "clients": return .success(.clients)
         case "surfaces": return .success(.surfaces)
+        case "plugins": return .success(.plugins)
         case "snapshot":
-            // snapshot [--surface S] --base64 PATH
+            // snapshot [--surface S | --window] --base64 PATH
             var args = words(rest)
+            let window = args.first == "--window"
+            if window { args.removeFirst() }
             let surface: SurfaceReference?
             switch takeOption("--surface", from: &args).flatMap(parseSurface) {
             case .failure(let error): return .failure(error)
@@ -318,7 +324,7 @@ public enum IPCRequest: Equatable {
             guard args.count == 2, args[0] == "--base64", let path = decodeBase64(args[1]), path.hasPrefix("/") else {
                 return .failure(ParseError("snapshot: expected an absolute PNG path"))
             }
-            return .success(.snapshot(surface: surface, path: path))
+            return .success(.snapshot(surface: surface, path: path, window: window))
         case "cdp-url":
             var args = words(rest)
             switch takeOption("--surface", from: &args) {

@@ -53,7 +53,8 @@ jobs:
             .cache
             vendor/GhosttyKit.xcframework
             vendor/cef
-          key: ${{ runner.os }}-${{ runner.arch }}-release-${{ hashFiles('Package.resolved', 'scripts/fetch-ghosttykit.sh', 'scripts/fetch-cef.sh') }}
+            vendor/qt
+          key: ${{ runner.os }}-${{ runner.arch }}-release-${{ hashFiles('Package.resolved', 'scripts/fetch-ghosttykit.sh', 'scripts/fetch-cef.sh', 'scripts/fetch-qt.sh') }}
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-release-
 

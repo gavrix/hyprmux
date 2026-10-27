@@ -25,7 +25,26 @@ protocol ClientServerHost: AnyObject {
     func clientServer(_ server: ClientServer, terminalFor tile: ClientSurface, command: [String], cwd: String?,
                       env: [String: String]) -> TerminalView?
     /// `toplevel.request_activate` with a valid token: focus the tile.
-    func clientServer(_ server: ClientServer, activate tile: ClientSurface)
+    /// `launch`: the launch the app answers by showing a window it already has.
+    func clientServer(_ server: ClientServer, activate tile: ClientSurface, for launch: AppLaunch?)
+    /// `bar_item.create`: put a client's surface in the workspace bar.
+    func clientServer(_ server: ClientServer, addBarItem item: ClientPanelView)
+    /// A bar item went (destroyed, or its client left). It is out of the view tree already.
+    func clientServer(_ server: ClientServer, removedBarItem item: ClientPanelView)
+    /// `popup.create`: show a client's popup under its bar item.
+    func clientServer(_ server: ClientServer, openPopup popup: ClientPanelView)
+    /// A popup went (destroyed, dismissed, or its client left).
+    func clientServer(_ server: ClientServer, removedPopup popup: ClientPanelView)
+    /// `tiles.query`: every tile, as `hyprmuxctl surfaces` lists them, with the processes
+    /// behind each (`pids`, and `sessions`: terminal sessions, every process in them).
+    func clientServerTiles(_ server: ClientServer) -> [String: Any]
+    /// How Hyprmux looks, for clients to match (`welcome`'s `theme_json`).
+    func clientServerTheme(_ server: ClientServer) -> [String: Any]
+    /// `tiles.focus`: show and focus a tile, by its `surface:N` number.
+    func clientServer(_ server: ClientServer, focusTile id: UInt64)
+    /// The permissions of the plugin whose host is `pid` (its manifest's list). Nil when
+    /// the process isn't a plugin Hyprmux started.
+    func clientServer(_ server: ClientServer, pluginPermissionsFor pid: pid_t) -> Set<String>?
     /// `notification.post`. `tile` is the toplevel it names: clicking the notice finds it.
     func clientServer(_ server: ClientServer, notify title: String, body: String, from tile: ClientSurface?)
     /// An app tile waits for a client, but Hyprmux isn't registered with the broker.
@@ -184,6 +203,17 @@ final class ClientServer {
     }
 
     var clientCount: Int { connections.count }
+
+    /// Sends a message to every client that said hello (a theme change).
+    func broadcast(_ op: String, _ fields: [String: Any]) {
+        for c in connections.values { c.sendIfGreeted(op, fields) }
+    }
+
+    /// `theme_json`: Hyprmux's look, as JSON.
+    var themeJSON: String {
+        let theme = host?.clientServerTheme(self) ?? [:]
+        return (try? JSONSerialization.data(withJSONObject: theme)).flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
+    }
 }
 
 /// One client process. Holds its objects and turns messages into surface calls.
@@ -207,6 +237,11 @@ final class ClientConnection {
         var toplevel: UInt64 = 0
         /// Set when the surface is a subsurface: its object id.
         var subsurface: UInt64 = 0
+        /// Set when the surface is a bar item: its object id.
+        var barItem: UInt64 = 0
+        /// Set when the surface is a popup: its object id.
+        var popup: UInt64 = 0
+        var hasRole: Bool { toplevel != 0 || subsurface != 0 || barItem != 0 || popup != 0 }
     }
 
     /// A `subsurface` object: a surface drawn above its parent, scaled to a rect.
@@ -226,11 +261,17 @@ final class ClientConnection {
     private var name = ""
     /// The launch that started the process: toplevels that name no launch belong to it.
     private var launchToken: String?
+    /// What the client said it does, in `hello` (HMCapability).
+    private(set) var capabilities: Set<String> = []
     private var buffers: [UInt64: Buffer] = [:]
     private var surfaces: [UInt64: SurfaceState] = [:]
     /// Toplevel id → the tile showing it.
     private var toplevels: [UInt64: ClientSurface] = [:]
     private var subsurfaces: [UInt64: SubsurfaceState] = [:]
+    /// Bar item id → its view in the workspace bar.
+    private var barItems: [UInt64: ClientPanelView] = [:]
+    /// Popup id → its view. A dismissed popup stays until the client destroys it.
+    private var popups: [UInt64: ClientPanelView] = [:]
     private var closed = false
     private var inputSerial: UInt64 = 0
     /// Recent press serials, which can activate a toplevel, with when they were sent.
@@ -274,6 +315,10 @@ final class ClientConnection {
         xpc_connection_resume(peer)
     }
 
+    func sendIfGreeted(_ op: String, _ fields: [String: Any]) {
+        if greeted { send(op, fields) }
+    }
+
     func send(_ op: String, _ fields: [String: Any]) {
         guard !closed else { return }
         xpc_connection_send_message(peer, xpcMessage(op, fields))
@@ -292,6 +337,8 @@ final class ClientConnection {
         closed = true
         for tile in toplevels.values { tile.clientLeft() }
         toplevels.removeAll()
+        for id in Array(popups.keys) { destroyPopup(id) }
+        for id in Array(barItems.keys) { destroyBarItem(id) }
         buffers.removeAll()
         surfaces.removeAll()
         subsurfaces.removeAll()
@@ -325,6 +372,8 @@ final class ClientConnection {
         case HMOp.bufferDestroy:
             guard let b = buffers.removeValue(forKey: id) else { return fail("object", "no buffer \(id)") }
             for tile in toplevels.values { tile.bufferDestroyed(b) }
+            for item in barItems.values { item.bufferDestroyed(b) }
+            for popup in popups.values { popup.bufferDestroyed(b) }
 
         case HMOp.surfaceCreate:
             guard surfaces[id] == nil, id != 0 else { return fail("object", "surface id \(id) in use") }
@@ -358,7 +407,17 @@ final class ClientConnection {
             s.pendingCallbacks.removeAll()
             let buffer = s.bufferAttached ? s.pendingBuffer : nil
             s.bufferAttached = false
-            if s.subsurface != 0, let sub = subsurfaces[s.subsurface], let tile = tile(forSurface: sub.parent) {
+            if s.barItem != 0, let item = barItems[s.barItem] {
+                item.commit(buffer: buffer, scale: s.pendingScale, callbacks: callbacks)
+            } else if s.popup != 0, let popup = popups[s.popup] {
+                if popup.isClosed {
+                    // Dismissed: nothing shows it, so answer its callbacks now.
+                    for cb in callbacks { send(HMOp.surfaceFrameDone, ["callback": cb, "time": CACurrentMediaTime(), "target_time": CACurrentMediaTime()]) }
+                    if let buffer { send(HMOp.bufferRelease, ["id": buffer.id]) }
+                } else {
+                    popup.commit(buffer: buffer, scale: s.pendingScale, callbacks: callbacks)
+                }
+            } else if s.subsurface != 0, let sub = subsurfaces[s.subsurface], let tile = tile(forSurface: sub.parent) {
                 tile.commitChild(s.subsurface, buffer: buffer, callbacks: callbacks)
             } else if let tile = toplevels[s.toplevel] {
                 tile.commit(buffer: buffer, scale: s.pendingScale, callbacks: callbacks)
@@ -376,6 +435,8 @@ final class ClientConnection {
         case HMOp.surfaceDestroy:
             guard let s = surfaces.removeValue(forKey: id) else { return fail("object", "no surface \(id)") }
             if s.subsurface != 0 { destroySubsurface(s.subsurface) }
+            if s.barItem != 0 { destroyBarItem(s.barItem) }
+            if s.popup != 0 { destroyPopup(s.popup) }
             if let tile = toplevels.removeValue(forKey: s.toplevel) { tile.clientLeft() }
 
         case HMOp.subsurfaceCreate:
@@ -383,7 +444,7 @@ final class ClientConnection {
             guard subsurfaces[id] == nil, id != 0 else { return fail("object", "subsurface id \(id) in use") }
             guard let s = surfaces[sid] else { return fail("object", "no surface \(sid)") }
             guard let parent = surfaces[pid] else { return fail("object", "no surface \(pid)") }
-            guard s.toplevel == 0, s.subsurface == 0, sid != pid else { return fail("role", "surface \(sid) already has a role") }
+            guard !s.hasRole, sid != pid else { return fail("role", "surface \(sid) already has a role") }
             guard parent.subsurface == 0 else { return fail("role", "a subsurface can't have subsurfaces") }
             s.subsurface = id
             subsurfaces[id] = SubsurfaceState(surface: sid, parent: pid)
@@ -414,10 +475,77 @@ final class ClientConnection {
             let sid = m.uint("surface")
             guard let s = surfaces[sid] else { return fail("object", "no surface \(sid)") }
             guard toplevels[id] == nil, id != 0 else { return fail("object", "toplevel id \(id) in use") }
-            guard s.toplevel == 0 else { return fail("role", "surface \(sid) already has a role") }
-            guard s.subsurface == 0 else { return fail("role", "surface \(sid) already has a role") }
+            guard !s.hasRole else { return fail("role", "surface \(sid) already has a role") }
             s.toplevel = id
             createToplevel(id, surface: sid, m)
+
+        case HMOp.barItemCreate:
+            guard isPlugin else { return fail("permission", "bar items are for plugins the config loads (plugin = ...)") }
+            let sid = m.uint("surface")
+            guard let s = surfaces[sid] else { return fail("object", "no surface \(sid)") }
+            guard barItems[id] == nil, id != 0 else { return fail("object", "bar item id \(id) in use") }
+            guard !s.hasRole else { return fail("role", "surface \(sid) already has a role") }
+            let slot = m.string("slot") ?? "right"
+            guard slot == "right" else { return fail("bar_item", "unknown slot \(slot)") }
+            guard let server, let host = server.host else { return }
+            s.barItem = id
+            let item = ClientPanelView(connection: self, id: id, surface: sid, role: .barItem(slot: slot, order: Int(m.int("order"))))
+            barItems[id] = item
+            host.clientServer(server, addBarItem: item)
+
+        case HMOp.barItemSetWidth:
+            guard let item = barItems[id] else { return fail("object", "no bar item \(id)") }
+            let w = m.double("w")
+            guard w.isFinite, w >= 0 else { return fail("bar_item", "bad width") }
+            item.setRequestedSize(CGSize(width: w, height: 0))
+
+        case HMOp.barItemAckConfigure:
+            guard barItems[id] != nil else { return fail("object", "no bar item \(id)") }
+            // The bar shows whatever the item commits: nothing waits on the ack yet.
+
+        case HMOp.barItemDestroy:
+            guard barItems[id] != nil else { return fail("object", "no bar item \(id)") }
+            destroyBarItem(id)
+
+        case HMOp.popupCreate:
+            let sid = m.uint("surface"), parent = m.uint("parent")
+            guard let s = surfaces[sid] else { return fail("object", "no surface \(sid)") }
+            guard popups[id] == nil, id != 0 else { return fail("object", "popup id \(id) in use") }
+            guard !s.hasRole else { return fail("role", "surface \(sid) already has a role") }
+            guard let anchor = barItems[parent] else { return fail("popup", "parent must be one of your bar items") }
+            guard let server, let host = server.host else { return }
+            s.popup = id
+            let popup = ClientPanelView(connection: self, id: id, surface: sid, role: .popup(anchor: anchor))
+            popups[id] = popup
+            host.clientServer(server, openPopup: popup)
+
+        case HMOp.popupSetSize:
+            guard let popup = popups[id] else { return fail("object", "no popup \(id)") }
+            let w = m.double("w"), h = m.double("h")
+            guard w.isFinite, h.isFinite, w >= 0, h >= 0 else { return fail("popup", "bad size") }
+            popup.setRequestedSize(CGSize(width: w, height: h))
+
+        case HMOp.popupAckConfigure:
+            guard popups[id] != nil else { return fail("object", "no popup \(id)") }
+
+        case HMOp.popupDestroy:
+            guard popups[id] != nil else { return fail("object", "no popup \(id)") }
+            destroyPopup(id)
+
+        case HMOp.tilesQuery:
+            guard let server, let host = server.host else { return }
+            // Not fatal: a plugin without the permission gets an empty answer and a reason.
+            guard has("tiles") else {
+                send(HMOp.tilesResult, ["id": id, "tiles_json": #"{"tiles":[],"error":"permission"}"#])
+                return
+            }
+            let result = host.clientServerTiles(server)
+            let json = (try? JSONSerialization.data(withJSONObject: result)).flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
+            send(HMOp.tilesResult, ["id": id, "tiles_json": json])
+
+        case HMOp.tilesFocus:
+            guard let server, has("tiles") else { return }
+            server.host?.clientServer(server, focusTile: m.uint("surface"))
 
         case HMOp.toplevelCreateTerminal:
             guard toplevels[id] == nil, id != 0 else { return fail("object", "toplevel id \(id) in use") }
@@ -450,7 +578,7 @@ final class ClientConnection {
                 clientLog.info("client \(self.pid): activation without a valid token ignored")
                 return
             }
-            server.host?.clientServer(server, activate: tile)
+            server.host?.clientServer(server, activate: tile, for: launch)
 
         case HMOp.toplevelSetStatus:
             guard let tile = toplevels[id] else { return fail("object", "no toplevel \(id)") }
@@ -518,6 +646,8 @@ final class ClientConnection {
         case HMOp.pointerSetCursor:
             let name = m.string("name") ?? "arrow"
             for tile in toplevels.values { tile.setCursor(name) }
+            for item in barItems.values { item.setCursor(name) }
+            for popup in popups.values { popup.setCursor(name) }
 
         default:
             fail("protocol", "unknown op \(op)")
@@ -554,12 +684,15 @@ final class ClientConnection {
         name = m.string("name") ?? appID
         let token = m.string("launch_token") ?? ""
         launchToken = token.isEmpty ? nil : token
+        capabilities = Set(m.strings("capabilities"))
         greeted = true
         clientLog.info("client \(self.pid) connected: \(self.appID, privacy: .public)")
         if let reply = xpc_dictionary_create_reply(m) {
             xpcSet(reply, "op", "welcome")
             xpcSet(reply, "version", HMProtocol.version)
             xpcSet(reply, "scale", Double(NSScreen.main?.backingScaleFactor ?? 2))
+            xpcSet(reply, "server_capabilities", [HMCapability.anchoredResize])
+            if let server { xpcSet(reply, "theme_json", server.themeJSON) }
             xpc_connection_send_message(peer, reply)
         }
         server?.greeted(self, token: launchToken)
@@ -568,6 +701,43 @@ final class ClientConnection {
     private func tile(forSurface sid: UInt64) -> ClientSurface? {
         guard let s = surfaces[sid] else { return nil }
         return toplevels[s.toplevel]
+    }
+
+    /// The plugin this connection is, if Hyprmux started it for a `plugin =` line. Asked
+    /// each time: a plugin restarts under a new pid, and its connection with it.
+    private var pluginPermissions: Set<String>? {
+        guard let server else { return nil }
+        return server.host?.clientServer(server, pluginPermissionsFor: pid)
+    }
+    private var isPlugin: Bool { pluginPermissions != nil }
+    private func has(_ permission: String) -> Bool { pluginPermissions?.contains(permission) ?? false }
+
+    /// Hyprmux closed a popup (a click elsewhere, Esc). It stays an object until the
+    /// client destroys it.
+    func dismiss(_ popup: ClientPanelView) {
+        guard popups[popup.itemID] === popup, !popup.isClosed else { return }
+        popup.close()
+        send(HMOp.popupDismissed, ["id": popup.itemID])
+        if let server { server.host?.clientServer(server, removedPopup: popup) }
+    }
+
+    private func destroyPopup(_ id: UInt64) {
+        guard let popup = popups.removeValue(forKey: id) else { return }
+        surfaces[popup.surfaceID]?.popup = 0
+        let wasOpen = !popup.isClosed
+        popup.close()
+        if wasOpen, let server { server.host?.clientServer(server, removedPopup: popup) }
+    }
+
+    private func destroyBarItem(_ id: UInt64) {
+        guard let item = barItems.removeValue(forKey: id) else { return }
+        // Its popups drop from it: they go too.
+        for popup in popups.values {
+            if case .popup(let anchor) = popup.role, anchor === item { dismiss(popup) }
+        }
+        surfaces[item.surfaceID]?.barItem = 0
+        item.close()
+        if let server { server.host?.clientServer(server, removedBarItem: item) }
     }
 
     private func destroySubsurface(_ id: UInt64) {

@@ -39,7 +39,7 @@ final class ClientSurface: FlippedView, Surface {
     private let screen = PassthroughView()
     private let placeholder = NSTextField(labelWithString: "")
     private var clientTitle = ""
-    private var closed = false
+    private(set) var closed = false
 
     /// A terminal toplevel's terminal. It has this tile's id.
     private(set) var terminal: TerminalView?
@@ -57,6 +57,10 @@ final class ClientSurface: FlippedView, Surface {
     private var currentScale: CGFloat = 1
     // Committed frame callbacks waiting for the next display refresh.
     private var frameCallbacks: [UInt64] = []
+    /// The menu and sheet the client has open (ClientSurface+WindowUI.swift): they
+    /// close with the client.
+    var openMenu: NSMenu?
+    var openSheet: NSWindow?
     // Buffers replaced by a newer commit; released once Core Animation stops using them.
     private var retiring: [ClientConnection.Buffer] = []
     /// Subsurfaces, in stacking order: each shows a buffer scaled to a rect in the
@@ -82,6 +86,8 @@ final class ClientSurface: FlippedView, Surface {
     private var sentStates: [String] = []
     private var occluded = false
     private var activated = false
+    /// The client declared `anchored-resize`: frames show 1:1 at the top-left.
+    private var anchored = false
 
     // Input state.
     private var cursorName = "arrow"
@@ -184,10 +190,20 @@ final class ClientSurface: FlippedView, Surface {
         toplevelID = toplevel
         surfaceID = surface
         self.appID = appID
+        // A client that keeps up with configures: its last frame shows at its own
+        // size until the new one arrives, so a resize never stretches its content.
+        anchored = connection.capabilities.contains(HMCapability.anchoredResize)
+        screen.layer?.contentsGravity = anchored ? .topLeft : .resizeAspect
         launchToken = nil
         placeholder.stringValue = ""
         sentSize = .zero  // force a configure
         sendConfigureIfNeeded()
+        // Focused before the client connected (a launch with --focus): the enter it
+        // missed. Without it, the client never thinks it has the keyboard.
+        if window?.firstResponder === self {
+            connection.send(HMOp.keyboardEnter, ["surface": surfaceID, "serial": nextSerial(),
+                                                  "modifiers": modifierBits(NSEvent.modifierFlags)])
+        }
     }
 
     /// A launch token for a tile that is still waiting (a restored session relaunches).
@@ -234,6 +250,7 @@ final class ClientSurface: FlippedView, Surface {
         guard !closed else { return }
         connection = nil
         closed = true
+        dismissWindowUI()
         releaseAllBuffers()
         onClose?(self)
     }
@@ -331,6 +348,7 @@ final class ClientSurface: FlippedView, Surface {
 
     func destroy() {
         closed = true
+        dismissWindowUI()
         terminal?.destroy()
         link?.invalidate()
         link = nil
@@ -437,6 +455,7 @@ final class ClientSurface: FlippedView, Surface {
     /// The toplevel's points to tile points: the client's last buffer is drawn scaled to
     /// fit until it catches up with a resize, and subsurfaces scale with it.
     private var contentTransform: (scale: CGFloat, origin: CGPoint) {
+        guard !anchored else { return (1, .zero) }
         guard let b = currentBuffer, currentScale > 0, b.width > 0, b.height > 0 else { return (1, .zero) }
         let w = CGFloat(b.width) / currentScale, h = CGFloat(b.height) / currentScale
         let s = min(bounds.width / w, bounds.height / h)
@@ -629,6 +648,14 @@ final class ClientSurface: FlippedView, Surface {
     override func otherMouseDown(with event: NSEvent) { button(event, down: true) }
     override func otherMouseUp(with event: NSEvent) { button(event, down: false) }
 
+    // Trackpad pinch and rotate (CLIENT_PROTOCOL 6.1, pointer.gesture).
+    override func magnify(with event: NSEvent) { sendGesture("magnify", Double(event.magnification), event) }
+    override func rotate(with event: NSEvent) { sendGesture("rotate", Double(event.rotation), event) }
+
+    private func sendGesture(_ kind: String, _ value: Double, _ event: NSEvent) {
+        sendPointer(HMOp.pointerGesture, event, ["kind": kind, "value": value, "phase": UInt64(event.phase.rawValue)])
+    }
+
     override func scrollWheel(with event: NSEvent) {
         // A notched wheel's raw notch count lives only on the CGEvent. Chromium uses
         // it for wheel ticks, and VS Code scrolls by ticks.
@@ -688,17 +715,42 @@ final class ClientSurface: FlippedView, Surface {
         if pointerInside { cursor.set() }
     }
 
-    private var cursor: NSCursor {
-        switch cursorName {
-        case "ibeam": .iBeam
-        case "pointing_hand": .pointingHand
-        case "crosshair": .crosshair
-        case "open_hand": .openHand
-        case "closed_hand": .closedHand
-        case "resize_left_right": .resizeLeftRight
-        case "resize_up_down": .resizeUpDown
-        case "not_allowed": .operationNotAllowed
-        default: .arrow
+    private var cursor: NSCursor { Self.cursor(named: cursorName) }
+
+    /// A `pointer.set_cursor` name's cursor (HMCursor.all). Unknown names, `wait`,
+    /// and `progress` are the arrow: macOS shows its own busy cursor.
+    static func cursor(named name: String) -> NSCursor {
+        switch name {
+        case "ibeam": return .iBeam
+        case "vertical_ibeam": return .iBeamCursorForVerticalLayout
+        case "pointing_hand": return .pointingHand
+        case "crosshair": return .crosshair
+        case "open_hand", "move": return .openHand
+        case "closed_hand": return .closedHand
+        case "resize_left_right": return .resizeLeftRight
+        case "resize_up_down": return .resizeUpDown
+        case "resize_left": return .resizeLeft
+        case "resize_right": return .resizeRight
+        case "resize_up": return .resizeUp
+        case "resize_down": return .resizeDown
+        case "resize_nwse", "resize_nesw":
+            if #available(macOS 15, *) {
+                return .frameResize(position: name == "resize_nwse" ? .topLeft : .topRight, directions: .all)
+            }
+            return .crosshair
+        case "copy": return .dragCopy
+        case "link": return .dragLink
+        case "context_menu": return .contextualMenu
+        case "help":
+            // AppKit's help cursor has no public name; Qt uses the same one.
+            let help = NSSelectorFromString("_helpCursor")
+            if NSCursor.responds(to: help), let c = NSCursor.perform(help)?.takeUnretainedValue() as? NSCursor { return c }
+            return .arrow
+        case "zoom_in", "zoom_out":
+            if #available(macOS 15, *) { return name == "zoom_in" ? .zoomIn : .zoomOut }
+            return .arrow
+        case "not_allowed": return .operationNotAllowed
+        default: return .arrow
         }
     }
 

@@ -186,6 +186,9 @@ Mobile, the Electron adapter, and Zed's backend are built on it.
   examples.
 - **Adapters:** a JSON manifest and a program that lift an existing app into
   tiles, like the Electron bridge.
+- **QML:** apps in tiles and plugins in the bar, written in QML and run by the
+  Qt Quick host Hyprmux ships. See [QML apps](docs/QML.md) and
+  [Plugins](docs/PLUGINS.md).
 
 Build instructions and examples are in
 [Building for Hyprmux](docs/BUILDING_APPS.md).
@@ -229,7 +232,8 @@ pitfalls.
 - [Development](docs/DEVELOPMENT.md): building, testing in a separate instance,
   and pitfalls.
 - Experimental: [Building for Hyprmux](docs/BUILDING_APPS.md),
-  [Client protocol](docs/CLIENT_PROTOCOL.md), [Adapters](docs/ADAPTERS.md).
+  [Client protocol](docs/CLIENT_PROTOCOL.md), [Adapters](docs/ADAPTERS.md),
+  [QML apps](docs/QML.md), [Plugins](docs/PLUGINS.md).
 
 ## Security
 

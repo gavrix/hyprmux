@@ -117,7 +117,8 @@ handles messages on the main thread, in order.
 
 ```
 client → hello { version: 0, app_id, name, capabilities: [..], launch_token? }
-server → welcome { version: 0, server_capabilities: [..], scale, monitor }
+server → welcome { version: 0, server_capabilities: [..], scale, monitor, theme_json }
+server → theme.changed { theme_json }
 ```
 
 - `version` is the highest major version the client speaks. The compositor
@@ -130,7 +131,15 @@ server → welcome { version: 0, server_capabilities: [..], scale, monitor }
 - `launch_token` names the launch that started this process. Hyprmux answers
   it with a `launch` message right after `welcome`. See
   [Launch and restore](#10-launch-and-restore).
-- Capabilities are strings like `text-input`, `cursor-image`, and `popups`. Each side uses only what both sides listed.
+- Capabilities are strings like `text-input`, `cursor-image`, `popups`, and
+  `anchored-resize` (5.4). Each side uses only what both sides listed.
+- `theme_json` is how Hyprmux looks, for clients that want to match it: a JSON
+  object with `accent` (the active border's first color), `foreground`,
+  `secondary`, `background` (the terminal's, with its opacity), `colors` (the 16
+  ANSI colors), all `#RRGGBBAA`, and `rounding` (points), `terminal_font`, and
+  `terminal_font_size`. A config reload sends it again as `theme.changed`.
+  The QML host builds its theme and Qt Quick Controls' palette from it
+  ([QML](QML.md#looks)).
 
 Errors are fatal. The compositor sends `error { code, message, id? }` and
 closes the connection, like `wl_display.error`. Clients handle a lost
@@ -249,6 +258,13 @@ server → toplevel.close_requested { id }
   - Until then, the compositor shows the last buffer scaled to fit, on the
     tile's backdrop color. This keeps tiling animations smooth: Hyprmux
     already resizes content once per animation, not once per frame.
+  - A client that lists the `anchored-resize` capability in `hello` answers
+    configures within a frame or two. Hyprmux then shows its last buffer at
+    its own size, anchored top-left, instead of stretching it: content never
+    scales during a resize. For a frame, a growing tile shows its backdrop at
+    the new edges, and a shrinking one crops. Subsurfaces stay at their rects.
+    The QML host lists it. `welcome`'s `server_capabilities` says Hyprmux
+    supports it.
   - A configure with `w = 0` or `h = 0` means "choose your size", as for a
     floating tile with no stored rect.
 - **States:** `activated` (keyboard focus), `occluded` (not visible),
@@ -302,6 +318,83 @@ client → notification.post { title, body, toplevel? }
 - **Notifications** show in Hyprmux's HUD, like a terminal's OSC 9. With
   `toplevel`, clicking one finds that tile.
 
+### 5.6 Bar items (experimental)
+
+A bar item is a surface in Hyprmux's workspace bar: a plugin's slot, such as a
+system-load readout. Plugins use it through the QML host
+(`clients/qml`).
+
+```
+client → bar_item.create { id, surface, slot: "right", order? }
+client → bar_item.set_width { id, w }               points
+client → bar_item.ack_configure { id, serial }
+client → bar_item.destroy { id }
+
+server → bar_item.configure { id, serial, w, h, scale }
+```
+
+- **Who:** only a plugin's host, a process Hyprmux started for a `plugin =`
+  line ([Plugins](PLUGINS.md)). Anyone else gets `error { code: "permission" }`.
+- **Place:** `slot` is `right`, the only slot so far. Items sit right-aligned
+  before the `special:` and `submap:` labels, lowest `order` first, in a frosted
+  capsule like the workspace pills'. The bar's title and pills make room.
+- **Size:** the client asks for a width; Hyprmux grants it up to 360 points and
+  sets the height (the capsule's, 26 points). Until the client asks, the item
+  takes no room. Draw at the configured size, as for a toplevel.
+- **Input:** pointer events only (6.1), with the item's surface. No keyboard.
+- **Frames:** frame callbacks come from the display link, as for a tile.
+- **Lifetime:** the item goes with `bar_item.destroy`, `surface.destroy`, or the
+  connection.
+
+### 5.7 Popups (experimental)
+
+A popup drops from one of the client's bar items: a plugin's details panel.
+
+```
+client → popup.create { id, surface, parent }       parent: a bar item id
+client → popup.set_size { id, w, h }                points
+client → popup.ack_configure { id, serial }
+client → popup.destroy { id }
+
+server → popup.configure { id, serial, w, h, scale }
+server → popup.dismissed { id }
+```
+
+- **Place:** under its bar item, right-aligned to it, kept on screen, above
+  every tile, on a frosted panel with rounded corners. Hyprmux caps the size at
+  720 × 900 points and the space under the bar.
+- **One at a time:** a new popup dismisses the open one.
+- **Dismissal:** a press outside the popup and its bar item, or Esc, closes it.
+  Hyprmux sends `popup.dismissed` and shows it no more; the client then sends
+  `popup.destroy`. A press on the bar item is the client's, so it can toggle.
+- **Input:** pointer events only. No keyboard.
+
+### 5.8 Tiles (experimental)
+
+A plugin can list Hyprmux's tiles and focus one: a task manager's data.
+
+```
+client → tiles.query { id }
+server → tiles.result { id, tiles_json }
+client → tiles.focus { surface }                    the N of surface:N
+```
+
+- `tiles_json` is `{"tiles": [...], "hyprmux_pid": N}`. Each tile is its
+  `hyprmuxctl surfaces` entry plus `pids` (client processes) and `sessions`
+  (terminal sessions: every process in one belongs to the tile). Web tiles
+  have neither: they render in Hyprmux's own helpers.
+- `pill` is how the tile's number pill on its border looks now: `fill` and
+  `ink` (`#RRGGBBAA`) and `font_size`. The fill follows focus and activity, so
+  a plugin's list can show the same pill the user sees on the tile.
+- The client walks the process tree itself, for descendants and usage.
+- `tiles.focus` shows the tile's workspace, focuses it, and closes the open
+  popup.
+- Both need a plugin with the `tiles` permission. Without it, `tiles.result`
+  carries an empty list and `"error": "permission"`, and `tiles.focus` does
+  nothing. Neither ends the connection.
+- `tiles_json` also has `plugins`: `[{id, name, pid}]` for each running plugin
+  host, so a task manager can show them apart from Hyprmux.
+
 ## 6. Input
 
 The compositor translates `NSEvent`s and sends them to the surface under the
@@ -317,7 +410,7 @@ server → pointer.leave { surface, serial }
 server → pointer.motion { surface, time, x, y, buttons, modifiers }
 server → pointer.button { surface, serial, time, x, y, button, state, click_count, modifiers }
 server → pointer.scroll { surface, time, x, y, dx, dy, precise, phase, momentum_phase, ticks_x, ticks_y, modifiers }
-server → pointer.gesture { surface, time, kind, value, phase }        v0.1: magnify, rotate
+server → pointer.gesture { surface, time, x, y, kind, value, phase, modifiers }   magnify, rotate
 client → pointer.set_cursor { name }                                  "arrow", "ibeam", "pointing_hand", ...
 client → pointer.set_cursor_image { buffer, hot_x, hot_y }            cap: cursor-image
 ```
@@ -333,6 +426,16 @@ client → pointer.set_cursor_image { buffer, hot_x, hot_y }            cap: cur
   scrolled 1 pixel per notch.
 - **Buttons:** `button` is 0 left, 1 right, 2 middle, 3+ others. `state` is
   `down` or `up`.
+- **Cursors:** `arrow`, `ibeam`, `vertical_ibeam`, `pointing_hand`,
+  `crosshair`, `open_hand`, `closed_hand`, `move`, `resize_left_right`,
+  `resize_up_down`, `resize_left`, `resize_right`, `resize_up`,
+  `resize_down`, `resize_nwse`, `resize_nesw`, `copy`, `link`,
+  `context_menu`, `help`, `wait`, `progress`, `zoom_in`, `zoom_out`,
+  `not_allowed`, and `hidden`. Unknown names show the arrow. The diagonal
+  resize and zoom cursors need macOS 15; before it, they fall back.
+- **Gestures:** `pointer.gesture` carries a trackpad pinch (`kind` magnify,
+  `value` the change in scale) or rotation (`rotate`, degrees
+  counterclockwise). `phase` is AppKit's: began, changed, ended.
 - **Implicit grab:** while a button is held, events keep going to the surface
   where the press started, even outside it.
 
@@ -383,22 +486,37 @@ Open Folder: the sheet sat on a hidden window, behind Hyprmux, and blocked
 the app. Clients ask the compositor to show the UI instead.
 
 ```
-client → dialog.open { id, surface, kind: open|save|alert, options }
-server → dialog.result { id, cancelled, urls?, bookmarks?, button? }
+client → dialog.open { id, surface, kind: open|save|message, options_json }
+server → dialog.result { id, result_json }
 
-client → menu.popup { id, surface, x, y, items: [..] }
-server → menu.selected { id, item_id? }
+client → menu.popup { id, surface, x, y, items_json }
+server → menu.selected { id, item? }
 
 client → popup.create { id, surface, parent, positioner }     cap: popups
 server → popup.configure { id, serial, x, y, w, h }
 server → popup.dismissed { id }
 ```
 
-- **Dialogs** show as sheets over the tile, using `NSOpenPanel`,
-  `NSSavePanel`, and `NSAlert`. For sandboxed clients, `bookmarks` carries
-  security-scoped bookmark data.
-- **Menus** are item trees: `id`, `title`, `enabled`, `checked`, `key`, and
-  `children`. The compositor builds an `NSMenu`.
+- **Dialogs** show as sheets over the tile, one at a time per window, using
+  `NSOpenPanel`, `NSSavePanel`, and `NSAlert`. Options and results use
+  Electron's `dialog` keys, so the Electron bridge passes them through:
+  - `open` and `save` take `title`, `message`, `buttonLabel`, `defaultPath`
+    (a folder, a file, or a bare file name), `filters` (`[{name,
+    extensions}]`, `*` for any), and `properties` (`openFile`,
+    `openDirectory`, `multiSelections`, `createDirectory`,
+    `showHiddenFiles`, `treatPackageAsDirectory`). They answer `{canceled,
+    filePaths}` or `{canceled, filePath}`.
+  - `message` takes `type`, `title`, `message`, `detail`, `buttons`,
+    `defaultId`, `cancelId`, and `checkboxLabel`/`checkboxChecked`. It answers
+    `{response, checkboxChecked}`, `response` being the button's index.
+  - Security-scoped bookmarks for sandboxed clients aren't there yet.
+- **Menus** are item trees: `[{id, label, type, enabled, checked,
+  accelerator, submenu}]`, `type` one of normal, separator, checkbox, radio,
+  or submenu. `accelerator` is shown, not bound ("Cmd+Shift+N"). `x` and `y`
+  are points in the surface. `menu.selected` names the picked `item`, or
+  leaves it out when the menu closed without a pick.
+- A client's menu and sheets close when it disconnects or destroys the
+  toplevel. Queued sheets for it never show.
 - **Popups** are client-drawn child surfaces, such as Chromium's `<select>`
   lists and tooltips. A positioner anchors them to a parent rectangle, like
   `xdg_positioner`. The compositor keeps them on the monitor and closes them
@@ -451,6 +569,8 @@ client → launch.done { launch_token }
        `hyprmuxctl launch` replies with the list instead, and
        `launch --window ID` picks one. The app then creates the toplevel.
        Sending the offer again replaces the list in an open picker.
+     - **A window it has:** `toplevel.request_activate` with the
+       `launch_token` focuses an existing window and answers with it.
      - **Nothing:** `launch.done` with no window ends the launch quietly.
   4. `launch.cancel` means nobody waits anymore: the user dismissed the picker,
      or the launch timed out. A window that comes later is the app's own.

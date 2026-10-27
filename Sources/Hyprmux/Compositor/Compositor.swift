@@ -1,5 +1,6 @@
 import AppKit
 import Carbon
+import HyprmuxClientProtocol
 import HyprmuxCore
 import HyprmuxCredentialSupport
 import ChromiumBridge
@@ -12,8 +13,15 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
 
     let window: MonitorWindow
     let root: CompositorView
-    private let bar = BarView()
+    /// Internal, not private: client bar items join it (Compositor+Clients).
+    let bar = BarView()
     private let barBackdrop = BarBackdrop()
+    /// The same capsule behind the bar's client items (plugins).
+    private let itemsBackdrop = BarBackdrop()
+    /// A plugin's popup under its bar item, when one is open (Compositor+Popups).
+    var openPopup: PopupHostView?
+    /// The plugins the config loads (Compositor+Plugins).
+    let plugins = PluginRuntime()
     private let hint = HintView()
     private let specialDim = NSView()
     private let windowFrame = WindowFrameView()
@@ -142,6 +150,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         specialDim.alphaValue = 0
         specialDim.isHidden = true
         root.addSubview(barBackdrop)
+        root.addSubview(itemsBackdrop)
         root.addSubview(specialDim)
         root.addSubview(hint)
         root.addSubview(bar)
@@ -150,6 +159,11 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         bar.onSelectWorkspace = { [weak self] n in self?.dispatch(.workspace(.id(n)), source: .mouse) }
         // The bar sits at the root's origin, so its coordinates are the root's.
         bar.onPillsFrame = { [weak self] f in self?.barBackdrop.wrap(f) }
+        // Items are already capsule-sized: wrap them without the pills' padding.
+        bar.onItemsFrame = { [weak self] f in
+            self?.wrapItems(f)
+            self?.layoutPopup()  // it follows its item
+        }
         hud.clientFrame = { [weak self] id in self?.views[id]?.targetFrame }
         hud.onFocusClient = { [weak self] id in self?.focusFromHUD(id) }
         hud.picker.onClose = { [weak self] in
@@ -193,6 +207,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         refreshApps()
         startBrokerRegistration()
         startClientServer()
+        syncPlugins()
         window.makeKeyAndOrderFront(nil)
         if config.fullscreenStyle == "fill", MonitorWindow.wasFilledAtQuit, Self.fixedWindowSize == nil { setMonitorFullscreen(true) }
         startSessionSaving()
@@ -230,6 +245,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         if submap != "reset" && !newConfig.binds.contains(where: { $0.submap == submap }) { submap = "reset" }
         applyConfigVisuals()
         hud.reload(config: newConfig, theme: HUDTheme(config: newConfig, terminal: runtime.style, background: runtime.backgroundColor))
+        clientServer.broadcast(HMOp.themeChanged, ["theme_json": clientServer.themeJSON])
         syncConfigErrors()
         for c in newConfig.exec { spawn(command: c, inheritFrom: nil) }
         loadAdapters()
@@ -237,6 +253,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         loadApps()
         refreshApps()
         loadHooks()
+        syncPlugins()
         monitorChanged(animated: true)
         emit(.configReloaded)
     }
@@ -279,6 +296,8 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         barBackdrop.configure(enabled: config.barBackdrop, transparent: transparent)
         updateWindowFrame()
         barBackdrop.wrap(bar.pillsFrame)
+        itemsBackdrop.configure(enabled: config.barBackdrop, transparent: transparent)
+        wrapItems(bar.itemsFrame)
         if let c = config.activeBorder.colors.first {
             bar.accent = NSColor(cgColor: HyprmuxCore.Color(r: c.r, g: c.g, b: c.b, a: 1).cg) ?? bar.accent
         }
@@ -328,6 +347,11 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         }
     }
 
+    private func wrapItems(_ f: CGRect) {
+        let p = BarBackdrop.padding
+        itemsBackdrop.wrap(f.isEmpty ? .zero : f.insetBy(dx: p, dy: p))
+    }
+
     // MARK: Monitor geometry
 
     private var titlebarHeight: CGFloat {
@@ -355,6 +379,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         specialDim.frame = b
         updateWindowFrame()
         hud.layout(monitor: wm.monitor, workArea: wm.workArea, animated: animated)
+        layoutPopup()
         apply(animated: animated)
     }
 
@@ -923,6 +948,9 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         })
     }
 
+    /// Restacks the root's views now, outside a layout pass (a popup opened).
+    func restackNow() { restack(wm.snapshot()) }
+
     private func restack(_ snap: Snapshot) {
         var order: [ObjectIdentifier: Double] = [:]
         // An attached terminal has its parent's z and stacks just above it: an expanded
@@ -935,8 +963,10 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         order[ObjectIdentifier(specialDim)] = 9_999
         order[ObjectIdentifier(hint)] = -1
         order[ObjectIdentifier(barBackdrop)] = -2
+        order[ObjectIdentifier(itemsBackdrop)] = -2
         order[ObjectIdentifier(bar)] = 30_000
         order[ObjectIdentifier(hud.layer)] = 30_001
+        if let p = openPopup { order[ObjectIdentifier(p)] = 30_002 }
         order[ObjectIdentifier(windowFrame)] = 40_000
         if let d = drag, let v = views[d.id] { order[ObjectIdentifier(v)] = 25_000 }
         let current = root.subviews
@@ -1057,6 +1087,12 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
             }
             return nil
         }
+        // Esc closes a plugin's popup; the popup has no keyboard of its own.
+        if e.keyCode == 53, openPopup != nil {
+            dismissPopup()
+            consumedKeyUps.insert(e.keyCode)
+            return nil
+        }
         let mods = modifiers(e.modifierFlags)
         if let tile = focusedAppTile, appPasses(tile, mods, e.keyCode) { return e }
         if terminalPasses(mods, e.keyCode) { return e }
@@ -1116,6 +1152,10 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         let p = point(e)
         switch e.type {
         case .leftMouseDown, .rightMouseDown:
+            // A plugin's popup takes its own clicks; a press anywhere else closes it and
+            // goes on as usual.
+            if openPopup?.frame.contains(p) == true { return e }
+            if pressClosesPopup(at: p) { dismissPopup() }
             // HUD panels take their own clicks; the tile under them must not react.
             if hud.contains(p) { return e }
             let button = e.type == .leftMouseDown ? 272 : 273
@@ -1269,6 +1309,8 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
                 dispatch(.moveToWorkspace(workspace, silent: !focus), target: id, source: .ipc)
                 guard let p = wm.snapshot().placement(id) else { return "error: surface not found" }
                 return json(clientInfo(p))
+            case .plugins:
+                return json(pluginsJSON())
             case .clients, .surfaces:
                 return json(wm.snapshot().placements.map(clientInfo))
             case .identify(let reference):
@@ -1339,7 +1381,9 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
                              "firstResponder": frDesc, "keyboardClient": owner,
                              "focused": wm.focused?.raw as Any? ?? NSNull(),
                              "hud": hud.debugFrames.map { [$0.minX, $0.minY, $0.width, $0.height] },
-                             "picker": hud.debugPicker, "bar": bar.debugState])
+                             "picker": hud.debugPicker, "bar": bar.debugState,
+                             "popup": openPopup.map { p in ["frame": [p.frame.minX, p.frame.minY, p.frame.width, p.frame.height],
+                                                           "hidden": p.isHidden] } as Any? ?? NSNull()])
             case .sendText(let t):
                 guard let term = focusedTerminal else { return "error: no focused terminal" }
                 term.sendText(t)
@@ -1417,7 +1461,11 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
                 case .success(let url): return url
                 case .failure(let e): return "error: \(e)"
                 }
-            case .snapshot(let reference, let path):
+            case .snapshot(let reference, let path, let wholeWindow):
+                if wholeWindow {
+                    do { try writeWindowSnapshot(to: URL(fileURLWithPath: path)) } catch { return "error: \(error.localizedDescription)" }
+                    return "ok"
+                }
                 guard let (id, surface) = automationTarget(reference) else { return "error: surface not found" }
                 do {
                     if let tile = surface as? ClientSurface {

@@ -424,6 +424,28 @@ extension Compositor: ClientServerHost {
         return tile
     }
 
+    func clientServer(_ server: ClientServer, addBarItem item: ClientPanelView) {
+        bar.addItem(item)
+    }
+
+    func clientServer(_ server: ClientServer, removedBarItem item: ClientPanelView) {
+        bar.removeItem(item)
+    }
+
+    func clientServer(_ server: ClientServer, openPopup popup: ClientPanelView) { showPopup(popup) }
+
+    func clientServer(_ server: ClientServer, removedPopup popup: ClientPanelView) { popupRemoved(popup) }
+
+    func clientServerTiles(_ server: ClientServer) -> [String: Any] { tilesForClients() }
+
+    func clientServer(_ server: ClientServer, focusTile id: UInt64) { focusTileForClient(id) }
+
+    func clientServerTheme(_ server: ClientServer) -> [String: Any] { clientTheme() }
+
+    func clientServer(_ server: ClientServer, pluginPermissionsFor pid: pid_t) -> Set<String>? {
+        pluginConnection(pid: pid)?.permissions
+    }
+
     func clientServer(_ server: ClientServer, opened tile: ClientSurface, for launch: AppLaunch) {
         // A restore settles once every saved tile has its window back.
         guard launch.pending, launch.reserved.isEmpty else { return }
@@ -505,11 +527,13 @@ extension Compositor: ClientServerHost {
         return term
     }
 
-    func clientServer(_ server: ClientServer, activate tile: ClientSurface) {
+    func clientServer(_ server: ClientServer, activate tile: ClientSurface, for launch: AppLaunch?) {
         guard views[tile.clientID] != nil else { return }
         log.debug("focus reason=client client=\(tile.clientID.raw)")
         wm.focus(tile.clientID)
         apply(animated: true)
+        // A window the app already had answers the launch, as a new one would.
+        if let launch, launch.pending, !launch.restoring { endLaunch(launch, .window(tile), tellApp: false) }
     }
 
     func clientServer(_ server: ClientServer, notify title: String, body: String, from tile: ClientSurface?) {
@@ -518,7 +542,7 @@ extension Compositor: ClientServerHost {
 }
 
 /// The last few KB a launched process wrote to stderr.
-private final class StderrTail: @unchecked Sendable {
+final class StderrTail: @unchecked Sendable {
     private let lock = NSLock()
     private var data = Data()
 

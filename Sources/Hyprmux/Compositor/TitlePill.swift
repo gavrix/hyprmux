@@ -69,6 +69,16 @@ final class TitlePill: NSView {
         return id + (id > 0 && title > 0 ? Self.gap : 0) + title
     }
 
+    /// The pill's fill for a border or activity color, and the text that reads on it:
+    /// opaque enough to read over the content it overlaps, dark text on bright colors
+    /// (cyan, orange, green), light on dark ones. Plugins draw tile numbers with it too.
+    static func palette(_ color: HyprmuxCore.Color) -> (fill: HyprmuxCore.Color, ink: NSColor) {
+        var c = color
+        c.a = max(c.a, 0.92)
+        let luminance = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b
+        return (c, luminance > 0.55 ? NSColor(white: 0.08, alpha: 1) : NSColor(white: 1, alpha: 0.95))
+    }
+
     /// Sets what it says and its color. Runs inside the decoration's transaction, so a
     /// color change animates like the border's.
     func update(string: String, id: UInt64?, color: HyprmuxCore.Color, status: String?, fontSize: CGFloat) {
@@ -76,14 +86,9 @@ final class TitlePill: NSView {
             font = NSFont.systemFont(ofSize: fontSize, weight: .semibold)
             idFont = NSFont.monospacedDigitSystemFont(ofSize: fontSize, weight: .bold)
         }
-        // Opaque enough to read over the content it overlaps.
-        var c = color
-        c.a = max(c.a, 0.92)
+        let (c, ink) = Self.palette(color)
         fill.backgroundColor = c.cg
         fill.shadowColor = c.cg
-        // Dark text on bright colors (cyan, orange, green), light on dark ones.
-        let luminance = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b
-        let ink = luminance > 0.55 ? NSColor(white: 0.08, alpha: 1) : NSColor(white: 1, alpha: 0.95)
         label = NSAttributedString(string: string, attributes: [.font: font, .foregroundColor: ink])
         text.string = label
         // A truncated line ends in an ellipsis drawn with the layer's own font, size, and

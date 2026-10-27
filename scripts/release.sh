@@ -67,6 +67,16 @@ if [[ -d "$CEF" ]]; then
   sign_runtime "$CEF"
 fi
 
+# Qt for the QML host (scripts/deploy-qt.sh): its plugins, then its frameworks.
+if [[ -d "$APP/Contents/PlugIns" ]]; then
+  while IFS= read -r -d '' library; do
+    sign_runtime "$library"
+  done < <(find "$APP/Contents/PlugIns" -type f -name '*.dylib' -print0)
+fi
+for fw in "$APP"/Contents/Frameworks/Qt*.framework; do
+  [[ -d "$fw" ]] && sign_runtime "$fw"
+done
+
 # All helper variants use one executable. Any variant can host Chromium's V8 JIT.
 for helper in "$APP"/Contents/Frameworks/Hyprmux\ Helper*.app; do
   [[ -d "$helper" ]] || continue
@@ -79,7 +89,12 @@ done
 MAIN_EXE="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP/Contents/Info.plist")"
 for exe in "$APP"/Contents/MacOS/*; do
   [[ -f "$exe" && "$(basename "$exe")" != "$MAIN_EXE" ]] || continue
-  sign_runtime "$exe"
+  if [[ "$(basename "$exe")" == "hyprmux-qml" ]]; then
+    # The QML engine compiles JavaScript to machine code, like Chromium's V8.
+    sign_runtime --entitlements "$ENTITLEMENTS" "$exe"
+  else
+    sign_runtime "$exe"
+  fi
 done
 sign_runtime --entitlements "$ENTITLEMENTS" "$APP"
 

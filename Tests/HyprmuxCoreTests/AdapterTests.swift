@@ -169,6 +169,7 @@ final class AdapterTests: XCTestCase {
         let encoded = Data(path.utf8).base64EncodedString()
         XCTAssertEqual(try IPCRequest.parse("snapshot --surface 3 --base64 \(encoded)").get(), .snapshot(surface: SurfaceReference(3), path: path))
         XCTAssertEqual(try IPCRequest.parse("snapshot --base64 \(encoded)").get(), .snapshot(surface: nil, path: path))
+        XCTAssertEqual(try IPCRequest.parse("snapshot --window --base64 \(encoded)").get(), .snapshot(surface: nil, path: path, window: true))
         let relative = Data("a.png".utf8).base64EncodedString()
         XCTAssertThrowsError(try IPCRequest.parse("snapshot --base64 \(relative)").get())
     }

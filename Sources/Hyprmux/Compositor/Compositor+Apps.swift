@@ -213,7 +213,8 @@ extension Compositor {
         let adapter = m.kind == .adapter ? m.adapter : nil
         let single = m.instances == .single ? m.id : nil
         if let exe = c.executable {
-            try checkTrust(app, executable: exe)
+            // A QML app's code is its QML, in the bundle; the host is Hyprmux's own.
+            try checkTrust(app, executable: m.kind == .qml ? (app.path as NSString).appendingPathComponent(m.qmlMain) : exe)
             return AppCommand(executable: URL(fileURLWithPath: exe), bundle: nil, arguments: c.arguments, label: m.name,
                               adapterID: adapter, app: m.app, single: single, appID: m.id)
         }
@@ -403,6 +404,15 @@ extension Compositor {
         var isDir: ObjCBool = false
         guard fm.fileExists(atPath: path, isDirectory: &isDir) else { return .text("error: apps add: no such file \(path)") }
         let userArgs = extra + ["{args}"]
+
+        // A QML app (docs/QML.md): a .qml file, or a folder with main.qml in it.
+        let qmlMain = isDir.boolValue ? (path as NSString).appendingPathComponent("main.qml") : path
+        if (qmlMain as NSString).pathExtension == "qml", (path as NSString).pathExtension != "app",
+           fm.fileExists(atPath: qmlMain) {
+            let m = HMAppManifest(id: "user." + HMApp.slug(name), name: name, kind: .native,
+                                  exec: HMAppManifest.qmlHost, args: [qmlMain] + userArgs)
+            return .text(installApp(m))
+        }
 
         guard (path as NSString).pathExtension == "app", isDir.boolValue else {
             guard !isDir.boolValue, fm.isExecutableFile(atPath: path) else {

@@ -16,6 +16,7 @@ guard !args.isEmpty, args[0] != "-h", args[0] != "--help" else {
                                       run a dispatcher (same names as bind lines); window
                                       dispatchers act on --surface instead of the focused one
       clients | surfaces             list every managed surface as JSON
+      plugins                        the plugins the config loads, as JSON: state, pid, log, errors
       identify [--surface <id>]      describe the caller, target, or focused surface
       new-surface [--type terminal|web|app] [--workspace <ws>] [--focus] [--floating]
                   [--cwd <dir>] [--input <text>] [[--] <command | url | app>]
@@ -40,8 +41,9 @@ guard !args.isEmpty, args[0] != "-h", args[0] != "--help" else {
                                       manage the bundled agent skill locally
       apps [list | refresh] [--json]  the apps Hyprmux can open (.hmapp bundles), load errors,
                                       and their folders; refresh regenerates the generated ones
-      apps add <name> <path> [args]  install an app: an .app (checked like generated ones) or
-                                      an executable, with default arguments
+      apps add <name> <path> [args]  install an app: an .app (checked like generated ones), an
+                                      executable, or a QML app (a .qml file, or a folder with
+                                      main.qml), with default arguments
       launch [--focus] [--window <id>] <name | id> [args]
                                       open an app in a new tile and print it as JSON; an app
                                       that offers several windows prints them instead, and
@@ -67,6 +69,7 @@ guard !args.isEmpty, args[0] != "-h", args[0] != "--help" else {
       sendscroll <MODS>, <lines>, <x y>    inject a notched mouse-wheel scroll (positive = up)
       snapshot [--surface <id>] <file.png>  write a tile to a PNG: an app tile's own frame, or
                                   any other tile as it shows, decoration included
+      snapshot --window <file.png>   write the whole window, bar included, to a PNG
       sendmenu <title>               perform a menu item by title, e.g. "Open App..."
       cdp-url [--surface <id>]       the WebSocket URL agents drive Chromium web tiles through
                                       (agent-browser, Playwright); --surface limits it to one tile
@@ -608,7 +611,7 @@ func appsLine(_ arguments: [String]) throws -> String {
         guard rest.isEmpty else { throw CLIError(message: "apps \(sub) takes no arguments") }
         return "apps \(sub)"
     case "add":
-        guard rest.count >= 2 else { throw CLIError(message: "apps add needs a name and a path: an .app or an executable") }
+        guard rest.count >= 2 else { throw CLIError(message: "apps add needs a name and a path: an .app, an executable, or a QML app") }
         // A relative path means the caller's directory, not Hyprmux's.
         rest[1] = absolutePath(rest[1])
         return "apps add --base64 \(encodedText(rest.map(shellQuote).joined(separator: " ")))"
@@ -738,6 +741,10 @@ func commandLine() throws -> String {
         }
         return ([command] + targetArguments(parsed.surface) + options).joined(separator: " ")
     case "snapshot":
+        if commandArgs.first == "--window" {
+            guard commandArgs.count == 2 else { throw CLIError(message: "snapshot --window needs one PNG path") }
+            return [command, "--window", "--base64", encodedText(absolutePath(commandArgs[1]))].joined(separator: " ")
+        }
         let parsed = try takeSurface(from: commandArgs)
         guard parsed.remaining.count == 1 else { throw CLIError(message: "snapshot needs one PNG path") }
         return ([command] + targetArguments(parsed.surface) + ["--base64", encodedText(absolutePath(parsed.remaining[0]))]).joined(separator: " ")
@@ -752,6 +759,9 @@ func commandLine() throws -> String {
         return ([command] + targetArguments(parsed.surface)).joined(separator: " ")
     case "surfaces":
         guard commandArgs.isEmpty else { throw CLIError(message: "surfaces takes no arguments") }
+        return command
+    case "plugins":
+        guard commandArgs.isEmpty else { throw CLIError(message: "plugins takes no arguments") }
         return command
     case "adapters":
         return try adaptersLine(commandArgs)

@@ -161,6 +161,9 @@ public struct HyprmuxConfig: Sendable {
     public var binds: [KeyBind] = []
     public var execOnce: [String] = []
     public var exec: [String] = []
+    /// `plugin =` lines, in order: a name in `plugins/` next to the config, or a path
+    /// to a plugin folder (docs/PLUGINS.md). Listed means enabled.
+    public var plugins: [String] = []
     public var backgroundColor = Color(r: 0, g: 0, b: 0, a: 0)
     /// "fill": cover the display on the normal desktop (wallpaper stays visible behind
     /// a transparent window). "native": macOS full screen on its own Space.
@@ -436,6 +439,9 @@ public enum ConfigParser {
             case "submap": submap = value.isEmpty ? "reset" : value
             case "exec-once": config.execOnce.append(value)
             case "exec": config.exec.append(value)
+            case "plugin":
+                guard !value.isEmpty else { error(file, line, "plugin: expected a name or a folder"); return }
+                if !config.plugins.contains(value) { config.plugins.append(value) }
             case "bezier", "animations:bezier":
                 let p = value.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
                 guard p.count == 5, let a = Double(p[1]), let b = Double(p[2]), let c = Double(p[3]), let d = Double(p[4]) else {

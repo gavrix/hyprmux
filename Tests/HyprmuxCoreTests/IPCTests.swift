@@ -35,6 +35,7 @@ final class IPCTests: XCTestCase {
 
     func testSurfaceDiscoveryAndIdentifyRequests() throws {
         XCTAssertEqual(try IPCRequest.parse("surfaces").get(), .surfaces)
+        XCTAssertEqual(try IPCRequest.parse("plugins").get(), .plugins)
         XCTAssertEqual(try IPCRequest.parse("identify").get(), .identify(nil))
         XCTAssertEqual(try IPCRequest.parse("identify --surface surface:9").get(), .identify(SurfaceReference(9)))
     }

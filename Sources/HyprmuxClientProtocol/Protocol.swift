@@ -80,6 +80,25 @@ public enum HMOp {
     public static let toplevelTerminalExited = "toplevel.terminal_exited"
     /// What a tile's content is doing, drawn on the tile (`HMToplevelStatus`).
     public static let toplevelSetStatus = "toplevel.set_status"
+    // bar items: a surface in Hyprmux's workspace bar (plugins, plans/qml-plugins.md)
+    public static let barItemCreate = "bar_item.create"
+    public static let barItemSetWidth = "bar_item.set_width"
+    public static let barItemAckConfigure = "bar_item.ack_configure"
+    public static let barItemDestroy = "bar_item.destroy"
+    public static let barItemConfigure = "bar_item.configure"
+    // popups: a panel that drops from a bar item; Hyprmux closes it on a click elsewhere
+    public static let popupCreate = "popup.create"
+    public static let popupSetSize = "popup.set_size"
+    public static let popupAckConfigure = "popup.ack_configure"
+    public static let popupDestroy = "popup.destroy"
+    public static let popupConfigure = "popup.configure"
+    public static let popupDismissed = "popup.dismissed"
+    /// Hyprmux's look changed (a config reload): `theme_json`, as in `welcome`.
+    public static let themeChanged = "theme.changed"
+    // tiles: what Hyprmux shows, with each tile's processes (a plugin's task manager)
+    public static let tilesQuery = "tiles.query"
+    public static let tilesResult = "tiles.result"
+    public static let tilesFocus = "tiles.focus"
     // notifications in Hyprmux's HUD
     public static let notificationPost = "notification.post"
     // input
@@ -88,6 +107,9 @@ public enum HMOp {
     public static let pointerMotion = "pointer.motion"
     public static let pointerButton = "pointer.button"
     public static let pointerScroll = "pointer.scroll"
+    /// A trackpad pinch or rotation: `kind` magnify or rotate, `value` the change
+    /// (magnification, or degrees counterclockwise), `phase` as for scrolling.
+    public static let pointerGesture = "pointer.gesture"
     public static let pointerSetCursor = "pointer.set_cursor"
     public static let keyboardEnter = "keyboard.enter"
     public static let keyboardLeave = "keyboard.leave"
@@ -173,6 +195,14 @@ public struct HMWindowOffer: Equatable, Sendable {
 }
 
 /// `toplevel.configure` states.
+/// `hello` and `welcome` capabilities (docs/CLIENT_PROTOCOL.md, section 4).
+public enum HMCapability {
+    /// The client answers a configure within a frame or two. Hyprmux then shows its
+    /// last frame at its own size, anchored top-left, until the new one arrives,
+    /// instead of stretching it to the tile: content never scales during a resize.
+    public static let anchoredResize = "anchored-resize"
+}
+
 public enum HMToplevelState {
     public static let activated = "activated"
     public static let occluded = "occluded"
@@ -192,8 +222,10 @@ public enum HMToplevelStatus {
 
 /// Cursor names for `pointer.set_cursor`.
 public enum HMCursor {
-    public static let all = ["arrow", "ibeam", "pointing_hand", "crosshair", "open_hand", "closed_hand",
-                             "resize_left_right", "resize_up_down", "not_allowed", "hidden"]
+    public static let all = ["arrow", "ibeam", "vertical_ibeam", "pointing_hand", "crosshair", "open_hand", "closed_hand",
+                             "resize_left_right", "resize_up_down", "resize_left", "resize_right", "resize_up",
+                             "resize_down", "resize_nwse", "resize_nesw", "move", "copy", "link", "context_menu",
+                             "help", "wait", "progress", "zoom_in", "zoom_out", "not_allowed", "hidden"]
 }
 
 // MARK: XPC helpers

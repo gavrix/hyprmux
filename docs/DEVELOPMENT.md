@@ -228,6 +228,17 @@ The demo echoes typed text into its title, so `hyprmuxctl surfaces` shows
 whether keys made the round trip. Build it with `-c release` to measure
 frame rates. A debug build spends most of each frame drawing.
 
+#### The QML host
+
+`clients/qml` builds with CMake against the pinned Qt in `vendor/qt`
+(`scripts/fetch-qt.sh`). `scripts/bundle.sh` builds it, and `scripts/deploy-qt.sh`
+puts it in the app with the Qt frameworks, plugins, and QML modules it needs.
+`HYPRMUX_SKIP_QML_HOST=1` leaves it out. Its unit tests run with
+`ctest --test-dir clients/qml/build`. `scripts/qml-smoke.sh` starts a throwaway
+instance of a test copy with the built-in sysload plugin and the demo app, and
+checks both come up and that a killed plugin restarts. See
+[Plugins](PLUGINS.md).
+
 #### Dev broker or registered agent
 
 There are two ways the broker gets loaded:
@@ -374,6 +385,7 @@ seconds: launch it from Hyprmux.
 | `hyprmuxctl sendkey MODS, key` | Presses a key through the focused real path (binds, then the surface). Works in the background. |
 | `hyprmuxctl senddrag` / `sendmouse` | Mouse input, paced like a hand. `sendmouse down` … `up` for holds. |
 | `hyprmuxctl snapshot [--surface ID] FILE.png` | Writes an app tile's current frame to a PNG, straight from the client's IOSurface. Any other tile (a terminal, a web tile) comes from Hyprmux's own window, with its border, title pill, and a margin around it. Needs no screen-recording permission, so it works where `screencapture` doesn't. |
+| `hyprmuxctl snapshot --window FILE.png` | Writes the whole window, bar included, the same way. Use it to check the bar and its plugin items in a test instance. |
 | `hyprmuxctl sendscroll MODS, LINES, x y` | A notched mouse-wheel scroll, built as a real line-unit event (positive scrolls up). App tiles get it with its raw notch count, like hardware. |
 | `hyprmuxctl sendmenu TITLE` | Performs a menu bar item, as a click would (`sendmenu "Open App..."`). Works in the background. |
 | `hyprmuxctl hittest x y` | Which views a click reaches. This found the dim overlay that swallowed every click. |

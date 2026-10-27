@@ -73,10 +73,15 @@ final class ClientView: DecoratedView, FindBarHost {
             : TileStatus.label(status) != nil)
     }
 
+    /// The title pill's color now: the activity's, else the border's.
+    var pillColor: HyprmuxCore.Color? {
+        let border = (isActive ? decoration.activeBorder : decoration.inactiveBorder).colors.first
+        return TileStatus.rgba(status) ?? border
+    }
+
     private func updateTitlePill() {
         let text = decoration.title ? surface.title : (TileStatus.label(status) ?? "")
-        let border = (isActive ? decoration.activeBorder : decoration.inactiveBorder).colors.first
-        guard let color = TileStatus.rgba(status) ?? border else { return }
+        guard let color = pillColor else { return }
         titlePill.update(string: text, id: decoration.titleShowsID ? id.raw : nil, color: color, status: status,
                          fontSize: decoration.titleFontSize)
     }

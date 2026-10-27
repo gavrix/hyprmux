@@ -239,6 +239,14 @@ instance of a test copy with the built-in sysload plugin and the demo app, and
 checks both come up and that a killed plugin restarts. See
 [Plugins](PLUGINS.md).
 
+`scripts/qml-bench.py` is its load test. It runs the QML Stress app
+(`clients/qml/bench`) through each scenario (idle, a full-tile animation, 2,000
+animated items, a blur, a scrolling list, a hidden tile, a live resize) and the
+idle sysload plugin, and prints frame rates, time per frame, CPU, and memory.
+Frames flow only while its Hyprmux window is on screen and the screen is
+unlocked; `--front` brings it forward. The numbers come from the host's
+`HM_QML_STATS=FILE`, one JSON line per surface per second.
+
 #### Dev broker or registered agent
 
 There are two ways the broker gets loaded:

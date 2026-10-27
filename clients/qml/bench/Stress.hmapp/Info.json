@@ -1,0 +1,6 @@
+{
+  "format": 1,
+  "id": "dev.gavrix.hyprmux.stress",
+  "name": "QML Stress",
+  "kind": "qml"
+}

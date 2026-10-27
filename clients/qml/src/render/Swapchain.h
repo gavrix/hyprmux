@@ -1,5 +1,10 @@
 // The images a surface renders into: IOSurfaces Hyprmux reads, each wrapped as
 // the Metal texture Qt Quick draws into. No pixels are copied.
+//
+// Each image keeps its own render target, and they share one depth-stencil buffer.
+// Handing Qt Quick a bare texture instead makes it build a new render target and a
+// full-size depth buffer whenever the texture changes: every frame, as the images
+// take turns.
 #pragma once
 
 #include <QtCore/QSize>
@@ -14,12 +19,23 @@
 namespace hm {
 
 class Connection;
+}
+
+class QRhi;
+class QRhiRenderBuffer;
+class QRhiRenderPassDescriptor;
+class QRhiTexture;
+class QRhiTextureRenderTarget;
+
+namespace hm {
 
 struct Buffer {
     IOSurfaceRef surface = nullptr;
     /// The Metal texture over `surface` (an id<MTLTexture>, retained).
     void *texture = nullptr;
     QQuickRenderTarget target;
+    QRhiTexture *color = nullptr;
+    QRhiTextureRenderTarget *renderTarget = nullptr;
     uint64_t id = 0;
     QSize size;
     double scale = 0;
@@ -34,7 +50,7 @@ public:
     /// Three images: one on screen, one queued, one being drawn.
     static constexpr size_t length = 3;
 
-    explicit Swapchain(Connection *connection) : conn_(connection) {}
+    Swapchain(Connection *connection, QRhi *rhi) : conn_(connection), rhi_(rhi) {}
     ~Swapchain();
     Swapchain(const Swapchain &) = delete;
     Swapchain &operator=(const Swapchain &) = delete;
@@ -49,16 +65,30 @@ public:
     /// `buffer.release`. False when the id isn't one of ours.
     bool release(uint64_t id);
 
-    /// Hyprmux let go of every image at once (a dismissed popup).
-    void markAllFree();
+    /// Hyprmux let go of every image at once (a dismissed popup): they all go. A
+    /// closed popup holds no memory; reopening makes new ones.
+    void releaseAll();
 
 private:
     Buffer *make(QSize pixels, double scale);
     void destroy(Buffer *b);
 
+    void free(Buffer *b);
+    /// The depth-stencil buffer and render pass for this size, made on first use.
+    bool ensureShared(QSize pixels);
+
     Connection *conn_;
+    QRhi *rhi_;
     std::vector<std::unique_ptr<Buffer>> buffers_;
+    QRhiRenderBuffer *depth_ = nullptr;
+    QRhiRenderPassDescriptor *pass_ = nullptr;
+    QSize sharedSize_;
 };
+
+/// Bytes in the process's IOSurfaces, and Metal's own allocations on the device
+/// (Qt's textures, buffers, depth buffers), for HM_QML_STATS.
+size_t surfaceBytes();
+size_t metalAllocatedBytes();
 
 /// The process's one Metal device and command queue (id<MTLDevice>, id<MTLCommandQueue>).
 void *metalDevice();

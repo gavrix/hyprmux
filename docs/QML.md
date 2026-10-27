@@ -91,6 +91,11 @@ again when its config reloads, so running apps follow:
 
 Full custom drawing works as anywhere in Qt Quick.
 
+Animations run at the display's rate, 120 Hz on ProMotion. They pause while
+none of the app's windows show, such as on a workspace out of view, and catch up
+when one shows again. A `Timer` keeps running; use it for work that must go on
+while hidden.
+
 ## Keyboard
 
 - Keys, shortcuts (`Shortcut`, `Action.shortcut`, `Keys`), and key repeat work.

@@ -10,9 +10,13 @@
 #include "qml/System.h"
 #include "qml/Theme.h"
 #include "qml/Tiles.h"
+#include "render/Swapchain.h"
+#include "scene/FrameDriver.h"
 #include "scene/Scene.h"
 
 #include <QtCore/QCoreApplication>
+#include <cmath>
+#include <QtCore/QDateTime>
 #include <QtCore/QDir>
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
@@ -103,6 +107,32 @@ void Host::setConnection(Connection *c) {
     theme()->apply(QByteArray::fromStdString(c->welcomeTheme()));
     auto waiting = std::move(waiting_);
     for (HyprmuxWindow *w : waiting) openWindow(w);
+    startStats();
+}
+
+void Host::startStats() {
+    const char *path = std::getenv("HM_QML_STATS");
+    if (!path || !*path || statsTimer_) return;
+    QString file = QString::fromUtf8(path);
+    statsTimer_ = new QTimer();
+    statsTimer_->setInterval(1000);
+    QObject::connect(statsTimer_, &QTimer::timeout, statsTimer_, [this, file] {
+        // One line per surface; whole lines in append mode, so processes can share a file.
+        QFile out(file);
+        if (!out.open(QIODevice::WriteOnly | QIODevice::Append)) return;
+        double t = double(QDateTime::currentMSecsSinceEpoch()) / 1000;
+        // Process-wide: the IOSurfaces Hyprmux shows, and Metal's other memory.
+        double surfacesMB = double(surfaceBytes()) / (1 << 20), metalMB = double(metalAllocatedBytes()) / (1 << 20);
+        for (auto &s : scenes_) {
+            QJsonObject o = s->takeStats();
+            o["t"] = t;
+            o["pid"] = qint64(getpid());
+            o["surfaces_mb"] = std::round(surfacesMB * 10) / 10;
+            o["metal_mb"] = std::round(metalMB * 10) / 10;
+            out.write(QJsonDocument(o).toJson(QJsonDocument::Compact) + "\n");
+        }
+    });
+    statsTimer_->start();
 }
 
 void Host::addScene(std::unique_ptr<Scene> s) {
@@ -255,6 +285,15 @@ void Host::toplevelClosed() {
     if (isPlugin()) return;
     bool any = std::any_of(scenes_.begin(), scenes_.end(), [](auto &s) { return s->isOpenToplevel(); });
     if (!any) QCoreApplication::quit();
+}
+
+FrameDriver *Host::animationDriver() {
+    if (!driver_) {
+        // Animations started: every shown surface draws, so frame callbacks flow.
+        driver_ = new FrameDriver([this] { for (auto &s : scenes_) s->requestFrame(); });
+        driver_->install();
+    }
+    return driver_;
 }
 
 Scene *Host::tileFor(QObject *object) const {

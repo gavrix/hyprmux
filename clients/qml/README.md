@@ -91,6 +91,13 @@ processes it started for a `plugin =` line are plugins. Its settings come from
 - `HM_QML_DUMP=DIR`: each surface's latest frame as `DIR/toplevel.png`,
   `bar_item.png`, or `popup.png`. `hyprmuxctl snapshot` doesn't reach popups,
   and a window capture is blank while the screen is locked.
+- `HM_QML_STATS=FILE`: one JSON line per surface per second: frames, CPU time
+  per frame (`render`), submitting it (`submit`, where Qt waits for the GPU),
+  commit to frame callback, resize to answer, and starved renders; and the
+  process's IOSurface and Metal memory (`surfaces_mb`, `metal_mb`). Those two
+  are steady; `footprint`'s graphics figure swings with driver memory macOS
+  reclaims later.
+  `scripts/qml-bench.py` reads it.
 - `QML_DISABLE_DISK_CACHE=1`: Qt's compiled-QML cache once kept serving an old
   `Details.qml` after an edit. Use it while editing plugins.
 
@@ -106,9 +113,14 @@ only in active windows. Text input runs through Hyprmux's input methods
 ## What works
 
 - Configure, ack, resize, and scale, for tiles and bar items.
-- A three-buffer swapchain with buffer release.
-- Rendering only when the scene changes, paced by frame callbacks. A hidden
-  tile gets no callbacks, so it stops drawing.
+- A three-buffer swapchain with buffer release. Each buffer keeps its render
+  target, and they share one depth-stencil buffer: given bare textures, Qt
+  Quick builds a new render target and depth buffer each time the texture
+  changes, which was every frame.
+- Rendering paced by frame callbacks: when the scene changes, and every frame
+  while an animation runs. A hidden tile gets no callbacks, so it stops drawing.
+- Animations step on frame callbacks (`FrameDriver`), at the display's rate and
+  with the shown frame's time, and pause while no surface of the process shows.
 - Pointer enter, leave, motion, buttons, double clicks, and scrolling with
   trackpad phases, through Qt's window-system queue. Pointer handlers
   (`TapHandler`, `HoverHandler`) need that path; `sendEvent` reaches only
@@ -126,5 +138,5 @@ only in active windows. Text input runs through Hyprmux's input methods
 
 ## Not yet
 
-- A fence: each frame waits for the GPU (`QRhi::finish`) before it commits.
-- A custom animation driver. Animations tick on Qt's timer, even while hidden.
+- A fence. Each frame waits for the GPU in `endFrame` before it commits: about
+  1 ms at full screen, measured. Not worth the complexity yet.

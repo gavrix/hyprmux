@@ -16,9 +16,12 @@ class QObject;
 class QQmlEngine;
 class QQuickItem;
 
+class QTimer;
+
 namespace hm {
 
 class Connection;
+class FrameDriver;
 class HyprmuxApp;
 class HyprmuxWindow;
 class Plugin;
@@ -39,6 +42,9 @@ public:
 
     /// The plugin being run. Its id is empty when the host runs a bare QML file.
     Plugin *plugin() const { return plugin_.get(); }
+    /// Drives Qt Quick's animations from frame callbacks (FrameDriver.h). Installed
+    /// before any QML loads.
+    FrameDriver *animationDriver();
     bool isPlugin() const;
 
     /// Whether the scene may use what `permission` guards: a plugin needs it in its
@@ -113,6 +119,9 @@ private:
     uint64_t activationSerial_ = 0;
     std::map<uint64_t, Reply> replies_;
     std::string answering_;
+    FrameDriver *driver_ = nullptr;
+    QTimer *statsTimer_ = nullptr;
+    void startStats();
 };
 
 } // namespace hm

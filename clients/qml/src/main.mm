@@ -54,6 +54,7 @@ int main(int argc, char **argv) {
     app.setQuitOnLastWindowClosed(false);
 
     hm::Host &host = hm::Host::get();
+    host.animationDriver();   // before QML: animations follow frame callbacks
     hm::Plugin *plugin = host.plugin();
     QString qmlPath, appID, name;
     // A folder is a plugin. Not a --plugin flag: Qt claims -plugin for its own plugins.

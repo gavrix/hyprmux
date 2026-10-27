@@ -20,8 +20,10 @@ add_library(hyprmux-qml-core STATIC
     src/qml/PluginSettings.h src/qml/PluginSettings.cpp
     src/qml/WindowUI.h src/qml/WindowUI.cpp
     src/scene/KeyMap.h src/scene/KeyMap.mm
+    src/scene/FrameStats.h src/scene/FrameStats.cpp
+    src/scene/FrameDriver.h src/scene/FrameDriver.mm
 )
-target_link_libraries(hyprmux-qml-core PUBLIC Qt6::Core Qt6::Gui)
+target_link_libraries(hyprmux-qml-core PUBLIC Qt6::Core Qt6::Gui "-framework QuartzCore")
 
 qt_add_executable(hyprmux-qml
     src/main.mm
@@ -57,12 +59,12 @@ target_include_directories(hyprmux-qml PRIVATE src src/qml)
 target_link_libraries(hyprmux-qml PRIVATE
     hyprmux-qml-core
     Qt6::Core Qt6::Gui Qt6::GuiPrivate Qt6::Qml Qt6::Quick Qt6::QuickPrivate
-    "-framework AppKit" "-framework Metal" "-framework IOSurface" "-framework IOKit"
+    "-framework AppKit" "-framework Metal" "-framework IOSurface" "-framework IOKit" "-framework QuartzCore"
 )
 
 # Tests: `ctest --test-dir build`.
 enable_testing()
-qt_add_executable(hyprmux-qml-tests tests/main.cpp tests/AttributionTests.cpp tests/KeyMapTests.cpp tests/PluginSettingsTests.cpp tests/WindowUITests.cpp)
+qt_add_executable(hyprmux-qml-tests tests/main.cpp tests/AttributionTests.cpp tests/KeyMapTests.cpp tests/PluginSettingsTests.cpp tests/WindowUITests.cpp tests/FrameStatsTests.cpp tests/FrameDriverTests.mm)
 target_include_directories(hyprmux-qml-tests PRIVATE src)
 target_link_libraries(hyprmux-qml-tests PRIVATE hyprmux-qml-core Qt6::Test)
 add_test(NAME hyprmux-qml-tests COMMAND hyprmux-qml-tests)

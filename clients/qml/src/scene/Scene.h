@@ -3,6 +3,7 @@
 // BarPopup inside a BarItem).
 #pragma once
 
+#include <QtCore/QJsonObject>
 #include <QtCore/QPointF>
 #include <QtCore/QString>
 
@@ -50,10 +51,14 @@ public:
     uint64_t surfaceID() const;
     /// Where the pointer last was over it, in points.
     QPointF pointerPosition() const;
+    /// The last second's frame timings (FrameStats), for HM_QML_STATS.
+    QJsonObject takeStats();
     /// The offscreen window the scene renders: items in it belong to this tile.
     QQuickWindow *quickWindow() const;
     /// A live reload: the tile shows `root` (`window`, if it's a HyprmuxWindow) now.
     void adopt(QQuickItem *root, HyprmuxWindow *window);
+    /// Draws again: animations started (FrameDriver).
+    void requestFrame();
     /// Asks Hyprmux for the tile, if a window still being made deferred it.
     void createToplevel();
     /// Puts the window back in this scene, if QML moved it into another (a window

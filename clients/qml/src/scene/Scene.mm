@@ -9,11 +9,15 @@
 #include "../qml/Theme.h"
 #include "../qml/Notifier.h"
 #include "../render/Swapchain.h"
+#include "FrameDriver.h"
+#include "FrameStats.h"
 #include "InputBridge.h"
 
 #import <Metal/Metal.h>
 
 #include <QtCore/QCoreApplication>
+#include <QtCore/QElapsedTimer>
+#include <QtCore/QJsonArray>
 #include <QtCore/QPointer>
 #include <QtCore/QFileInfo>
 #include <QtQml/QQmlComponent>
@@ -63,6 +67,14 @@ struct Scene::Impl {
     bool renderQueued = false;
     uint64_t frameCallback = 0;
 
+    FrameStats stats;
+    QElapsedTimer clock;
+    double lastCommit = -1, commitAt = -1, configuredAt = -1;
+    double now() {
+        if (!clock.isValid()) clock.start();
+        return double(clock.nsecsElapsed()) / 1e6;
+    }
+
     QString title;
     Notifier titleWatch;
     /// The window a tile shows, when it's a HyprmuxWindow.
@@ -79,6 +91,9 @@ struct Scene::Impl {
         if (!ownsRoot && root) root->setParentItem(nullptr);
         else delete root;
         input.reset();
+        // The swapchain's render targets belong to the render control's QRhi.
+        if (window) window->setRenderTarget(QQuickRenderTarget());
+        swapchain.reset();
         delete window;
         delete control;
     }
@@ -98,7 +113,7 @@ struct Scene::Impl {
         // (`Shortcut`, `Action`) only in active windows. It isn't drawn into: the
         // render control draws into Hyprmux's surfaces.
         window->create();
-        swapchain = std::make_unique<Swapchain>(conn);
+        swapchain = std::make_unique<Swapchain>(conn, control->rhi());
         surface = conn->allocate();
         Message s("surface.create");
         s.u64("id", surface);
@@ -126,19 +141,32 @@ struct Scene::Impl {
         Buffer *b = swapchain->acquire(pixels, scale);
         if (!b) {   // all busy: draw again on the next release
             dirty = true;
+            stats.starved++;
             HM_TRACE("%s: no free buffer", prefix());
             return;
         }
         dirty = false;
+        double start = now();
         window->setRenderTarget(b->target);
         control->polishItems();
         control->beginFrame();
         control->sync();
         control->render();
+        double recorded = now();
         control->endFrame();
+        double rendered = now();
         // The protocol has no fence: Hyprmux may read the IOSurface as soon as the
-        // commit arrives, so the GPU has to be done with it first.
+        // commit arrives, so the GPU has to be done with it first. endFrame already
+        // waits for an offscreen frame (finish measures 0 ms); this keeps the promise
+        // if that changes.
         control->rhi()->finish();
+        double finished = now();
+        stats.render.add(recorded - start);
+        stats.submit.add(rendered - recorded);
+        stats.gpuWait.add(finished - rendered);
+        if (lastCommit >= 0) stats.interval.add(finished - lastCommit);
+        lastCommit = commitAt = finished;
+        if (unacked && configuredAt >= 0) stats.configure.add(finished - configuredAt);
         dumpFrame(b, prefix());
 
         if (unacked) {
@@ -177,7 +205,10 @@ struct Scene::Impl {
         points = QSizeF(w, h);
         pixels = QSize(int(std::lround(w * scale)), int(std::lround(h * scale)));
         serial = e.u64("serial");
+        // The first of a burst counts: a resize waits from the first configure.
+        if (!unacked) configuredAt = now();
         unacked = true;
+        stats.configures++;
         HM_TRACE("%s: configure %llu, %.0fx%.0f @%.0fx", prefix(), (unsigned long long)serial, w, h, scale);
         window->setGeometry(0, 0, int(std::ceil(w)), int(std::ceil(h)));
         window->contentItem()->setSize(points);
@@ -188,9 +219,16 @@ struct Scene::Impl {
         render();
     }
 
-    void frameDone() {
+    void frameDone(double targetTime) {
+        if (commitAt >= 0) stats.callback.add(now() - commitAt);
+        commitAt = -1;
         waitingFrame = false;
-        if (dirty) render();
+        // Animations step to this frame's time first, so what's drawn is current.
+        FrameDriver *driver = Host::get().animationDriver();
+        driver->frame(targetTime);
+        // While animations run, draw every frame: a change Qt Quick doesn't report
+        // (an effect's hidden source moving) still shows, as in Qt's render loops.
+        if (dirty || driver->isRunning()) render();
     }
 
     void setTitle(const QString &t) {
@@ -352,7 +390,9 @@ struct Scene::Impl {
         configured = false;
         waitingFrame = false;
         unacked = false;
-        swapchain->markAllFree();
+        // The window may still name a buffer's render target: forget it first.
+        window->setRenderTarget(QQuickRenderTarget());
+        swapchain->releaseAll();
         input->reset();
     }
 };
@@ -364,6 +404,7 @@ Scene::Role Scene::role() const { return d->kind; }
 HyprmuxWindow *Scene::window() const { return d->appWindow.data(); }
 void Scene::adopt(QQuickItem *root, HyprmuxWindow *window) { d->attach(root, window, d->title); }
 void Scene::createToplevel() { d->createToplevel(); }
+void Scene::requestFrame() { d->scheduleRender(); }
 
 void Scene::reclaim() {
     if (d->root && d->root->parentItem() != d->window->contentItem()) {
@@ -379,6 +420,16 @@ void Scene::orphan() {
 }
 bool Scene::isOpenToplevel() const { return d->kind == Role::Toplevel && !d->closed; }
 uint64_t Scene::surfaceID() const { return d->surface; }
+
+QJsonObject Scene::takeStats() {
+    QJsonObject o = d->stats.take();
+    o["role"] = d->prefix();
+    o["title"] = d->title;
+    o["px"] = QJsonArray{d->pixels.width(), d->pixels.height()};
+    // A surface that's had no frame callback a while is hidden (or idle).
+    o["waiting"] = d->waitingFrame;
+    return o;
+}
 QPointF Scene::pointerPosition() const { return d->input ? d->input->pointerPosition() : QPointF(); }
 QQuickWindow *Scene::quickWindow() const { return d->window; }
 
@@ -463,7 +514,7 @@ bool Scene::handle(const Event &e) {
     }
     if (op == "surface.frame_done") {
         if (e.u64("callback") != d->frameCallback) return false;
-        d->frameDone();
+        d->frameDone(e.f64("target_time"));
         return true;
     }
     if (op == "buffer.release") {

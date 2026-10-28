@@ -198,7 +198,9 @@ extension WindowManager {
     static func expandedFrame(_ parent: CGRect, bar: Double, _ s: AttachedSettings) -> CGRect {
         var area = parent
         area.size.height = max(1, area.height - CGFloat(bar))
-        let inset = min(s.expandInset, max(0, min(area.width, area.height) / 2 - 40))
+        // Spelled out: Xcode 26's compiler finds `- 40` ambiguous between CGFloat and Double.
+        let half: CGFloat = min(area.width, area.height) / 2
+        let inset: CGFloat = min(CGFloat(s.expandInset), max(0, half - 40))
         return area.insetBy(dx: inset, dy: inset).integral
     }
 

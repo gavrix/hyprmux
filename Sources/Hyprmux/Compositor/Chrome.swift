@@ -28,6 +28,9 @@ final class CompositorView: FlippedView {
 /// tabs (PillStrip): the active one stays in view, and a count marks each clipped edge.
 final class BarView: NSView, NSViewToolTipOwner {
     var leadingInset: CGFloat = 0 { didSet { if leadingInset != oldValue { pillsChanged() } } }
+    /// The display's camera notch, in the bar's coordinates, when the bar reaches it.
+    /// The pills stay left of it, and the title moves beside it.
+    var notch: CGRect? { didSet { if notch != oldValue { pillsChanged() } } }
     var workspaces: [Int] = [] { didSet { if workspaces != oldValue { pillsChanged() } } }
     /// Workspace names, shown after the number (the number always stays, for ⌘1…9).
     var names: [Int: String] = [:] { didSet { if names != oldValue { pillsChanged() } } }
@@ -205,7 +208,10 @@ final class BarView: NSView, NSViewToolTipOwner {
             made.append((n, w, label))
         }
         let widths = made.map(\.width)
-        let available = max(80, min(rightLabelsMinX, itemsMinX) - 14 - start - Self.minTitleWidth)
+        let end = min(rightLabelsMinX, itemsMinX) - 14
+        // Under a notch, the title goes beside it, so the pills need not leave it room.
+        let available = notch.map { max(80, min(end, $0.minX - 8) - start) }
+            ?? max(80, end - start - Self.minTitleWidth)
         scrollTarget = PillStrip.offset(widths: widths, gap: Self.pillGap, available: available,
                                         active: workspaces.firstIndex(of: active), previous: scrollTarget)
         if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion || window == nil { scroll = scrollTarget }
@@ -282,9 +288,17 @@ final class BarView: NSView, NSViewToolTipOwner {
         ]
         let t = title as NSString
         let ts = t.size(withAttributes: titleAttrs)
-        let maxW = max(0, min(rx, itemsMinX - 14, bounds.width) - x - 20)
-        let drawW = min(ts.width, maxW)
-        let tx = max(x + 10, (bounds.width - drawW) / 2)
+        var lo = x + 10
+        var hi = min(rx, itemsMinX - 14, bounds.width) - 10
+        var centered = true
+        // A notch in the way: the title takes the wider side of it, centered there.
+        if let notch, notch.maxX > lo, notch.minX < hi {
+            let left = (lo, notch.minX - 10), right = (notch.maxX + 10, hi)
+            (lo, hi) = right.1 - right.0 >= left.1 - left.0 ? right : left
+            centered = false
+        }
+        let drawW = min(ts.width, max(0, hi - lo))
+        let tx = centered ? max(lo, (bounds.width - drawW) / 2) : lo + (hi - lo - drawW) / 2
         t.draw(with: CGRect(x: tx, y: (h - ts.height) / 2, width: drawW, height: ts.height),
                options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine], attributes: titleAttrs)
     }
@@ -293,6 +307,7 @@ final class BarView: NSView, NSViewToolTipOwner {
     /// and the strip, in the bar's points.
     var debugState: [String: Any] {
         ["width": bounds.width, "strip": [strip.minX, strip.width], "offset": scroll,
+         "notch": notch.map { [$0.minX, $0.width] } ?? [],
          "shown": pills.filter(\.shown).map(\.id),
          "before": before?.ids ?? [], "after": after?.ids ?? [],
          "items": items.map { ["id": $0.itemID, "frame": [$0.frame.minX, $0.frame.minY, $0.frame.width, $0.frame.height]] }]

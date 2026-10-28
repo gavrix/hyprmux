@@ -181,6 +181,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         let nc = NotificationCenter.default
         nc.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
             self?.window.refit()
+            self?.updateNotch()
         }
         nc.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
             self?.window.applyPresentation()
@@ -376,11 +377,19 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         wm.reserved = Insets(top: top, right: 0, bottom: 0, left: 0)
         bar.frame = CGRect(x: 0, y: 0, width: b.width, height: top)
         bar.leadingInset = titlebarHeight > 0 ? 70 : 0
+        updateNotch()
         specialDim.frame = b
         updateWindowFrame()
         hud.layout(monitor: wm.monitor, workArea: wm.workArea, animated: animated)
         layoutPopup()
         apply(animated: animated)
+    }
+
+    /// Tells the bar where the display's notch covers it. The window can reach the
+    /// notch, or leave it, without changing size: filled, moved to another display.
+    private func updateNotch() {
+        let n = window.notchRect.map { bar.convert($0, from: nil) }
+        bar.notch = n.flatMap { $0.intersects(bar.bounds) ? $0 : nil }
     }
 
     // MARK: Spawning and closing
@@ -1863,8 +1872,14 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
     /// on once it stops moving. A drag moves it while the button is down, macOS keeps
     /// moving it briefly after the drop, and Move to animates: a frame set before the
     /// window settles is overridden, or fills the display it's passing over.
-    func windowDidChangeScreen(_ notification: Notification) { scheduleFollowScreen() }
-    func windowDidMove(_ notification: Notification) { scheduleFollowScreen() }
+    func windowDidChangeScreen(_ notification: Notification) {
+        updateNotch()
+        scheduleFollowScreen()
+    }
+    func windowDidMove(_ notification: Notification) {
+        updateNotch()
+        scheduleFollowScreen()
+    }
 
     /// Every move restarts the wait, so this runs 0.2 s after the last one.
     private func scheduleFollowScreen() {

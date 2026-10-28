@@ -106,6 +106,19 @@ final class MonitorWindow: NSWindow {
         setFrame(screen.frame, display: true)
     }
 
+    /// The camera notch of the display, in this window's coordinates. Nil when the
+    /// display has none or the window doesn't reach it (windowed, native full screen).
+    /// The notch is centered, so its width is what the two menu bar areas beside it leave.
+    var notchRect: NSRect? {
+        guard let screen, screen.safeAreaInsets.top > 0,
+              let left = screen.auxiliaryTopLeftArea, let right = screen.auxiliaryTopRightArea else { return nil }
+        let f = screen.frame
+        let h = screen.safeAreaInsets.top
+        let notch = NSRect(x: f.minX + left.width, y: f.maxY - h, width: f.width - left.width - right.width, height: h)
+        let hit = notch.intersection(frame)
+        return hit.isEmpty ? nil : convertFromScreen(hit)
+    }
+
     /// A first launch (nothing saved yet) starts filled.
     static var wasFilledAtQuit: Bool { UserDefaults.standard.object(forKey: "HyprmuxFill") as? Bool ?? true }
 }

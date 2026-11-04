@@ -7,8 +7,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CEF_VERSION="${CEF_VERSION:-154.0.28+g564dd6c+chromium-154.0.8037.58}"
-CEF_SHA1="${CEF_SHA1:-f7c50c2719deb8aa0c78de517c1228d0b8c3fced}"
+CEF_VERSION="${CEF_VERSION:-156.0.15+gcf671c0+chromium-156.0.8078.80}"
+CEF_SHA1="${CEF_SHA1:-bcdd1877edb300b0fb91d8f71c0b14aae256cd0f}"
 NAME="cef_binary_${CEF_VERSION}_macosarm64_minimal"
 OUT="$ROOT/vendor/cef"
 STAMP="$OUT/.cef-version"

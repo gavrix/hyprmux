@@ -130,13 +130,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func openAppLauncher() { compositor?.presentAppLauncher() }
 
     /// Finder (or `open`) opened `.hmapp`s: each launches into a tile (docs/APPS.md).
+    /// `hyprmux://surface/<id>` links focus that surface, switching to its workspace.
     func application(_ application: NSApplication, open urls: [URL]) {
         let bundles = urls.filter { $0.isFileURL && $0.pathExtension == HMApp.pathExtension }
+        let links = urls.filter { $0.scheme?.lowercased() == "hyprmux" }
         guard let compositor else {
-            pendingOpens += bundles
+            pendingOpens += bundles + links
             return
         }
         for url in bundles { compositor.openHMApp(at: url.path) }
+        for url in links { openLink(url, compositor: compositor) }
+    }
+
+    /// `hyprmux://surface/<id>`: the same action as `hyprmuxctl focus-surface --surface surface:<id>`.
+    private func openLink(_ url: URL, compositor: Compositor) {
+        guard url.host?.lowercased() == "surface",
+              let id = url.pathComponents.dropFirst().first,
+              case .success(let reference) = SurfaceReference.parse(id)
+        else {
+            _ = compositor.hud.notifications.post(.warning, "Unknown Hyprmux link: \(url.absoluteString)", timeout: 5, key: "link")
+            return
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        let reply = compositor.handleIPC("focus-surface --surface \(reference)")
+        if reply != "ok" {
+            _ = compositor.hud.notifications.post(.warning, "\(reference) is gone", timeout: 5, key: "link")
+        }
     }
 
     /// Until when a second ⌘Q quits.

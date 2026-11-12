@@ -133,6 +133,9 @@ it. One process shows every device.
 - **Input:** click and drag to touch. Typing goes to the device, except the
   shortcuts Hyprmux binds. The bar under the screen has Home and Lock (iOS), or
   Back, Home, and Recents (Android).
+- **Two fingers (iOS):** pinch or rotate on the trackpad over the screen, or
+  Option-drag: the second finger mirrors the pointer about the screen's center,
+  as in Simulator.app. Option-Shift-drag moves both fingers together.
 - **Sessions:** device tiles come back if the device is running. The others
   are skipped.
 - **Errors** show in the tile, for example when an emulator stops streaming.

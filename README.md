@@ -138,8 +138,9 @@ variables, and agent workflows.
 Mobile is a built-in app that shows iOS Simulators and Android Emulators in
 tiles. Press ⌘I. It asks which device when several run, and can open the same
 device twice. Click and drag to touch, type to use the keyboard, and use the
-buttons under the screen for Home, Lock, Back, and Recents. Simulator.app
-isn't needed.
+buttons under the screen for Home, Lock, Back, and Recents. On iOS, pinch and
+rotate on the trackpad, or Option-drag, for two fingers. Simulator.app isn't
+needed.
 
 - **iOS Simulator:** needs Xcode. Mobile shows simulators you booted.
 - **Android Emulator:** needs the Android SDK emulator. Mobile shows AVDs you

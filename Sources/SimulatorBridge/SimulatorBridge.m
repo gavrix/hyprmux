@@ -20,7 +20,7 @@ _Static_assert(__builtin_offsetof(IndigoMessage, payload.event.touch.xRatio) == 
 // SimulatorKit message builders (signatures from idb's SimulatorIndigoHID.swift).
 typedef IndigoMessage *(*HMMouseEventFn)(CGPoint *, CGPoint *, uint32_t target, NSUInteger eventType, CGSize, uint32_t edge);
 typedef IndigoMessage *(*HMKeyboardFn)(int32_t keyCode, int32_t direction);
-typedef IndigoMessage *(*HMButtonFn)(int32_t source, int32_t direction, int32_t target);
+typedef IndigoMessage *(*HMHIDArbitraryFn)(uint32_t target, uint32_t usagePage, uint32_t usage, uint32_t direction);
 
 @protocol HMPrivHIDClient <NSObject>
 - (id)initWithDevice:(id)device error:(NSError **)error;
@@ -168,7 +168,7 @@ static NSString *DeveloperDir(void) {
   dispatch_queue_t _hidQueue;
   HMMouseEventFn _mouseFn;
   HMKeyboardFn _keyboardFn;
-  HMButtonFn _buttonFn;
+  HMHIDArbitraryFn _hidArbitraryFn;
 }
 
 - (instancetype)initWithQuery:(NSString *)query error:(NSError **)error {
@@ -229,9 +229,9 @@ static NSString *DeveloperDir(void) {
   if (_inputUnavailableReason) return NO;
   _mouseFn = (HMMouseEventFn)dlsym(RTLD_DEFAULT, "IndigoHIDMessageForMouseNSEvent");
   _keyboardFn = (HMKeyboardFn)dlsym(RTLD_DEFAULT, "IndigoHIDMessageForKeyboardArbitrary");
-  _buttonFn = (HMButtonFn)dlsym(RTLD_DEFAULT, "IndigoHIDMessageForButton");
+  _hidArbitraryFn = (HMHIDArbitraryFn)dlsym(RTLD_DEFAULT, "IndigoHIDMessageForHIDArbitrary");
   Class cls = objc_lookUpClass("SimulatorKit.SimDeviceLegacyHIDClient");
-  if (!_mouseFn || !_keyboardFn || !_buttonFn || !cls) {
+  if (!_mouseFn || !_keyboardFn || !_hidArbitraryFn || !cls) {
     _inputUnavailableReason = @"SimulatorKit input functions not found (Xcode changed?)";
     return NO;
   }
@@ -306,6 +306,29 @@ static NSString *DeveloperDir(void) {
   [self send:msg];
 }
 
+/// A two-finger message, built like idb's SimulatorIndigoHID.twoFingerTouch: given a second point,
+/// the builder makes a multi-touch message (eventType 3) of three payloads at the 0xA0 wire stride:
+/// the first finger, a digitizer summary that mirrors it, and the second finger.
+- (void)sendTouchesAtRatio:(CGPoint)first second:(CGPoint)second phase:(HMSimTouchPhase)phase {
+  if (_stopped || ![self ensureHID]) return;
+  CGPoint a = CGPointMake(MIN(MAX(first.x, 0), 1), MIN(MAX(first.y, 0), 1));
+  CGPoint b = CGPointMake(MIN(MAX(second.x, 0), 1), MIN(MAX(second.y, 0), 1));
+  NSUInteger direction = phase == HMSimTouchPhaseUp ? ButtonEventTypeUp : ButtonEventTypeDown;
+  IndigoMessage *msg = _mouseFn(&a, &b, ButtonEventTargetDigitizer, direction, CGSizeMake(1, 1), IndigoHIDEdgeNone);
+  if (!msg) return;
+  if (malloc_size(msg) < 0x20 + 3 * 0xA0) { free(msg); return; }
+  uint8_t *bytes = (uint8_t *)msg;
+  IndigoPayload *contacts[3] = {
+    &msg->payload, (IndigoPayload *)(bytes + 0xC0), (IndigoPayload *)(bytes + 0x160),
+  };
+  CGPoint points[3] = { a, a, b };
+  for (int i = 0; i < 3; i++) {
+    contacts[i]->event.touch.xRatio = points[i].x;
+    contacts[i]->event.touch.yRatio = points[i].y;
+  }
+  [self send:msg];
+}
+
 - (void)sendKeyUsage:(uint32_t)usage down:(BOOL)down {
   if (_stopped || ![self ensureHID]) return;
   [self send:_keyboardFn((int32_t)usage, down ? ButtonEventTypeDown : ButtonEventTypeUp)];
@@ -313,8 +336,11 @@ static NSString *DeveloperDir(void) {
 
 - (void)sendButton:(HMSimButton)button down:(BOOL)down {
   if (_stopped || ![self ensureHID]) return;
-  int32_t source = button == HMSimButtonHome ? ButtonEventSourceHomeButton : ButtonEventSourceLock;
-  [self send:_buttonFn(source, down ? ButtonEventTypeDown : ButtonEventTypeUp, ButtonEventTargetHardware)];
+  // The button as a Consumer-page HID usage (Menu, Power) to the digitizer target. The sourced
+  // builder (IndigoHIDMessageForButton, target 0x33) stopped working by CoreSimulator 1174.9.2:
+  // the guest drops it without an error, on iOS 26 and 27 runtimes alike. Touches still work.
+  uint32_t usage = button == HMSimButtonHome ? 0x40 : 0x30;
+  [self send:_hidArbitraryFn(ButtonEventTargetDigitizer, 0x0C, usage, down ? ButtonEventTypeDown : ButtonEventTypeUp)];
 }
 
 - (IOSurfaceRef)surface {

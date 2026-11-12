@@ -414,10 +414,15 @@ not a crash.
   - A held finger is re-reported at 60 Hz.
   - Touches that start at a screen edge carry the edge flag, which is how iOS
     recognizes the home swipe and other system gestures.
+  - Two fingers: given a second point, `IndigoHIDMessageForMouseNSEvent` builds
+    a multi-touch message (event type 3) of three payloads at a 0xA0 stride:
+    the first finger, a digitizer summary, and the second finger. Each one's
+    ratios are set again. Moves are down messages, as idb sends them.
+    Trackpad `pointer.gesture` events and Option-drag drive them.
 - **Keys:** macOS key codes map to USB HID usages
   (`IndigoHIDMessageForKeyboardArbitrary`). Modifiers come as
   `keyboard.modifiers` bits; each change becomes a key of its own.
-- **Buttons:** Home and Lock use `IndigoHIDMessageForButton`, from the bar.
+- **Buttons:** Home and Lock, from the bar, use `IndigoHIDMessageForHIDArbitrary`: Consumer-page usages Menu (0x40) and Power (0x30) to the digitizer target (0x32). `IndigoHIDMessageForButton` no longer reaches the guest.
 
 ### Android Emulator
 

@@ -58,6 +58,9 @@ typedef NS_ENUM(NSInteger, HMSimButton) {
 /// Single-finger touch. `ratio` is 0...1 from the screen's top-left. `edge` tags every
 /// event of a touch that began at a screen edge; iOS reads system gestures from it.
 - (void)sendTouchAtRatio:(CGPoint)ratio phase:(HMSimTouchPhase)phase edge:(HMSimEdge)edge;
+/// Two fingers, for pinch, rotate, and two-finger pans. Ratios as for `sendTouchAtRatio:`.
+/// A two-finger touch is its own contact: end any single touch first.
+- (void)sendTouchesAtRatio:(CGPoint)first second:(CGPoint)second phase:(HMSimTouchPhase)phase;
 /// Keyboard key by USB HID usage (keyboard page 0x07), e.g. 0x04 = 'a', 0xE1 = left shift.
 - (void)sendKeyUsage:(uint32_t)usage down:(BOOL)down;
 - (void)sendButton:(HMSimButton)button down:(BOOL)down;

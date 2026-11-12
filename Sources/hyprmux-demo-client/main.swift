@@ -54,6 +54,8 @@ top.onPointer = { event in
         if down { state.buttons.insert(b) } else { state.buttons.remove(b) }
     case .scroll(_, _, let dx, let dy, _, _, _, _, _):
         state.scroll.x += dx; state.scroll.y += dy
+    case .gesture:
+        break
     }
 }
 top.onKey = { key in

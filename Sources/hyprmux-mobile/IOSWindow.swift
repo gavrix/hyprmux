@@ -12,6 +12,8 @@ final class IOSWindow: DeviceWindow {
     private var touchEdge: HMSimEdge = .none
     private var lastRatio = CGPoint.zero
     private var touching = false
+    /// The two fingers' last ratios while they are down.
+    private var pair: (CGPoint, CGPoint)?
     /// A real digitizer keeps reporting a resting finger; the Mac sends nothing while the
     /// button is held still. Without these repeats the guest drops the contact (no long press).
     private var holdTimer: Timer?
@@ -84,11 +86,33 @@ final class IOSWindow: DeviceWindow {
         }
     }
 
+    override var supportsMultiTouch: Bool { true }
+
+    override func touches(_ first: CGPoint, _ second: CGPoint, phase: TouchPhase) {
+        switch phase {
+        case .down:
+            pair = (first, second)
+            display.sendTouches(atRatio: first, second: second, phase: .down)
+            startHold()
+        case .move:
+            pair = (first, second)
+            display.sendTouches(atRatio: first, second: second, phase: .move)
+        case .up:
+            pair = nil
+            stopHold()
+            display.sendTouches(atRatio: first, second: second, phase: .up)
+        }
+    }
+
     private func startHold() {
         holdTimer?.invalidate()
         let t = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] _ in
-            guard let self, self.touching else { return }
-            self.display.sendTouch(atRatio: self.lastRatio, phase: .move, edge: self.touchEdge)
+            guard let self else { return }
+            if let (a, b) = self.pair {
+                self.display.sendTouches(atRatio: a, second: b, phase: .move)
+            } else if self.touching {
+                self.display.sendTouch(atRatio: self.lastRatio, phase: .move, edge: self.touchEdge)
+            }
         }
         RunLoop.main.add(t, forMode: .common)
         holdTimer = t

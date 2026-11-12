@@ -5,6 +5,7 @@
 //   hyprmux-mobile          run as Hyprmux's client
 //   hyprmux-mobile list     print the devices it would offer, as JSON
 //   hyprmux-mobile info UDID   an iOS Simulator's framebuffer: size and pixel format
+//   hyprmux-mobile press UDID home|lock   press an iOS Simulator's hardware button
 import Foundation
 import HyprmuxClientKit
 import IOSurface
@@ -35,6 +36,24 @@ if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "info" {
         let f = IOSurfaceGetPixelFormat(s)
         let code = String(bytes: [24, 16, 8, 0].map { UInt8((f >> $0) & 0xFF) }, encoding: .ascii) ?? "?"
         print("\(display.name): \(IOSurfaceGetWidth(s))×\(IOSurfaceGetHeight(s)) px, format '\(code)', \(IOSurfaceGetBytesPerElement(s)) bytes per pixel")
+        display.stop()
+        exit(0)
+    } catch {
+        stderr("hyprmux-mobile: \(error.localizedDescription)")
+        exit(1)
+    }
+}
+
+if CommandLine.arguments.count == 4, CommandLine.arguments[1] == "press",
+   let button: HMSimButton = ["home": .home, "lock": .lock][CommandLine.arguments[3]] {
+    do {
+        let display = try HMSimDisplay(query: CommandLine.arguments[2])
+        display.send(button, down: true)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.08))
+        display.send(button, down: false)
+        // Sends are asynchronous; give them time to leave before exiting.
+        RunLoop.main.run(until: Date().addingTimeInterval(0.3))
+        if let why = display.inputUnavailableReason { stderr("hyprmux-mobile: input unavailable: \(why)"); exit(1) }
         display.stop()
         exit(0)
     } catch {

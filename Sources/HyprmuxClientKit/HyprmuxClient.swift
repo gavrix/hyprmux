@@ -46,6 +46,13 @@ public enum HMPointerEvent {
     /// without acceleration; zero for precise devices.
     case scroll(x: Double, y: Double, dx: Double, dy: Double, precise: Bool, phase: UInt64, momentumPhase: UInt64,
                 ticksX: Double, ticksY: Double)
+    /// A trackpad pinch or rotation. `value` is the change since the last event: magnification
+    /// (add it to a scale of 1), or degrees counterclockwise. `phase` is `NSEvent.Phase`.
+    case gesture(x: Double, y: Double, kind: HMGestureKind, value: Double, phase: UInt64, modifiers: UInt64)
+}
+
+public enum HMGestureKind: String {
+    case magnify, rotate
 }
 
 /// One atomic text-input update, delivered at `text_input.done` (Wayland's
@@ -279,6 +286,11 @@ public final class HMClient {
                 x: m.double("x"), y: m.double("y"), dx: m.double("dx"), dy: m.double("dy"), precise: m.bool("precise"),
                 phase: m.uint("phase"), momentumPhase: m.uint("momentum_phase"),
                 ticksX: m.double("ticks_x"), ticksY: m.double("ticks_y")))
+        case HMOp.pointerGesture:
+            guard let kind = m.string("kind").flatMap(HMGestureKind.init(rawValue:)) else { return }
+            toplevelsBySurface[m.uint("surface")]?.onPointer?(.gesture(
+                x: m.double("x"), y: m.double("y"), kind: kind, value: m.double("value"), phase: m.uint("phase"),
+                modifiers: m.uint("modifiers")))
         case HMOp.keyboardEnter:
             toplevelsBySurface[m.uint("surface")]?.onKeyboardFocus?(true)
         case HMOp.keyboardLeave:

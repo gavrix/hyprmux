@@ -467,6 +467,8 @@ final class Bridge: @unchecked Sendable {
             events.append(["type": "mouseWheel", "x": x, "y": y, "deltaX": px, "deltaY": py,
                            "wheelTicksX": tx, "wheelTicksY": ty,
                            "canScroll": true, "hasPreciseScrollingDeltas": precise])
+        case .gesture:
+            break
         }
         hook?.send(["t": "input", "win": win, "events": events])
     }

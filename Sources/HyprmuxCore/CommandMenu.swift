@@ -10,6 +10,8 @@ public enum CommandMenu {
         case window
         /// A focused browser or terminal tile (credential fill).
         case credentialTile
+        /// A cmux session on disk to import.
+        case cmuxSession
     }
 
     public struct Entry: Equatable, Sendable {
@@ -34,10 +36,12 @@ public enum CommandMenu {
     public struct Context: Equatable, Sendable {
         public var hasWindow: Bool
         public var hasCredentialTile: Bool
+        public var hasCmuxSession: Bool
 
-        public init(hasWindow: Bool, hasCredentialTile: Bool) {
+        public init(hasWindow: Bool, hasCredentialTile: Bool, hasCmuxSession: Bool = false) {
             self.hasWindow = hasWindow
             self.hasCredentialTile = hasCredentialTile
+            self.hasCmuxSession = hasCmuxSession
         }
     }
 
@@ -52,6 +56,7 @@ public enum CommandMenu {
         Entry("renameworkspace", "Name workspace…", .picker(.renameWorkspace)),
         Entry("layout", "Open layout…", .picker(.layout)),
         Entry("savelayout", "Save workspace as layout…", .picker(.saveLayout)),
+        Entry("importcmux", "Import from cmux…", .picker(.importCmux), requires: .cmuxSession),
         Entry("apps", "Open app…", .picker(.apps), aliases: [.launch("")]),
         Entry("terminal", "New terminal", .exec("")),
         Entry("web", "New web tile", .web("")),
@@ -77,6 +82,7 @@ public enum CommandMenu {
         case .none: true
         case .window: c.hasWindow
         case .credentialTile: c.hasCredentialTile
+        case .cmuxSession: c.hasCmuxSession
         }
     }
 

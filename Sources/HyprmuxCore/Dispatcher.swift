@@ -60,6 +60,8 @@ public enum PickerKind: String, Equatable, Sendable, CaseIterable {
     case layout
     /// Save the active workspace as a layout.
     case saveLayout = "savelayout"
+    /// Import cmux's workspaces as layouts (docs/CONFIGURATION.md, "Importing from cmux").
+    case importCmux = "importcmux"
     /// The launcher: every app Hyprmux can open (docs/APPS.md).
     case apps
     /// The menu: one list that opens every other picker and a few actions.

@@ -546,6 +546,36 @@ A `command` in a layout you wrote runs as written (the `programs` list only
 applies to what Hyprmux records). A file can hold several workspaces, each with
 its own `name`; summoning it opens all of them and shows the first.
 
+### Importing from cmux
+
+Hyprmux can turn [cmux](https://github.com/manaflow-ai/cmux) workspaces into
+layouts. The first launch that finds a cmux session asks once. The question
+lists each cmux install it found (stable, nightly), with its workspace count
+and date. Pick one to import it, or choose "Don't import". Escape counts as
+no. Hyprmux doesn't ask again after any answer; `picker, importcmux` (also in
+the menu) imports at any time.
+
+- **Where it reads:** cmux saves each install's session to
+  `~/Library/Application Support/cmux/session-<bundle id>.json`. When that file
+  is missing, Hyprmux reads its `-previous.json` backup. Only version 1 of
+  cmux's format is read; a newer one is refused instead of guessed.
+- **What it writes:** one layout per cmux workspace, named after its title (or
+  its git branch, or its directory). A name that another layout already has gets
+  ` (cmux)` added. Importing again skips layouts that haven't changed. The layout
+  picker opens after an import. Nothing opens by itself, so every agent doesn't
+  start at once.
+- **What comes back:** the split tree and its proportions, tab groups, focus,
+  each terminal's directory, browser pages, and markdown files (in the viewer).
+  An agent that was running when cmux saved resumes its session with
+  `session:resume:KIND`. An agent that had exited comes back as a shell.
+- **What doesn't:** cmux's sidebar groups, pins, colors, and unread markers;
+  browser history; programs other than agents (cmux doesn't record them); window
+  frames.
+
+The answer is kept in `cmux-import.json` next to the session file. Delete it to
+be asked again. A test instance with its own `HYPRMUX_SESSION` doesn't ask
+unless `HYPRMUX_CMUX_DIR` names a cmux folder to read.
+
 ### Startup programs
 
 ```ini
@@ -619,7 +649,7 @@ These names work in `bind` lines and with `hyprmuxctl dispatch`.
 | `workspace` | `N`, `+1`/`-1`, `e+1`/`e-1`, `previous`, `empty`, `special[:name]`, `name:NAME` | Switch workspace. `e±1` skips empty workspaces. `name:` finds the workspace with that name, or names the first free number. |
 | `movetoworkspace` / `movetoworkspacesilent` | same | Move the focused window there (and follow it, or stay). |
 | `renameworkspace` | `N [name]` | Name workspace N. No name clears it. |
-| `picker` | `menu`, `workspace`, `movetoworkspace`, `movetoworkspacesilent`, `renameworkspace`, `layout`, `savelayout`, `apps` | Hyprmux's own pickers: the menu of all of them, go to a workspace, move the window to one, name the current one, summon or save a layout, or open an app (the launcher). See [Workspaces](#workspaces), [Layouts](#layouts), and [Apps](APPS.md). |
+| `picker` | `menu`, `workspace`, `movetoworkspace`, `movetoworkspacesilent`, `renameworkspace`, `layout`, `savelayout`, `importcmux`, `apps` | Hyprmux's own pickers: the menu of all of them, go to a workspace, move the window to one, name the current one, summon or save a layout, import cmux workspaces, or open an app (the launcher). See [Workspaces](#workspaces), [Layouts](#layouts), [Importing from cmux](#importing-from-cmux), and [Apps](APPS.md). |
 | `togglespecialworkspace` | [name] | Show or hide a scratchpad. |
 | `togglefloating` | | Float or re-tile. A first float centers the window; re-tiling returns it to its old slot. |
 | `fullscreen` | `0` or `1` | 0 = cover the screen, 1 = maximize within gaps. |

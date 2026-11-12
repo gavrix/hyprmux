@@ -227,6 +227,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
             spawn(command: "", inheritFrom: nil, input: h.manifest.command + "\n")
         }
         emit(lifecycle)
+        offerCmuxImport()
     }
 
     // MARK: Config
@@ -522,6 +523,8 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
             presentLayoutPicker()
         case .saveLayout:
             presentSaveLayoutPrompt()
+        case .importCmux:
+            presentCmuxImportPicker()
         case .apps:
             presentAppLauncher()
         case .menu:
@@ -541,7 +544,8 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
     private func presentMenu() {
         let surface = focusedSurface
         let context = CommandMenu.Context(hasWindow: wm.focused != nil,
-                                          hasCredentialTile: surface is BrowserSurface || surface is TerminalView)
+                                          hasCredentialTile: surface is BrowserSurface || surface is TerminalView,
+                                          hasCmuxSession: !CmuxImport.sources(in: CmuxImportStore.cmuxDirectory).isEmpty)
         var picker = Picker(title: "menu", items: CommandMenu.items(binds: config.binds, context: context),
                             searchesDetail: false, maxVisible: config.hud.pickerMaxRows)
         picker.placeholder = "type to filter"

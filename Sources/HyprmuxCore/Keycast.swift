@@ -95,6 +95,7 @@ extension Dispatcher {
             case .renameWorkspace: return "Name workspace"
             case .layout: return "Layouts"
             case .saveLayout: return "Save layout"
+            case .importCmux: return "Import from cmux"
             case .apps: return "Apps"
             case .menu: return "Menu"
             }

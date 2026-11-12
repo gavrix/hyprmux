@@ -2,7 +2,7 @@ import XCTest
 @testable import HyprmuxCore
 
 final class CommandMenuTests: XCTestCase {
-    private let all = CommandMenu.Context(hasWindow: true, hasCredentialTile: true)
+    private let all = CommandMenu.Context(hasWindow: true, hasCredentialTile: true, hasCmuxSession: true)
 
     func testParsesMenuPicker() {
         XCTAssertEqual(try Dispatcher.parse("picker", "menu").get(), .picker(.menu))
@@ -55,6 +55,7 @@ final class CommandMenuTests: XCTestCase {
         XCTAssertFalse(ids.contains("movetoworkspace"))
         XCTAssertFalse(ids.contains("movetoworkspacesilent"))
         XCTAssertFalse(ids.contains("fillcredential"))
+        XCTAssertFalse(ids.contains("importcmux"), "only with a cmux session to import")
         XCTAssertTrue(ids.contains("workspace"))
         XCTAssertEqual(CommandMenu.items(binds: [], context: all).count, CommandMenu.entries.count)
     }

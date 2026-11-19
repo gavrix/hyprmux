@@ -236,8 +236,8 @@ colors.
 | `home` | DuckDuckGo | Page for `webnav home`. |
 | `new_tab` | — | Page for a new empty web tile, like a browser's New Tab page. Unset: a built-in start page. A URL, including an extension page such as `chrome-extension://ID/index.html` (Chromium, with the extension in `chromium_extensions`). The address bar stays empty on it. |
 | `search` | DuckDuckGo | Search URL for address-bar text that isn't a URL; `%s` is the query. |
-| `open_terminal_links` | true | ⌘-click on a link in a terminal opens a web tile instead of your browser. Over a link, ⌘-click opens it even when `$mod` + click is bound to `movewindow`. |
-| `open_markdown` | true | ⌘-click on a link to a local markdown file (`.md`, `.markdown`) in a terminal shows it rendered in a web tile, instead of your default app. A `:LINE` suffix scrolls to that line. Markdown always renders in WebKit, whatever `engine` says. |
+| `open_terminal_links` | true | ⌘-click on a link in a terminal opens a web tile instead of your browser. A matching [`linkrule`](#link-rules) wins. Over a link, ⌘-click opens it even when `$mod` + click is bound to `movewindow`. |
+| `open_markdown` | true | ⌘-click on a link to a local markdown file (`.md`, `.markdown`) in a terminal shows it rendered in a web tile, instead of your default app. Plain paths, `file:`, and `source:` links count. A matching [`linkrule`](#link-rules) wins. A `:LINE` suffix scrolls to that line. Markdown always renders in WebKit, whatever `engine` says. |
 | `address_bar` | true | Show the address bar, with back, forward, and reload buttons. |
 | `chromium_extensions` | — | Comma-separated unpacked extension folders to load into Chromium. Extensions that need tabs (like 1Password) don't work in tiles. Loaded extensions can read page DOM values, including filled credentials, like page scripts. |
 | `chromium_flags` | — | Space-separated Chromium switches. Credential fill is refused with `remote-debugging-port`, `remote-debugging-pipe`, or `devtools-protocol-log-file` because those switches can expose filled values. For agents, use `hyprmuxctl cdp-url` instead of a debugging port ([Automation](AUTOMATION.md#drive-web-tiles)). |
@@ -585,6 +585,55 @@ exec = btop          # also run on every config reload
 
 Without any `exec-once`, Hyprmux opens one terminal at startup. A
 [terminal hook](HOOKS.md#hooks) on `launch` or `firstlaunch` replaces it too.
+
+### Link rules
+
+`linkrule` lines decide where a link you ⌘-click in a terminal goes:
+
+```ini
+# linkrule = MATCH, ACTION[, ARGS]
+linkrule = scheme:source ext:md, web     # source:///…/README.md#L12 → rendered in a web tile
+linkrule = scheme:source, exec, nvim     # other source: links → nvim in a new terminal
+linkrule = scheme:zed, launch, Zed       # zed: links → the Zed app
+```
+
+Rules only route. The handler gets the URL whole, as it was clicked, and decides
+what a `#L12` or `:12` in it means.
+
+- **MATCH** is one or both of `scheme:NAME` and `ext:EXT`, separated by a space.
+  `ext:` ignores case and a `:LINE` suffix (`a.md:42`). A link without a scheme,
+  a path Ghostty found on screen, matches only rules without `scheme:`.
+- **ACTION** is one of:
+
+  | Action | Arguments | What opens |
+  |---|---|---|
+  | `exec` | a command | A new terminal running the command, with the URL added as its last argument (shell-quoted). It starts in the clicked terminal's folder. |
+  | `web` | none | A web tile with the URL. `source:` and `file:` links to markdown render in the viewer. |
+  | `launch` | an app name or id | The [app](APPS.md), with the URL as its argument. A single-instance app gets it in the running process. |
+
+- **Order:** the first matching rule wins. Without one, the link goes to
+  `open_markdown`, then `open_terminal_links`, then macOS.
+- **Web tiles:** a clicked link with a scheme a web page can't load (anything
+  but `http`, `https`, `file`, `about`, `data`, `blob`, and `javascript`) goes
+  through the rules too, before macOS. This works in WebKit tiles only.
+  The markdown viewer drops `source:` links, so it has none to click.
+
+`source:///ABS/PATH#LLINE` is a convention for links meant for an editor. Coding
+agents can print it, as OSC 8 hyperlinks, so it doesn't collide with `file:`.
+nvim doesn't know it; a `BufReadCmd` autocmd teaches it:
+
+```lua
+vim.api.nvim_create_autocmd("BufReadCmd", {
+  pattern = "source://*",
+  callback = function(ev)
+    local path, line = ev.match:match("^source://([^#]+)#?L?(%d*)$")
+    local url_buf = ev.buf
+    vim.cmd.edit(vim.fn.fnameescape(path))
+    if line ~= "" then vim.api.nvim_win_set_cursor(0, { tonumber(line), 0 }) end
+    vim.schedule(function() vim.api.nvim_buf_delete(url_buf, { force = true }) end)
+  end,
+})
+```
 
 ### Plugins
 

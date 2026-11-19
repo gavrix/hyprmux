@@ -13,13 +13,17 @@ public enum MarkdownFile {
 
     public static let extensions: Set<String> = ["md", "markdown", "mdown", "mkd", "mkdn"]
 
+    /// `source:///ABS/PATH[#LLINE]` names a local file, like `file:`. Coding agents print
+    /// it for links meant for an editor, so a `linkrule` can tell them from other files.
+    public static let sourceScheme = "source"
+
     public static func isMarkdown(_ path: String) -> Bool {
         extensions.contains((path as NSString).pathExtension.lowercased())
     }
 
     /// The viewer URL for a link to a markdown file, or nil if it isn't one.
     ///
-    /// Takes `file:` URLs, scheme-less paths (what a terminal reports for a path it found
+    /// Takes `file:` and `source:` URLs, scheme-less paths (what a terminal reports for a path it found
     /// on screen), and viewer URLs. A relative path resolves against `directory`. A
     /// `:LINE` or `:LINE:COLUMN` suffix, or a `#LLINE` fragment, becomes `#LLINE`. Other
     /// fragments (heading anchors) stay.
@@ -29,7 +33,7 @@ public enum MarkdownFile {
         case scheme?:
             guard url.host == localHost else { return nil }
             path = url.path
-        case "file"?:
+        case "file"?, sourceScheme?:
             path = url.path
         case nil:
             path = (url.path as NSString).expandingTildeInPath

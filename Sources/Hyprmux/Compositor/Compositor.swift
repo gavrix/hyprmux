@@ -1785,6 +1785,7 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
     }
 
     func terminal(_ view: TerminalView, openURL url: URL) -> Bool {
+        if openLinkByRule(url, from: view) { return true }
         if config.webOpenMarkdown, let viewer = MarkdownFile.viewerURL(for: url, relativeTo: view.pwd),
            let file = MarkdownFile.fileURL(fromViewer: viewer), FileManager.default.fileExists(atPath: file.path) {
             spawnWeb(viewer.absoluteString)
@@ -1797,7 +1798,28 @@ final class Compositor: NSObject, TerminalViewHost, BrowserSurfaceHost, NSWindow
         return true
     }
 
+    /// Routes a clicked link by the first `linkrule` that matches it. The URL goes to
+    /// the handler as it was clicked. False when no rule matches.
+    func openLinkByRule(_ url: URL, from terminal: TerminalView?) -> Bool {
+        guard let rule = LinkRule.first(matching: url, in: config.linkRules) else { return false }
+        let link = url.absoluteString
+        log.debug("link \(link, privacy: .public) -> \(String(describing: rule.action), privacy: .public)")
+        switch rule.action {
+        case .exec(let command):
+            spawn(command: command + " " + shellQuote(link), inheritFrom: terminal)
+        case .web:
+            spawnWeb(link)
+        case .launch(let name):
+            launchForLink(name, link: link)
+        }
+        return true
+    }
+
     // MARK: BrowserSurfaceHost
+
+    func browserSurface(_ s: BrowserSurface, openExternal url: URL) -> Bool {
+        openLinkByRule(url, from: nil)
+    }
 
     func browserSurfaceDidRequestFocus(_ s: BrowserSurface) {
         guard wm.focused != s.clientID, views[s.clientID] != nil else { return }

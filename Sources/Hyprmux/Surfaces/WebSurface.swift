@@ -181,10 +181,13 @@ final class WebKitSurface: BrowserSurface, WKNavigationDelegate, WKUIDelegate {
     // MARK: WKNavigationDelegate
 
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-        // Hand non-web schemes (mailto:, zoommtg:, ...) to macOS.
+        // Non-web schemes (source:, mailto:, zoommtg:, ...) go to macOS. A clicked one goes
+        // to a linkrule first. Only clicks: a `web` rule's own tile loading the URL would
+        // otherwise match the rule again and open tiles forever.
         if let url = action.request.url, let scheme = url.scheme?.lowercased(),
            !["http", "https", "file", "about", "data", "blob", "javascript", MarkdownFile.scheme].contains(scheme) {
-            NSWorkspace.shared.open(url)
+            let routed = action.navigationType == .linkActivated && host?.browserSurface(self, openExternal: url) == true
+            if !routed { NSWorkspace.shared.open(url) }
             decisionHandler(.cancel)
             return
         }

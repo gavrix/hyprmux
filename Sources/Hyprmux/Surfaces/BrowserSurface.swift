@@ -14,6 +14,9 @@ protocol BrowserSurfaceHost: AnyObject {
     func browserSurfaceURLDidChange(_ s: BrowserSurface)
     /// Open a URL in a new tile (cmd+click).
     func browserSurface(_ s: BrowserSurface, openInNewTile url: String)
+    /// A link with a scheme the engine doesn't load (`source:`, `mailto:`). True if a
+    /// `linkrule` took it; otherwise the surface hands it to macOS.
+    func browserSurface(_ s: BrowserSurface, openExternal url: URL) -> Bool
     /// Allocate an ID for a popup tile the page is opening.
     func browserSurfaceNextClientID(_ s: BrowserSurface) -> ClientID
     /// Start managing a popup tile the surface created.

@@ -287,6 +287,11 @@ web {
 # exec-once = htop
 # exec = btop
 
+# Where Cmd+clicked links go: MATCH, then exec/web/launch. The first match wins,
+# and the handler gets the URL as clicked (docs/CONFIGURATION.md, "Link rules").
+# linkrule = scheme:source ext:md, web
+# linkrule = scheme:source, exec, nvim
+
 # --- Binds -----------------------------------------------------------------
 
 bind = $mod, Return, exec,

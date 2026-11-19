@@ -274,6 +274,19 @@ extension Compositor {
         }
     }
 
+    /// `linkrule = ..., launch, NAME`: the whole text names the app; the link is its argument.
+    func launchForLink(_ name: String, link: String) {
+        guard let app = apps.catalog.find(name) else {
+            flash("No app named \(name) for \(link).")
+            return
+        }
+        do {
+            try launchApp(app, args: [link], interactiveLaunch())
+        } catch {
+            flash(launchFailureNotice(error, name: app.name))
+        }
+    }
+
     /// A `.hmapp` opened in Finder (or with `open`): launch it into a tile.
     func openHMApp(at path: String) {
         do {

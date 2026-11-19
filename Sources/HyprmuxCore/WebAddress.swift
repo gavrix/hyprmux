@@ -9,7 +9,7 @@ public enum WebAddress {
         let lower = s.lowercased()
         if let u = URL(string: s), let scheme = u.scheme?.lowercased(),
            ["http", "https", "file", "about", "data", "chrome", "chrome-extension", "devtools", "view-source",
-            MarkdownFile.scheme].contains(scheme) {
+            MarkdownFile.scheme, MarkdownFile.sourceScheme].contains(scheme) {
             return u
         }
         if s.hasPrefix("/") || s.hasPrefix("~") {

@@ -159,6 +159,8 @@ public struct HyprmuxConfig: Sendable {
     /// (`terminal:pi { pass = CTRL SHIFT F }`): a TUI keeps its own shortcuts.
     public var terminalPass: [String: Set<AppChord>] = [:]
     public var binds: [KeyBind] = []
+    /// `linkrule` lines, in order. The first match routes a clicked link.
+    public var linkRules: [LinkRule] = []
     public var execOnce: [String] = []
     public var exec: [String] = []
     /// `plugin =` lines, in order: a name in `plugins/` next to the config, or a path
@@ -439,6 +441,11 @@ public enum ConfigParser {
             case "submap": submap = value.isEmpty ? "reset" : value
             case "exec-once": config.execOnce.append(value)
             case "exec": config.exec.append(value)
+            case "linkrule":
+                switch LinkRule.parse(value) {
+                case .success(let rule): config.linkRules.append(rule)
+                case .failure(let e): error(file, line, "linkrule: \(e)")
+                }
             case "plugin":
                 guard !value.isEmpty else { error(file, line, "plugin: expected a name or a folder"); return }
                 if !config.plugins.contains(value) { config.plugins.append(value) }

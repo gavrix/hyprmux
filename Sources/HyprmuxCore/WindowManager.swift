@@ -204,8 +204,6 @@ public final class WindowManager {
         let ws = ensure(wsID)
         let visible = visibleWorkspaces.contains(wsID)
         let takesFocus = focus || (focused == nil && visible)
-        // A window opened in the background doesn't end someone's fullscreen.
-        if ws.fullscreen != nil, takesFocus { ws.fullscreen = nil }
         clients[id] = ClientState(workspace: wsID, floating: floating)
         // Opened from a focused group: become its new tab instead of a new tile.
         if settings.autoGroup, workspace == nil, let f = focused.map(layoutOwner), let gid = clients[f]?.group, let g = groups[gid],
@@ -216,11 +214,16 @@ public final class WindowManager {
             clients[id]!.floating = clients[f]!.floating
             // In the background it stays a hidden tab, so the focused tab keeps its slot.
             guard takesFocus else { return }
+            // A fullscreen group stays fullscreen: replaceInSlot hands it to the new tab.
+            // Another window's fullscreen ends, as for a new tile.
+            if let fs = ws.fullscreen, fs.id != g.active { ws.fullscreen = nil }
             replaceInSlot(g.active, with: id, in: ws)
             g.active = id
             self.focus(id)
             return
         }
+        // A window opened in the background doesn't end someone's fullscreen.
+        if ws.fullscreen != nil, takesFocus { ws.fullscreen = nil }
         if floating {
             clients[id]!.floatRect = defaultFloatRect()
             ws.floating.append(id)

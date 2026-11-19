@@ -419,6 +419,30 @@ final class WindowManagerTests: XCTestCase {
         XCTAssertNil(wm.snapshot().placement(ClientID(2))?.fullscreen)
     }
 
+    func testNewTabKeepsGroupFullscreen() {
+        let wm = makeWM()
+        wm.addClient(ClientID(1))
+        wm.addClient(ClientID(2))
+        wm.dispatch(.fullscreen(.fullscreen))
+        wm.dispatch(.toggleGroup)
+        wm.addClient(ClientID(3))                       // a tab opened from the fullscreen group
+        XCTAssertEqual(info(wm, 3).group?.members, [ClientID(2), ClientID(3)])
+        XCTAssertEqual(info(wm, 3).fullscreen, .fullscreen)
+        XCTAssertEqual(info(wm, 3).frame, wm.monitor)
+    }
+
+    func testNewTabEndsAnotherWindowsFullscreen() {
+        let wm = makeWM()
+        wm.addClient(ClientID(1))
+        wm.addClient(ClientID(2))
+        wm.dispatch(.fullscreen(.fullscreen))           // 2 is fullscreen
+        wm.focus(ClientID(1))
+        wm.dispatch(.toggleGroup)
+        wm.addClient(ClientID(3))                       // a tab in 1's group
+        XCTAssertNil(info(wm, 2).fullscreen)
+        XCTAssertNil(info(wm, 3).fullscreen)
+    }
+
     func testRemoveFocusesMostRecent() {
         let wm = makeWM()
         wm.addClient(ClientID(1))
